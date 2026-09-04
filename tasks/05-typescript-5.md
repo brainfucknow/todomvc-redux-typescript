@@ -32,6 +32,17 @@ Known type debt that the bump will surface:
 - Remove `@types/react-redux` if react-redux's own types suffice. Leave `@types/node` alone: task 03 raised it from `^13.13.6` to `^22.19.1` and `npm ci` fails with `ERESOLVE` below that. Task 03's QA reproduced the range from scratch and established that the binding floor is **Vitest**'s peer range of `^22.0.0 || >=24.0.0`, not Vite's `^20.19.0 || >=22.12.0`; Vite alone would have accepted `^20`. It is excluded from automatic inclusion by the `types` array and no source imports it, but removing it breaks install resolution.
 - `qa/` sits outside `tsconfig.json`'s `include` because TypeScript 3.9 cannot parse Playwright's type definitions, and Playwright transpiles the specs without typechecking them. TypeScript 5 can. Bring `qa/tests/` under a typecheck, in its own project reference or its own config rather than by widening the app's `include`, so the app's compilation stays free of test types. Fix any type error this surfaces in the test sources. Do not change what any test asserts; if a type error can only be resolved by changing an assertion, stop and report it.
 
+## What task 04's architect already established
+
+It ran a throwaway TypeScript 5.9 against the current `tsconfig.json`, without
+installing it into the repository. The whole program reports **exactly one
+error**: `src/test-support/fetch.ts(4,4): TS2304: Cannot find name 'global'`.
+
+Two things follow. Zero errors everywhere is reachable, so treat any larger
+number as a signal you configured something differently rather than as work to
+grind through. And it confirms `vite-env.d.ts` genuinely replaces what
+`react-scripts` used to declare, since the `todomvc-app-css` import resolves.
+
 ## Out of scope
 
 - Correcting `RootState` to match the real store shape. That is task 12, and it is structural.

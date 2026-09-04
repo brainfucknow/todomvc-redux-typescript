@@ -83,7 +83,7 @@ Within structural work, task 09 gives 10 a client to call, 10 settles the state 
 
 ### Architect and hardener placement
 
-- Task 04 gets the architect: Vite requires `index.html` at the project root with a module script tag, replaces `react-app-env.d.ts` with `vite-env.d.ts`, and changes the env variable prefix. Those are file moves and import-path changes forced by the tooling.
+- Task 04 gets the architect: Vite requires `index.html` at the project root with a module script tag and replaces `react-app-env.d.ts` with `vite-env.d.ts`. Those are file moves and import-path changes forced by the tooling. (An earlier draft of this line also cited an env-variable prefix change. That was wrong: nothing in `src/` reads a `REACT_APP_` variable or `process.env` at all, so no prefix migration existed. Task 04's architect caught it.)
 - Tasks 02, 03, 05, 06, 07, 08 do not get the architect: they change configuration, dependencies, and test bodies, not module boundaries.
 - Tasks 09 through 13 all get the hardener: each creates or changes a testable module. 09 creates the API client, 10 creates slice reducers, 11 creates the text-input rules module, 12 changes the selector input type, 13 changes the selectors themselves.
 

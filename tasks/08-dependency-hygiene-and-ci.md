@@ -26,6 +26,7 @@ Dependency debt still standing after tasks 02 through 07:
 - Remove every dependency nothing imports. Verify by search, not by assumption, and name what you checked in the handoff.
 - Rewrite the workflow: current `actions/checkout` and `actions/setup-node` majors, npm caching, and steps running install, lint, format check, typecheck, unit tests, production build, and the E2E regression suite against the built app.
 - Choose the Node version matrix deliberately and say why in the handoff.
+- `scripts/typecheck.mjs` must be trustworthy before CI depends on it. Task 04's architect found it returns a false green when `tsc` never runs: its error branch catches only a failure to spawn `npx`, so if `npx` spawns but cannot resolve `tsc`, that stderr is counted as a dependency diagnostic and the script reports `0 error(s) under src/` and exits 0. A repair was routed to a coder before task 04 closed; confirm it holds under CI's environment, where a missing binary is far likelier than it is locally.
 - Rewrite `README.md` to describe the actual stack and the actual commands.
 
 ## Out of scope
