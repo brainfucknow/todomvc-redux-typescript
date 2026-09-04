@@ -21,3 +21,6 @@ Feature: Toolchain dependencies
       | preview         |
       | test            |
       | test:acceptance |
+      | test:property   |
+      | test:hardening  |
+      | test:mutation   |

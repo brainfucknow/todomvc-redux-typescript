@@ -212,6 +212,162 @@ feature or QA edit is required for that correction, before or after the Coder ma
 
 None. Ruling 2 is discharged.
 
+#### Third pass: `api proxy 1` under Hardener-handoff ruling 1, and procedure D reconciled
+
+Done. Three files changed, all mine: `features/api-proxy.feature`,
+`features/toolchain-dependencies.feature`, `qa/toolchain-commands.md`. Nothing committed.
+
+**`api proxy 1` now has separate stub and assertion columns**
+
+`<body>` became `<stub_body>` and `<expected_body>`, both varying by row and both holding the
+same value per row:
+
+```
+  Background:
+    Given the todo backend on port 4000 replies to <path> with <stub_body>
+    And the development server is running
+# api proxy 1
+  Scenario: api proxy 1
+    When a client requests <path>
+    Then the response status is 200
+    And the response body equals <expected_body>
+```
+
+The scenario now says what it always meant - what the backend answers with comes back through
+the proxy unchanged - and it can fail. Mutate the stub cell and the proxy returns something the
+assertion does not expect; mutate the assertion cell and the assertion is wrong about what the
+stub served. Either way the row goes red.
+
+**`path` stays one column, deliberately.** The same argument would apply to it, but the
+Hardener's report already shows both `path` mutants killed, so splitting it would add a column
+the mutation evidence does not ask for. If a `path` mutant ever survives, the fix is the same
+two-column treatment - `<stub_path>` / `<request_path>` - and nothing else about the scenario
+changes.
+
+**No step handler has to change.** Only the placeholder token names moved. `steps.ts` matches
+raw step text with generic captures (`... replies to (\S+) with (.+)$`, `... body equals (.+)$`)
+and the runtime resolves each capture against the example row, so the vocabulary is still the
+same 16 patterns over the same 18 step texts. The two texts that read differently now are:
+
+```
+Given the todo backend on port 4000 replies to <path> with <stub_body>
+Then  the response body equals <expected_body>
+```
+
+`<stub_body>` and `<expected_body>` satisfy the runtime's `^<([A-Za-z0-9_]+)>$` placeholder
+form, and the APS parser carries them through to `parameters` and the example objects intact.
+
+**`toolchain dependencies 2` gained the three tier commands this task created**
+
+`test:property`, `test:hardening` and `test:mutation` are now rows, alongside the original five.
+This is the decision the Hardener routed to me, and I am taking it rather than deferring: the
+scenario's job is to say which commands the project offers, all eight now exist, and three of
+them were specified by nothing at all. `test:property` and `test:mutation` are named by
+`PLAN.md` section 4 and by this task's scope line ("plus the tier commands named in `PLAN.md`
+section 4 that this task creates"); `test:hardening` is the Hardener brief's separate command
+and the CRAP gate needs it to be a tier it can run. `test:e2e` is still absent: PLAN section 4
+names it but no task-01 role created it, and `qa/todo-app-regression.md` still has no driver.
+
+That takes the scenario from 5 rows to 8, and the feature total from 21 scenario executions to
+**24**. QA step D5 moved with it.
+
+**QA procedure D reconciled against the tree**
+
+Counted by running each tier, not taken from any handoff note:
+
+| Step | Was | Now |
+| --- | --- | --- |
+| D1 `npm test` | 13 files / 92 | **15 files / 119** |
+| D2 file list | 10 `src` + 3 `acceptance` | 10 `src` + **5** `acceptance` (adds `layering.spec.ts`, `layout.spec.ts`) |
+| D2a `npx vitest run src` | 10 / 54 | **10 / 54, unchanged - the floor held through every role** |
+| D2b `npx vitest run acceptance` | 3 / 38 | **5 / 65** |
+| D5 scenario executions | 21 | **24** |
+| D8 `npm run test:property` | - | new: 6 files / 60 |
+| D9 `npm run test:hardening` | - | new: 7 files / 92 |
+| D10 tier separation | - | new: D8 and D9 file lists do not overlap D1's |
+
+D2 also now says no `property/` or `hardening/` file appears in the unit run, which is the same
+point D2 always made about `build/acceptance/generated/`: the tiers are separate commands.
+Existing step letters are unchanged so earlier citations of D1, D2a, D2b, D5 and D7 still
+resolve; the two new tiers are appended as D8-D10 rather than renumbered in.
+
+D8 and D9 exist because 54 + 65 = 119 accounts for `npm test` exactly, which means the property
+and hardening tiers were invisible to QA - 152 passing tests that no procedure asked anyone to
+run. They are cheap (under a second each) and deterministic, so there is no reason for QA not to
+see them. The D2a/D2b attribution rule now covers them too.
+
+`npm run test:mutation` and `node scripts/acceptance-mutation.ts` are deliberately **not** in
+procedure D, and the procedure now says so. They are instruments, not done criteria; one takes
+about seven minutes, and the Hardener reports both in the handoff notes.
+
+**Procedure E was stale too, and I fixed it**
+
+E3 listed five documented commands; `README.md` documents eight. As written, QA would have
+failed E3 on a correct README. E3 now names all eight and reads them against `npm run`, and a
+new E4 covers the README's `Other checks` section (`node scripts/acceptance-mutation.ts`,
+`node scripts/crap.mjs`) as a presence check only - QA should not run those.
+
+`qa/todo-app-regression.md` needed nothing. It names no counts and no commands that moved.
+
+**What I verified**
+
+- All five feature files parse with the APS `gherkin-parser` from `bin/`, and
+  `gherkin-ir-dry-checker -include-exact` reports **0 findings** on each of the five, including
+  both files I changed.
+- `npm run test:acceptance`: 5 features parse, 5 entry points generate, **24 scenario
+  executions pass**, matching D5. No handler edit was needed to get there.
+- **The split bites, checked in both directions rather than assumed.** Dithering one
+  `stub_body` cell the way the mutator would (`{"id":1,"text":...}` -> `{"id":1, "text":...}`)
+  turns `api proxy 1/example_1` red and the tier exits 1. Dithering one `expected_body` cell
+  (`true` -> `tru`) turns `api proxy 1/example_2` red on its own. Restoring the file returns the
+  tier to 24 passing. This is a hand-applied edit for verification, not a mutator run - my brief
+  bars Gherkin mutation, and the Hardener re-run is what records the mutants as killed.
+- Tier counts, each run directly: `npm test` 15 / 119; `npx vitest run src` 10 / 54;
+  `npx vitest run acceptance` 5 / 65; `npm run test:property` 6 / 60;
+  `npm run test:hardening` 7 / 92. 54 + 65 = 119, so D1 is still exhaustively split.
+- Spec-file inventory read off the tree: the ten `src` specs are the same ten inventoried in my
+  first pass, none added, renamed or removed; `acceptance/` holds exactly `generator`,
+  `inspection`, `layering`, `layout`, `runtime`.
+- `package.json` declares exactly the eight scripts `toolchain dependencies 2` and E3 now name.
+- `git status --short` shows exactly `features/api-proxy.feature`,
+  `features/toolchain-dependencies.feature` and `qa/toolchain-commands.md`. `src/` is untouched.
+- I ran no verification or quality tooling beyond the parser, the dry checker and the test
+  tiers above. No mutation of any kind.
+
+**Left for the Coder**
+
+- **Nothing is required of you for `api proxy 1`.** The handler table already matches the new
+  step texts and the tier is green at 24 executions. If you touch `steps.ts` anyway, keep the
+  captures generic; hard-coding `stub_body` or `expected_body` into a pattern would put the
+  example-column names into the handler, which is where they must not be.
+- Scenario execution counts moved: 21 -> 24, and per feature `toolchain-dependencies` is 3 + 8.
+  Anything that restates the total (a handoff table, a README line) needs the new number.
+- The eight npm scripts are now specified. Removing or renaming one fails
+  `toolchain dependencies 2` and QA E3. Adding a ninth needs a row and a README entry, and PM
+  ruling 3 still bars a `typecheck` script in this task.
+
+**Left for the Hardener**
+
+- `api-proxy.feature` now presents **6** candidate mutations (2 rows x 3 columns), not 4:
+  two `path`, two `stub_body`, two `expected_body`. All six should be killed. The two that
+  survived are the `stub_body`/`expected_body` pairs and I have shown by hand that each side
+  now fails independently.
+- `toolchain-dependencies.feature` presents **11** (3 locations + 8 scripts), not 8.
+- Total candidate mutations across the five features move from 19 to 28. No skip list was
+  added, per ruling 1.
+
+**Left for QA**
+
+- Procedure D now has ten steps; D8-D10 are new. Procedure E has four; E4 is new. Nothing else
+  in `qa/` moved.
+- `qa/todo-app-regression.md` still needs a browser driver with route interception.
+  `@playwright/test` is not installed and no `test:e2e` script exists. PLAN section 4 assigns
+  the tool to whichever role first needs it, and that role is you.
+
+**Open questions**
+
+None.
+
 ### Project manager rulings on the Specifier handoff
 
 The Specifier handoff is accepted. Its assumptions and open questions are settled as follows.
@@ -223,6 +379,39 @@ These are now part of the task, not open items.
 4. **Dev and preview ports are the coder's to configure.** No scenario or QA step pins one, and none should.
 5. **Scenario-name comment placement.** The current reading stands: a comment line carrying the scenario name immediately before each `Scenario:`. Promoted to a shared convention in `PLAN.md` section 4 so later tasks match.
 6. **StrictMode firing `GET api/todos/` twice in development.** QA procedure F is right to accept both counts here. This task must not change application behavior, and `tasks/03-react-19.md` already owns the question of whether StrictMode produces a duplicate load. Do not assert an exact count in task 01 and do not "fix" the double fire in task 01.
+
+
+### Project manager rulings on the second Specifier pass
+
+Verified independently: only `features/` and `qa/` changed; `npm run test:acceptance` passes
+5 files / 24 scenario executions; and the split genuinely bites, checked by dithering one
+`stub_body` cell, watching `api proxy 1/example_1` go red, and restoring to 24 passing. Ruling 1
+is discharged. Accepted.
+
+Leaving `path` as a single column is accepted and correctly argued: the Hardener's report already
+shows both `path` mutants killed, so splitting it would add a column the mutation evidence does not
+ask for. Splitting every column on principle is how a feature file fills up with parameters that
+carry no acceptance meaning.
+
+Two findings from this pass are worth recording as rulings.
+
+1. **Procedure E was stale in a way that would have failed QA on a correct README.** E3 checked five
+   documented commands against a README documenting eight. That is a false-failure trap in the
+   verification procedure itself, not a cosmetic drift, and catching it before QA ran is worth more
+   than the count reconciliation this pass was spawned for. Accepted as fixed.
+
+2. **QA is authorized to add `@playwright/test` and a `test:e2e` script.** `qa/todo-app-regression.md`
+   has no browser driver behind it, and `PLAN.md` section 4 puts the E2E pick on the role that first
+   needs it, which is QA. This is an explicit exception to the earlier ruling that froze this task's
+   script surface: that ruling refused a `typecheck` script because task 06 owns it, whereas
+   `test:e2e` is named in `PLAN.md` section 4 and QA cannot execute its procedures without it.
+   Use the preinstalled Chromium at `/opt/pw-browsers`; never run `playwright install`.
+
+**The chain continues from the Coder.** The Specifier reports that no step handler change is needed,
+because the handlers match raw step text with generic captures and the runtime resolves captures
+against the example row. That is the Specifier's reading, not a dispensation: the Coder runs as a
+fresh agent, reaches its own conclusion, and confirms it in its note. No role is skipped because an
+earlier role expected it to have nothing to do.
 
 
 ### Coder
