@@ -172,3 +172,218 @@ repository root, that is one line in `reportedAt`.
 No open questions.
 
 ### QA
+
+**The branch moved under me.** The coder's note ends "Branch still at `9bb0f5b`.
+Nothing committed; everything is in the working tree." It is not. HEAD is
+`8ba915b`, "Give the project real type checking on TypeScript 5.9", and it
+carries the whole task. I left it alone: nothing committed, nothing reset. The
+tree contents match what the note describes, so I verified the commit as the
+delivered work. My one edit below is uncommitted in the working tree.
+
+**The type gate is real. I could not find a third false green.**
+
+I treated the script as guilty and planted twelve errors of six kinds, running
+each from seven working directories: repository root, `src/`, `src/components/`,
+`qa/`, `qa/tests/`, `scripts/`, and `/tmp`. Exit status was captured through a
+temp file, never a pipeline, so `PIPESTATUS` never came into it.
+
+| plant | where | caught |
+| --- | --- | --- |
+| TS2322 assignment | `src/models/Todo.ts` | 7/7 |
+| TS2304 unknown name | `src/models/Todo.ts` | 7/7 |
+| strictNullChecks violation | `src/models/Todo.ts` | 7/7 |
+| TS1005 syntax error | `src/models/Todo.ts` | 7/7 |
+| JSX prop error | `src/components/App.tsx` | 7/7 |
+| TS2322 | `qa/tests/support/screen.ts` | 7/7 |
+| TS2322 | `qa/tests/03-add-todo.spec.ts` | 7/7 |
+| TS2322 | `qa/suite-config.ts` (the `*.ts` include) | 7/7 |
+| orphan `.ts` nothing imports | `src/zz-orphan.ts` | 7/7 |
+| orphan `.ts` nothing imports | `qa/tests/support/zz-orphan.ts` | 7/7 |
+| orphan `.tsx` nothing imports | `src/zz-orphan.tsx` | 7/7 |
+| errors in both projects at once | both | reported both, counted 2 |
+
+84 runs, all exit 1, every path printed relative to the repository root and not
+to the shell's cwd. The orphan plants matter on their own: they prove the gate
+reads `include`, not the import graph, so a new unreferenced file cannot slip
+through. Elaboration lines survive; the `.tsx` orphan typechecked JSX with no
+React import in the file, which is `jsx: react-jsx` working.
+
+The "never pass by accident" guards fire too. Pointing the qa project's
+`include` at a missing directory produces TS18003 and exit 1 rather than a
+cheerful zero; deleting `qa/tsconfig.json` produces TS5058 and exit 1; making it
+unparseable produces exit 1. Task 04's finding reproduces in the negative: the
+old script reported `0 error(s) under src/, 314 in dependencies` and exit 0 for
+a `src/` error seen from `src/`, and no plant does that now.
+
+Coverage is exact rather than approximate. I diffed `--listFilesOnly` for both
+projects against `git ls-files`: every `.ts` and `.tsx` file in the repository is
+in one project or the other, 41 in the app and 28 in qa, with no overlap. The qa
+project's `*.ts` entry picks up all three Playwright configs as well as
+`suite-config.ts`, which is one more than the coder's note claims.
+
+**The React import removal is exactly what it says.**
+
+`git show HEAD -- src/` is ten deleted `import React from 'react'` lines, one
+line changed in `TodoItem.tsx` from `import React, { PureComponent }` to
+`import { PureComponent }`, and the `globalThis` edit in `test-support/fetch.ts`.
+Nothing rode along. The correspondence is total in both directions: the set of
+files naming `React.` and the set importing React default are the same eight
+files, so no file uses `React.` without the import and none keeps an import it
+no longer needs. No `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck` anywhere in
+`src/`, `qa/` or `scripts/`. `any` under `src/` is 5, all pre-existing in
+`TodoList.tsx` and `callapimiddleware.ts`; the sixth was the `(global as any)`
+this task removed.
+
+**ES2022 changed the shipped JavaScript, and the change is behaviour-preserving.**
+
+The bundle is not the same file. I built `9bb0f5b` in a detached worktree against
+the same `node_modules` and diffed: 173,897 bytes before, 173,792 after, and the
+difference is entirely class-field lowering in the two `PureComponent`
+subclasses. Before, esbuild lowered them to `constructor(...e){super(...e),this.state=...}`
+plus a `static{this.propTypes=...}` block. Now it emits native
+`static propTypes={...}; state={...}; handleSubmit=e=>{...}`. Two
+`constructor(...e){super(...e)` lowerings and two static blocks went to zero.
+
+That is `useDefineForClassFields`, which TypeScript defaults to true at target
+ES2022 and false below it. It is not set explicitly in either config, so the
+target move flipped it, and field initialization went from `[[Set]]` to
+`[[Define]]` semantics. That distinction bites in two situations: a declared but
+uninitialized field, which becomes an own `undefined` and wipes what a base
+constructor assigned, and a field that shadows an inherited accessor.
+`TodoTextInput` and `TodoItem` are the only classes in the app and neither is
+exposed. Every field in both has an initializer, neither redeclares `props`, and
+`React.Component` defines no accessor for `state` or `propTypes`. `state = {
+text: this.props.text || '' }` still reads a `props` that `React.Component`'s
+constructor set before field initializers run. So the emitted JavaScript differs
+and the observable behaviour does not, which the suite agrees with: procedures
+05, 06 and 07 drive `TodoTextInput` through the editor and pass.
+
+Worth naming for whoever changes `target` again: nothing in the repository pins
+`useDefineForClassFields`, so it moves silently with `target`. Task 11 converts
+both classes to functions and retires the exposure.
+
+**The E2E suite is exercising the new build, not a stale one.**
+
+Verified rather than assumed. All three scripts run `npm run build` first;
+`qa/stub/main.js` will only serve `dist` and throws if `dist/index.html` is
+missing, so task 04's `build/` trap stays closed; `static-files.js` reads from
+disk per request with no cache. I started the stub against the fresh `dist` and
+fetched what the browser would get: `index.html` references
+`/assets/index-CDl9EqmP.js`, the served bytes md5 to `48c2255...`, identical to
+`dist/assets/index-CDl9EqmP.js`, and that response contains `static propTypes=`
+and zero occurrences of the old constructor lowering. The dev suite goes through
+Vite, which transforms from source under the same tsconfig, so it exercises the
+new options too.
+
+**Dependency removals hold from the committed lockfile.**
+
+Not `--dry-run`. I exported HEAD with `git archive` into a clean directory with
+no `node_modules` and ran a real `npm ci`: 357 packages, exit 0, no `ERESOLVE`.
+In that tree `@types/react-redux` is absent, react-redux 9.2.0 supplies its own
+`dist/react-redux.d.ts`, and `@types/react` resolves to 18.3.27, which confirms
+the removed `resolutions` field was never pinning 18.0.0 and its removal
+regressed nothing. From that clean install `npm run typecheck` exits 0,
+`npm test` gives 10 files and 55 tests, and `npm run build` reproduces the same
+`index-CDl9EqmP.js`.
+
+**Regression suite and release checks**
+
+| check | result |
+| --- | --- |
+| `npm run typecheck` | `0 error(s) in tsconfig.json, qa/tsconfig.json`, exit 0 |
+| `npm test` | 10 files, 55 tests |
+| `npm run build` | compiles, 57.32 kB gzipped |
+| `npm run test:e2e` | 22 passed |
+| `npm run test:e2e:dev` | 21 passed, 1 skipped |
+| `npm run test:e2e:preview` | 21 passed, 1 skipped |
+| `npm run lint` | **no such script.** Arrives in task 06. Not skipped, absent. |
+
+The skip is procedure 20 in both proxied suites, and the reason is written into
+`qa/tests/20-delete-failure.spec.ts` above the `test.skip`: a proxy converts the
+stub's destroyed connection into a well-formed 502, and this client ignores HTTP
+status by design, so the condition cannot reach the browser. Deliberate and
+documented, as the baseline requires.
+
+21 procedures, 21 spec files, 22 `test()` cases, every spec citing its procedure
+by path. No procedure changed, so no procedure/test pair needed converting.
+
+**Absences confirmed, not invented**
+
+No Gherkin anywhere: no `.feature` file in the repository. No acceptance
+pipeline: no APS wiring, and `scripts/` holds `typecheck.mjs` and nothing else.
+No property tests and no property-testing dependency. No mutation tooling, so
+the mixed-job hint has no mutation count to compare; the only changed source
+with logic in it is `scripts/typecheck.mjs`, and the rest of the diff is ten
+deleted import lines and configuration, so there is no manifest to preserve and
+no split to make. None of this is a gap in the task, and none of tasks 09 to 13's
+hardener criteria apply to a Tooling task with a coder-to-QA chain.
+
+**CRAP gate and DRY on changed files**
+
+The only changed file containing functions is `scripts/typecheck.mjs`.
+Cyclomatic complexity by function: `fail` 1, `reportedAt` 1, `compilerPath` 4,
+`check` 4, `runCompiler` 5, `readReport` 7. All under 10, each single-job.
+`readReport`'s 7 is one `if`/`else if` chain answering one question, "what kind
+of line is this", which is the case the exception protects; `runCompiler`'s
+guards are the "never pass by accident" property and folding them into helpers
+taking booleans the caller already knew is what the definition forbids. Naming
+the limit honestly: the coverage-weighted CRAP number cannot be computed here,
+because the project configures no coverage reporting and `scripts/` is outside
+both test suites, so the reading above is complexity only.
+
+DRY: `tsconfig.json` and `qa/tsconfig.json` share eleven identical compiler
+options. I judged that not worth extracting into a base config. They are two
+projects that need to diverge, `extends` replaces rather than merges the `lib`
+and `types` arrays so a child would restate most of what it changed anyway, and
+`tsconfig.json` is not mine to edit at this stage for a cosmetic reason. No other
+duplication in the diff.
+
+**The one thing I changed**
+
+`README.md`, one sentence. Under `npm run typecheck` it still said "Type-checks
+the sources under `src/`", which was true of task 04's src-scoped gate and is
+false of this one, and it contradicts this task's own done criterion that the
+gate passes "everywhere, not merely under `src/`". This is the same class of
+defect as commit `6be334e`. It now reads that both projects are checked, the app
+sources under `src/` and the specs under `qa/`, and that a diagnostic in either
+fails. Ordinarily this belongs to the coder, and I am flagging it rather than
+burying it: I am the last role on the task, there is nobody to hand a one-line
+documentation correction to, and the correction carries no behavioural risk.
+Every check above was re-run after the edit.
+
+**On `qa/tsconfig.json`, which lands in my territory**
+
+It belongs and I am keeping it. The scope directed the coder to give the specs
+their own config rather than widen the app's `include`, it changes nothing about
+how Playwright runs them, all three suites pass with it in place, and no
+assertion was touched. `strict` matches the app. `types: ["node"]` is right,
+since `suite-config.ts` and `stub-control.ts` read `process.env`; Playwright's
+own types arrive through the `@playwright/test` import, not through `types`.
+`moduleResolution: "bundler"` is the correct choice rather than a copied one:
+every relative import in the specs is extensionless, which `node16` and
+`nodenext` would reject and which matches how Playwright's loader actually
+resolves them.
+
+One gap I am recording rather than closing. `qa/stub/` is nine JavaScript files
+and the qa project sets no `allowJs`, so the harness the whole suite depends on
+is unchecked. I measured what closing it costs: `checkJs` reports 89
+diagnostics, almost all TS7006/TS7031 implicit-any on parameters, so it means
+JSDoc annotations across all nine files. That is real work on test
+infrastructure, this task scoped the qa typecheck to `qa/tests/`, and starting it
+at the QA stage of a Tooling task would be the wrong place. It is mine to do
+when a task makes room for it, and it is a reasonable candidate for task 08's
+dependency and CI hygiene.
+
+**Left for the next role**
+
+Nothing blocking. Task 06 gets the `lint` script, and the coder's dead `AnyAction`
+and `Dispatch` imports in `src/middlewares/callapimiddleware.ts` are still there
+waiting for ESLint to flag them. `vite.config.mts` and `scripts/typecheck.mjs`
+remain outside every tsconfig, which the coder left for task 08. `RootState`
+still omits `errorMessage` and `exec`, which is task 12.
+
+**Open questions**
+
+None for the project manager. Nothing in the task file or `PLAN.md` was
+ambiguous, no QA procedure conflicted with a unit test, and no verification
+failed, so there is no fix to assign to another role.

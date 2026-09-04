@@ -18,6 +18,28 @@ Task 02 removed `react-shallow-renderer`, which has no React 19 build. That is w
 
 `@testing-library/react` 14 predates React 19 and will need a bump.
 
+
+## Inherited: class field semantics changed silently in task 05
+
+Task 05 moved `target` from ES5 to ES2022. TypeScript turns
+`useDefineForClassFields` on by default at ES2022, and nothing in this
+repository pins it, so class field initialization changed from `[[Set]]` to
+`[[Define]]` without anyone asking for it. Task 05's QA found this by diffing
+the built bundle: the *entire* byte difference between the two builds was class
+field lowering in `TodoItem` and `TodoTextInput`, the only two class components
+left.
+
+It is safe as things stand, and QA established why: every field in both classes
+has an initializer, neither redeclares `props`, and `React.Component` exposes no
+accessor for `state` or `propTypes`. Those are the conditions under which the
+two semantics agree. Do not assume they still hold after you change these
+classes.
+
+`propTypes` is a static class field on both of these components, and this task
+deletes it. That is a change to exactly the construct whose lowering just moved.
+Confirm the built output still behaves, do not reason about it from the source
+alone.
+
 ## Scope
 
 - Bump `react`, `react-dom`, `@types/react`, `@types/react-dom` to 19.

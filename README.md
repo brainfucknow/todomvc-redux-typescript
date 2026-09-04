@@ -29,7 +29,7 @@ Runs the unit tests once with [Vitest](https://vitest.dev/).
 
 ### `npm run typecheck`
 
-Type-checks the sources under `src/` with the TypeScript compiler. Vite itself does not type-check while building.
+Type-checks both TypeScript projects with the compiler: the application sources under `src/` and the end-to-end specs under `qa/`. A diagnostic in either one fails the check. Vite itself does not type-check while building.
 
 ### `npm run test:e2e`
 

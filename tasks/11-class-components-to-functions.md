@@ -33,6 +33,31 @@ That asymmetry between the trimmed submit path and the untrimmed blur path is cu
 
 Note the empty-text rule differs by caller: `Header` refuses to add when `text.length === 0` and never calls `addTodo`, while `TodoItem` deletes on empty. Both are current behavior.
 
+
+## Inherited: class field semantics changed silently in task 05
+
+Task 05 moved `target` from ES5 to ES2022. TypeScript turns
+`useDefineForClassFields` on by default at ES2022, and nothing in this
+repository pins it, so class field initialization changed from `[[Set]]` to
+`[[Define]]` without anyone asking for it. Task 05's QA found this by diffing
+the built bundle: the *entire* byte difference between the two builds was class
+field lowering in `TodoItem` and `TodoTextInput`, the only two class components
+left.
+
+It is safe as things stand, and QA established why: every field in both classes
+has an initializer, neither redeclares `props`, and `React.Component` exposes no
+accessor for `state` or `propTypes`. Those are the conditions under which the
+two semantics agree. Do not assume they still hold after you change these
+classes.
+
+This task deletes both classes outright, which retires the question rather than
+answering it. Two consequences. The lowering difference should vanish from the
+bundle entirely; if it does not, something else is using class fields and you
+should say so. And `state = { ... }` and `handleX = () => {}` class fields are
+precisely what you are converting to `useState` and plain functions, so read the
+built output once to confirm the conversion is faithful rather than trusting the
+source diff.
+
 ## Scope
 
 - Specifier: Gherkin for the input rules being extracted. The trim asymmetry, the enter-key rule, the clear-on-newTodo rule, the blur rule, and the empty-text-deletes rule.
