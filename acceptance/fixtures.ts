@@ -1,6 +1,7 @@
 import { createServer as createHttpServer } from 'node:http'
 import type { Server } from 'node:http'
 import type { AssetResult, Response } from './assertions.ts'
+import { runCommand, viteBundler } from './commands.ts'
 
 const BACKEND_PORT = 4000
 
@@ -78,11 +79,22 @@ export async function startDevServer(): Promise<string> {
   return addressed(fixtures.devServer)
 }
 
+// Vite reads NODE_ENV, not its mode, to decide whether a build is a production
+// one, and Vitest runs this process with NODE_ENV=test - so building in this
+// process bundled React's development entry. The build gets a process of its
+// own, in the environment `npm run build` builds in.
+const bundleForProduction = async (): Promise<void> => {
+  const { code, output } = await runCommand(viteBundler, ['build'], {
+    ...process.env,
+    NODE_ENV: 'production',
+  })
+  if (code !== 0) {
+    throw new Error(`the production build failed (exit ${code}):\n${output}`)
+  }
+}
+
 export async function buildForProduction(): Promise<void> {
-  fixtures.build ??= (async () => {
-    const { build } = await import('vite')
-    await build({ logLevel: 'error' })
-  })()
+  fixtures.build ??= bundleForProduction()
   await fixtures.build
 }
 

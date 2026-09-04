@@ -11,14 +11,18 @@ const VERSION_BANNER = /\b(\d+)\.\d+\.\d+/
 
 const unquoted = (attribute: string): string => attribute.slice(1, -1)
 
+const referencedStylesheets = (html: string): string[] => [...html.matchAll(LINK_TAG)]
+  .filter((link) => STYLESHEET_REL.test(link[0]))
+  .map((link) => HREF_ATTRIBUTE.exec(link[0]))
+  .filter((href): href is RegExpExecArray => href !== null)
+  .map((href) => unquoted(href[1]))
+
+export function referencedScripts(html: string): string[] {
+  return [...html.matchAll(SCRIPT_SRC)].map((match) => unquoted(match[1]))
+}
+
 export function referencedAssets(html: string): string[] {
-  const scripts = [...html.matchAll(SCRIPT_SRC)].map((match) => unquoted(match[1]))
-  const stylesheets = [...html.matchAll(LINK_TAG)]
-    .filter((link) => STYLESHEET_REL.test(link[0]))
-    .map((link) => HREF_ATTRIBUTE.exec(link[0]))
-    .filter((href): href is RegExpExecArray => href !== null)
-    .map((href) => unquoted(href[1]))
-  return [...scripts, ...stylesheets]
+  return [...referencedScripts(html), ...referencedStylesheets(html)]
 }
 
 export function compilerMajorVersion(versionOutput: string): number {

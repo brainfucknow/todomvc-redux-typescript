@@ -8,7 +8,9 @@ import {
   everyAssetRespondsWith,
   majorVersionIsAtLeast,
   nothingReferences,
+  responseContains,
   scriptIsAvailable,
+  scriptReferencedByResponse,
   statusIs,
 } from './assertions.ts'
 import { runCommand, typescriptCompiler } from './commands.ts'
@@ -85,6 +87,12 @@ export const stepHandlers: StepHandler<World>[] = [
   {
     pattern: /^every referenced asset responds with status (\d+)$/,
     run: (world, [expected]) => everyAssetRespondsWith(world, expected),
+  },
+  {
+    pattern: /^the served JavaScript bundle contains (.+)$/,
+    run: async (world, [marker]) => {
+      responseContains(await requestPath(scriptReferencedByResponse(world)), marker)
+    },
   },
   {
     pattern: /^(\S+) contains no reference to (\S+)$/,

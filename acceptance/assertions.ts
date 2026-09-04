@@ -1,4 +1,4 @@
-import { referencedAssets } from './inspection.ts'
+import { referencedAssets, referencedScripts } from './inspection.ts'
 
 // What a scenario has observed, and whether an observation satisfies its step.
 // The shell gathers; this decides. Nothing here reaches the environment, so
@@ -54,11 +54,25 @@ export function statusIs(world: World, expected: string): void {
   }
 }
 
-export function bodyContains(world: World, content: string): void {
-  const { body } = observedResponse(world)
-  if (!body.includes(content)) {
-    throw new Error(`response body does not contain "${content}":\n${excerpt(body)}`)
+export function scriptReferencedByResponse(world: World): string {
+  const scripts = referencedScripts(observedResponse(world).body)
+  if (scripts.length === 0) {
+    throw new Error('the index page references no script')
   }
+  if (scripts.length > 1) {
+    throw new Error(`the index page references more than one script: ${scripts.join(', ')}`)
+  }
+  return scripts[0]
+}
+
+export function responseContains(response: Response, content: string): void {
+  if (!response.body.includes(content)) {
+    throw new Error(`response body does not contain "${content}":\n${excerpt(response.body)}`)
+  }
+}
+
+export function bodyContains(world: World, content: string): void {
+  responseContains(observedResponse(world), content)
 }
 
 export function bodyExcludes(world: World, content: string): void {

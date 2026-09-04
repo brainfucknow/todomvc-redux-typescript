@@ -1,16 +1,21 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { availableScripts, compilerMajorVersion, referencedAssets } from './inspection.ts'
+import {
+  availableScripts,
+  compilerMajorVersion,
+  referencedAssets,
+  referencedScripts,
+} from './inspection.ts'
+
+const page = [
+  '<!doctype html>',
+  '<html><head>',
+  '<script type="module" crossorigin src="/assets/index-BPxiUVWS.js"></script>',
+  '<link rel="stylesheet" crossorigin href="/assets/index-xAQXB6NR.css">',
+  '</head><body><div id="root"></div></body></html>',
+].join('\n')
 
 describe('referencedAssets', () => {
-  const page = [
-    '<!doctype html>',
-    '<html><head>',
-    '<script type="module" crossorigin src="/assets/index-BPxiUVWS.js"></script>',
-    '<link rel="stylesheet" crossorigin href="/assets/index-xAQXB6NR.css">',
-    '</head><body><div id="root"></div></body></html>',
-  ].join('\n')
-
   it('finds script sources and stylesheet hrefs', () => {
     expect(referencedAssets(page)).toEqual(['/assets/index-BPxiUVWS.js', '/assets/index-xAQXB6NR.css'])
   })
@@ -29,6 +34,20 @@ describe('referencedAssets', () => {
 
   it('returns nothing for a page with no assets', () => {
     expect(referencedAssets('<html><body>hello</body></html>')).toEqual([])
+  })
+})
+
+describe('referencedScripts', () => {
+  it('finds the scripts and leaves the stylesheets out', () => {
+    expect(referencedScripts(page)).toEqual(['/assets/index-BPxiUVWS.js'])
+  })
+
+  it('ignores an inline script, which is not a served bundle', () => {
+    expect(referencedScripts('<script type="module">console.log(1)</script>')).toEqual([])
+  })
+
+  it('finds nothing on a page that references no script', () => {
+    expect(referencedScripts('<link rel="stylesheet" href="/a.css">')).toEqual([])
   })
 })
 

@@ -11,10 +11,15 @@ export type CommandResult = {
 }
 
 export const typescriptCompiler = join(projectRoot, 'node_modules', '.bin', 'tsc')
+export const viteBundler = join(projectRoot, 'node_modules', '.bin', 'vite')
 
-export async function runCommand(command: string, args: string[]): Promise<CommandResult> {
+export async function runCommand(
+  command: string,
+  args: string[],
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<CommandResult> {
   try {
-    const { stdout, stderr } = await runFile(command, args, { cwd: projectRoot })
+    const { stdout, stderr } = await runFile(command, args, { cwd: projectRoot, env: environment })
     return { code: 0, output: `${stdout}${stderr}` }
   } catch (failure) {
     const failed = failure as { code?: number; stdout?: string; stderr?: string }

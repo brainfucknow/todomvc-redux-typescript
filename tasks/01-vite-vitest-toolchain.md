@@ -1028,6 +1028,141 @@ survivors in `runtime.ts`, so no mutant of that mapping is alive either.
    discovered as a false failure, which is the same trap the PM recorded for E3's previous count.
 
 
+#### Fourth pass: the acceptance tier now builds a real production bundle
+
+Done. Seven files changed, all mine and all under `acceptance/`. Nothing committed. `features/`,
+`qa/` and `e2e/` are untouched.
+
+**The step handler, first**
+
+- `acceptance/inspection.ts`: `referencedScripts(html)` is now its own exported function and
+  `referencedAssets` is composed from it plus a private `referencedStylesheets`. No behavior of
+  `referencedAssets` moved - same values, same order.
+- `acceptance/assertions.ts`: two new judgments. `scriptReferencedByResponse(world)` returns the one
+  script the observed index page references, and fails loudly on none and on more than one rather
+  than guessing which is the bundle. `responseContains(response, content)` is `bodyContains`'s
+  judgment with the world lifted out, so it can judge a response the scenario fetched without
+  overwriting the index response the Background recorded; `bodyContains` now delegates to it and its
+  message is unchanged, which is why the hardening tier still reads the same text.
+- `acceptance/steps.ts`: one new handler, `/^the served JavaScript bundle contains (.+)$/`, which
+  fetches the referenced script and hands it to `responseContains`. The capture stays generic - it
+  captures `<production_marker>` and the runtime resolves it against the example row, so no example
+  column name is written into a pattern. Vocabulary is now 17 patterns over 19 unique step texts.
+
+**Then the fixture, which is what the scenario was really about**
+
+`acceptance/fixtures.ts` built by calling Vite's `build()` inside the Vitest worker. Vite decides
+whether a build is a production build from `process.env.NODE_ENV`, not from its `mode`, and Vitest
+sets `NODE_ENV=test`, so `react-dom` resolved to its development entry. I measured both halves of
+that claim rather than reasoning about it: `NODE_ENV=test npx vite build` emits 372,861 bytes with
+**zero** occurrences of `Minified React error`, and adding `--mode production` changes nothing -
+still 372,861 bytes, still zero. Only `NODE_ENV` moves it.
+
+`buildForProduction` now runs `node_modules/.bin/vite build` as its own process with
+`NODE_ENV=production`, and throws with the child's output when it exits non-zero. `runCommand` in
+`acceptance/commands.ts` takes an optional environment (defaulting to `process.env`, so the two
+`tsc` steps are unaffected) and `viteBundler` joins the existing `typescriptCompiler` beside it.
+
+**I kept the default `dist/` outDir**, so `npm run preview` needs no argument and QA's C3a reads the
+same directory it always did. The Specifier asked whether procedure C's cautionary paragraph could
+go: it should stay, because D3 does still overwrite `dist/` - but it is now harmless rather than
+merely tolerable, because what D3 leaves there is byte-identical to what `npm run build` leaves
+(checked by md5, below). Re-running C1 after D is now a formality, not a repair.
+
+**The ordering the ruling required, in the order it required it**
+
+1. Handler added, fixture untouched: `npm run test:acceptance` is red at `2 failed | 24 passed (26)`,
+   and both rows now fail for the reason the scenario exists -
+   `production build 4/example_1`: `response body does not contain "Minified React error"`, followed
+   by an excerpt of the minified development bundle, and `example_2` the same for
+   `act(...) is not supported in production builds of React.`. No `unsupported step text` anywhere in
+   the run. That is the scenario detecting a development bundle.
+2. Fixture fixed: `npm run test:acceptance` is green at **26 scenario executions**, 5 features
+   parsed, 5 entry points generated.
+3. Re-checked in the other direction, because a green tier proves less than a red one: setting the
+   child's `NODE_ENV` back to `test` and running the production-build entry point alone reddens
+   exactly `production build 4/example_1` and `example_2` on the missing markers, with the other five
+   executions of that file still passing. Restoring `production` returns it to 7 passing. So the
+   scenario discriminates on the artifact, not on the step's existence.
+
+**What else I verified**
+
+- Unit tier, TDD order: the ten new unit tests were written first and failed with
+  `referencedScripts is not a function` / `responseContains is not a function` before the production
+  code existed.
+- `npm test`: **23 files / 224 tests**, 0 failing, 0 skipped. `npx vitest run src` **10 / 54** - the
+  floor D2a guards is intact and untouched. `npx vitest run acceptance` **5 / 59**.
+  `npx vitest run scripts` **8 / 111**. 54 + 59 + 111 = 224 and 10 + 5 + 8 = 23, so D1 is still
+  exhaustively split.
+- `npm run test:property` 11 files / 95 and `npm run test:hardening` 12 files / 128, both unchanged:
+  keeping `bodyContains`'s message and semantics is what left the hardening tier alone.
+- `npx tsc --noEmit` exits 0 with no output.
+- `npm run build` after the acceptance tier had run: `dist/index.html`, `dist/assets/*.js` and
+  `dist/assets/*.css` are **md5-identical** to what the tier itself left, so the tier and the script
+  now emit the same artifact. `grep -c` on the emitted bundle: `Minified React error` 1,
+  `act(...) is not supported in production builds of React.` 1, `Invalid hook call` 0, and
+  `src/index.tsx` 0 in `dist/index.html` - QA C3a, C3b and C3 read true.
+- `git status --short` shows only `acceptance/assertions.ts`, `acceptance/assertions.spec.ts` (new),
+  `acceptance/commands.ts`, `acceptance/fixtures.ts`, `acceptance/inspection.ts`,
+  `acceptance/inspection.spec.ts` and `acceptance/steps.ts`, plus this task file.
+- I ran no mutation of any kind, no property run beyond the tier command above, and not the CRAP
+  gate; my brief bars them.
+
+**Where the new tests live, and why there is a new spec file**
+
+`acceptance/assertions.spec.ts` is new. `assertions.ts` had no unit spec - its judgments were tested
+only in `hardening/assertions.hardening.ts`, which is the Hardener's tier, and an acceptance run is
+not a substitute for a unit test of a new judgment. The new file covers only the two functions this
+pass added; I deliberately did not restate the hardening tier's coverage of the existing ones. The
+`referencedScripts` tests went into the existing `acceptance/inspection.spec.ts` beside
+`referencedAssets`, with that file's page fixture hoisted to module scope so both describes read the
+same page.
+
+**Left for the Cleaner**
+
+- `acceptance/assertions.ts` and `acceptance/inspection.ts` are cores, so both are in the CRAP gate's
+  measured set and in Stryker's mutate set. The new functions are small - `scriptReferencedByResponse`
+  is two guards and a return - but I did not run the gate.
+
+**Left for the Hardener**
+
+- `.mutation/` is untouched. Two things there are now stale by construction and neither is
+  hand-editable: `.mutation/gherkin/production-build.manifest` keys its reuse on an
+  `implementation_hash` that `steps.ts` has moved, and `.mutation/test-tier.json`'s `tier_hash`
+  predates `acceptance/assertions.spec.ts`, which the mutation tier picks up automatically
+  (`vitest.mutation.config.ts` includes `acceptance/**/*.spec.ts`).
+- `production build 4`'s two candidates are the ones to watch, and they are the reason this chain
+  resumed. Each is a production-only string in a positive assertion; dithering either cell should
+  make `responseContains` fail.
+- New core code to mutate: `referencedScripts`, `scriptReferencedByResponse`, `responseContains`. The
+  guards in `scriptReferencedByResponse` are covered in all three directions (none, one, several) and
+  the messages are asserted, so equality- and message-mutants should die in the unit tier.
+
+**Left for the Specifier and QA - counts moved, and the protocol says say so here**
+
+The unit tier grew by the one new spec file and its 7 tests, plus 3 tests in an existing file. The
+`src` half did not move. Procedure D needs:
+
+| Step | Now reads | Should read |
+| --- | --- | --- |
+| D1 | 22 files / 214 | **23 files / 224** |
+| D2 | 4 `acceptance/` files | **5**, adding `acceptance/assertions.spec.ts` |
+| D2a | 10 / 54 | unchanged |
+| D2b | 4 / 49 | **5 / 59** |
+| D2c | 8 / 111 and the sums | 8 / 111, sums **54 + 59 + 111 = 224**, **10 + 5 + 8 = 23** |
+
+D3-D10 are unaffected: no property or hardening file moved, and D5's 26 is what the tier now reports.
+
+`e2e/toolchain-commands.spec.ts` is QA's and carries the same numbers as literals -
+lines around D1 (`22 passed (22)`, `214 passed (214)`), D2's explicit file list, D2b
+(`4 passed (4)`, `49 passed (49)`) and D2c's two arithmetic assertions. The `24 -> 26` edits the
+Specifier's sixth pass already flagged are still needed there too; I changed nothing under `e2e/`.
+
+**Open questions**
+
+None.
+
+
 ### Project manager rulings on the Coder handoff
 
 Verified independently before ruling: `npx tsc --noEmit` exits 0, `npm test` passes 13 files
@@ -2959,4 +3094,34 @@ before fixing `acceptance/fixtures.ts`, `production build 4` must fail *because 
 missing from the artifact*, and only then does the fixture fix turn it green. That ordering is the
 evidence that the scenario discriminates rather than merely passing once the fixture changes. Record
 both observations in the handoff note.
+
+
+### Project manager rulings on the fourth Coder pass
+
+Verified independently: `npm run test:acceptance` is green at 5 files / 26 scenario executions; the
+artifact the acceptance tier leaves in `dist/` is **md5-identical** to what `npm run build` produces,
+167,067 bytes carrying the production marker; `npx tsc --noEmit` exits 0; `npx vitest run src` holds
+the D2a floor at 10 / 54. Accepted.
+
+The ordering requirement is met, and met exactly. With the handler added and the fixture untouched,
+the two rows failed on the marker being missing from the body rather than on `unsupported step text`;
+the fixture fix then turned them green; and putting the child's `NODE_ENV` back to `test` reddens
+precisely those two rows and no others. That sequence is what distinguishes a scenario that
+discriminates from one that merely passes.
+
+The root cause is worth recording, because it is not obvious and it will outlive this task:
+**Vite decides production-ness from `process.env.NODE_ENV`, not from `mode`,** and Vitest sets
+`NODE_ENV=test`. The Coder measured this rather than assuming it: `--mode production` changes nothing,
+while `NODE_ENV=test npx vite build` emits the 372,861-byte development bundle. Any later task that
+drives a Vite build from inside a test runner will hit the same trap.
+
+Lifting the judgment out of `bodyContains` into `responseContains` so a fetched bundle can be judged
+without clobbering the Background's index response is the right shape, and keeping the message text
+unchanged is why the hardening tier still passes untouched. Failing on none *and* on more than one
+script, rather than guessing, is the correct treatment of an ambiguous world.
+
+Nothing is routed back. Counts moved as expected and are recorded for the reconciliation that
+precedes QA; `.mutation/` is deliberately untouched, so the gherkin manifest's `implementation_hash`
+and `test-tier.json`'s `tier_hash` are stale by construction for the Hardener's re-run, which is the
+correct state to hand over rather than something to fix by hand.
 
