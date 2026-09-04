@@ -80,6 +80,13 @@ works on a staged copy of each feature under `build/acceptance-mutation/`, so
 `features/` is never written to; the per-feature manifests live in
 `.mutation/gherkin/`.
 
+A recorded kill is evidence about the implementation that earned it, and nothing
+the mutator stores identifies that implementation, so the run also records what
+`acceptance/` looked like when the manifests were written
+(`.mutation/acceptance-implementation.json`). When that has moved it re-tests
+every mutation instead of reusing a result a weakened step handler would no
+longer earn.
+
 ### `node scripts/crap.mjs [<path> ...]`
 
 Reports the CRAP score of every function, merging coverage from the tiers that

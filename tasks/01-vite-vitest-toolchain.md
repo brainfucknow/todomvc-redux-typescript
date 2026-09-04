@@ -3036,6 +3036,270 @@ accepted. Recorded rather than done; if a third copy appears, that changes the a
 
 None.
 
+#### Third pass: `production build 4` is dead, and the acceptance manifest can no longer hide a weakened implementation
+
+Done. Both stages green: language mutation 754 mutants / **0 survived**, acceptance mutation 26
+candidates / **26 killed** / exit 0. Nothing committed. `src/`, `features/`, `qa/` and `e2e/` are
+untouched.
+
+**The two candidates this chain resumed for are killed**
+
+`node scripts/acceptance-mutation.ts`, run against emptied manifests so every candidate was really
+tested rather than reused:
+
+| Feature | candidates | killed | survived |
+| --- | --- | --- | --- |
+| `api-proxy` | 6 | 6 | 0 |
+| `development-server` | 4 | 4 | 0 |
+| `production-build` | **5** | **5** | 0 |
+| `toolchain-dependencies` | 11 | 11 | 0 |
+| `typescript-compilation` | 0 | 0 | 0 |
+
+`production build 4`'s two rows died on their own:
+`Minified React error -> Minified React eRror` and
+`act(...) is not supported in production builds of React. -> act(...) is not supporTed ...`. The
+total goes from 24 to **26**, matching the Specifier's estimate for the first time in this task.
+
+**It bites, checked in the failing direction.** Weakening `responseContains` in
+`acceptance/assertions.ts` to compare with case folded - case is one of the two things the mutator
+dithers - turns **4 of production-build's 5** candidates `Survived` and the run exits 1: both
+`production build 4` rows and the two `production build 1` rows whose dither is a case flip. The
+row that still dies is `id="root" -> idx"root"`, which is not a case change. Restoring the
+assertion returns the feature to 5 killed. So the new scenario is reading the bundle it claims to
+read, and the marker is what kills the mutant.
+
+I also re-checked the implementation side, because a mutant dying says nothing about a regression
+in an unmutated shell: putting the fixture's `NODE_ENV` back to `test` reddens exactly
+`production build 4/example_1` and `example_2` and leaves that file's other five executions
+passing. Restored, and `dist/` rebuilt to the production artifact (167,067 bytes,
+`index-BPxiUVWS.js` / `index-xAQXB6NR.css`, `Minified React error` count 1) so nothing downstream
+inherits the development bundle that check leaves behind.
+
+**The finding: the acceptance manifest cannot tell one implementation from another**
+
+Three handoff notes and a PM ruling record that `.mutation/gherkin/production-build.manifest` keys
+its reuse on an `implementation_hash` that `steps.ts` has moved. **It does not, and that is worse
+than the staleness everyone expected.** The hash is `hash_scope: generated_files` over the
+generated entry point, and that entry point is a seventeen-line loader naming its feature and its
+IR path: no step handler, assertion or fixture reaches it, so nothing this chain changed moved it.
+The recorded hash before my run and the hash my run computed are the same `sha256:2907db0f...`.
+And at `--level soft` - the level my brief directs - a moved hash would not force a re-test anyway,
+because soft reuses on the scenario and background hashes. `production build 4` re-ran because it
+was a scenario with no recorded result, not because a hash moved.
+
+That is a live blind spot, demonstrated rather than argued: with the manifests in place and
+`responseContains` weakened exactly as above, `node scripts/acceptance-mutation.ts` skipped all 26
+candidates and exited **0**. The instrument reported green over an implementation that no longer
+kills four of its own mutants.
+
+**The fix is the same shape as the one the language side already carries.** `scripts/mutation.ts`
+hashes the mutation tier's test files because the command runner makes Stryker's manifest blind to
+test changes; `scripts/acceptance-mutation.ts` now records what the step implementation looked like
+when the manifests were written, in `.mutation/acceptance-implementation.json`, and stages the
+features **without** their stored manifests once that has moved - which tests every candidate
+against the implementation the result will be reported for. The hash is `implementationHash` from
+`acceptance/generator.ts` over every non-spec `acceptance/*.ts`, so no second sha256 was written
+and over-inclusion errs toward testing more. The stamp is written whenever every feature reached a
+verdict, for the reason `scripts/mutation.ts` states: the mutator rewrites a manifest whether its
+mutants survived or not, and a feature the mutator never finished can leave a partial one.
+
+Verified in all three directions: with no stamp the run tests all 26 and kills all 26; a second run
+reuses and skips all 26; and the `responseContains` weakening now moves the hash, re-tests
+everything and reports **7 survivors with exit 1** where the same weakening was silently green
+before. Restored, the run is back to 26 killed and exit 0.
+
+`features/` is still never opened for writing, and no skip list exists anywhere - this change only
+ever causes more candidates to be tested.
+
+**Language mutation: 0 survivors, and nothing needed killing**
+
+`npm run test:mutation`, the 14 core modules `modulesIn('core')` names, mutated **one file at a
+time, in sequence**. Each ran with `--force`, because the tier hash had moved -
+`acceptance/assertions.spec.ts` is new and three property files were added since the manifest was
+written - and a result recorded under the old tier would not have been evidence. A final run over
+all 14 reused all 754 recorded results in 10 seconds and exits 0.
+
+| | second pass | now |
+| --- | --- | --- |
+| files mutated | 14 | 14 |
+| mutants | 726 | **754** |
+| killed | 514 | 537 |
+| timed out | 1 | 1, the same genuine one |
+| **survived** | 0 | **0** |
+| rejected by the compiler | 202 | 207 |
+| ignored, with a written reason | 9 | 9, the same nine |
+
+The 28 new mutants are all in the two cores this chain changed: `acceptance/assertions.ts` 98 ->
+**113** and `acceptance/inspection.ts` 58 -> **71**. Every one of them was killed by tests that
+already existed when I arrived - the Coder's `acceptance/assertions.spec.ts` and the ten unit tests
+around `referencedScripts` / `responseContains` / `scriptReferencedByResponse`, and the Architect's
+24 properties over `assertions.ts` and 5 over `inspection.ts`. **So I wrote no hardening tests this
+pass**, and `hardening/` stays at 12 files / 128 tests. There were no survivors to kill and no
+uncovered statement to cover: all 130 measured functions under `acceptance/` and `scripts/` are at
+100% statement coverage.
+
+**That is a claim about the instrument as much as the tests, so I checked it.** Skipping the
+`scriptArgv` describes in `acceptance/inspection.spec.ts` and `property/inspection.property.ts`
+brings **9 survivors** back in `scriptArgv` and its private `declaredScripts` - the dropped
+`.trim()`, the optional chain, all three forms of the guard, the emptied block and the message -
+and the run exits 1. Restored and re-recorded with `--force`: `inspection.ts` back to 100%, 0
+survivors. The new core surface is genuinely reached by mutation, not merely reported as clean.
+
+**Mixed-job hint: scanned, and nothing split**
+
+Mutant counts on this chain's changed and new sources, read off the manifest rather than estimated:
+
+| Module | mutants | | Module | mutants |
+| --- | --- | --- | --- | --- |
+| `acceptance/assertions.ts` | **113** | | `scripts/crap/score.ts` | 64 |
+| `scripts/architecture/layering.ts` | 89 | | `scripts/crap/options.ts` | 60 |
+| `acceptance/inspection.ts` | **71** | | `acceptance/generator.ts` | 59 |
+| `acceptance/runtime.ts` | 55 | | `scripts/crap/complexity.ts` | 52 |
+| `scripts/architecture/packages.ts` | 50 | | `scripts/crap/report.ts` | 48 |
+| `acceptance/mutation-jobs.ts` | 40 | | `scripts/crap/coverage.ts` | 20 |
+| `acceptance/layout.ts` | 19 | | `scripts/crap/tiers.ts` | 14 |
+
+`assertions.ts` is the largest and gained the most, and it stays one file. Its job is what a
+scenario has observed and whether an observation satisfies its step; `responseContains` is the
+judgment `bodyContains` always made with the world lifted out, and `scriptReferencedByResponse`
+answers the same question about the observed page that `assetsReferencedByResponse` does. Splitting
+extraction from judgment would put two halves of one scenario's world in two files to lower a
+count, which the hint forbids. `inspection.ts` gained `scriptArgv`, which shares its private
+`declaredScripts` parse with `availableScripts`; it still reads facts out of project text, which is
+the one job the Cleaner declared for it and the PM accepted. The shells this chain changed -
+`commands.ts`, `fixtures.ts`, `steps.ts` - were all assessed by the Cleaner one pass earlier and
+its refusal to split `fixtures.ts` is right for the reason it gave: the only candidate half reads
+module-private mutable state.
+
+**CRAP gate**
+
+- Changed measured files, `acceptance/assertions.ts` and `acceptance/inspection.ts`: **32
+  functions, 0 over the gate.**
+- Everything mutation touched, `node scripts/crap.mjs acceptance scripts`: 14 files, **130
+  functions, 0 over the gate**, every one at 100% statement coverage.
+- Whole project: 40 files, 224 functions, **2 over** - `src/reducers/apis.ts` `executing` at 13.0
+  and `src/middlewares/callapimiddleware.ts` at 30.0, the same two every pass since the Cleaner's
+  merge. **I am applying the CRAP exception to `executing` and recording that I did**: one flat
+  `switch` on `action?.type` answering one question, at 100% coverage, so its 13.0 is cc alone. The
+  other is IO at 0% coverage; this task's Out of scope and the D2a floor both bar the fix.
+- **The file I changed is not measured.** `scripts/acceptance-mutation.ts` is a CLI wrapper
+  `vitest.coverage.ts` excludes, so `node scripts/crap.mjs scripts/acceptance-mutation.ts` reports
+  no measured files and exits 2 - the same answer QA got for `e2e/`. Measured with the project's
+  own `complexityByFunction` instead: highest cyclomatic complexity **4** (the module body), every
+  named function 3 or less, against 5 for the module body of `scripts/mutation.ts` beside it.
+
+**DRY**
+
+- The new hash is `implementationHash` from `acceptance/generator.ts`, not a second sha256 written
+  in the wrapper. It is already a mutated core with tests and properties over it.
+- `.mutation` was named twice in `scripts/acceptance-mutation.ts` after my change; it is one
+  `MUTATION_DIR` now, with the manifest directory and the stamp both derived from it.
+- **What I did not DRY, deliberately.** `.mutation/test-tier.json` and
+  `.mutation/acceptance-implementation.json` are now the same idea - hash a set of files, compare
+  it with what was recorded, rewrite it when the run reached a verdict - in two CLI wrappers. Two
+  copies, different subjects (the tests that judge language mutants; the implementation that judges
+  acceptance mutants), and merging them means a tested `scripts/mutation/` package plus a stamp
+  format both files share, which invalidates the recorded `tier_hash` and forces a full 754-mutant
+  re-run to get back to where the tree already is. Recorded rather than done, the same disposition
+  the second pass gave the duplicated `isSource`; if a third stamp appears, that changes the answer.
+  See open question 1.
+
+**What I verified**
+
+Every number read off a command I ran, in the tree as I leave it.
+
+| Command | Result |
+| --- | --- |
+| `npx tsc --noEmit` / `--version` | exit 0, no output / `Version 5.9.3` |
+| `npm test` | 23 files / 228 tests, 0 failing, 0 skipped |
+| `npx vitest run src` | **10 / 54 - the D2a floor, intact** |
+| `npx vitest run acceptance` | 5 / 63 |
+| `npx vitest run scripts` | 8 / 111 |
+| `npm run test:property` | 14 / 141 |
+| `npm run test:hardening` | 12 / 128 |
+| `npm run test:acceptance` | 5 features parse, 5 entry points generate, **26 scenario executions pass** |
+| `npm run test:mutation` | exit 0, 754 mutants, 537 killed, 1 timeout, **0 survived**, 207 compile errors, 9 ignored |
+| `node scripts/acceptance-mutation.ts` | exit 0, **26 candidates, 26 killed**, 0 survived |
+| `npm run build` | exit 0, `index-BPxiUVWS.js` 167,067 bytes and `index-xAQXB6NR.css` - the same content hashes every role since the first Cleaner pass has recorded |
+| `npx vitest run scripts/architecture` | 2 / 21 - the boundary rules still hold with the wrapper importing a core |
+
+- 54 + 63 + 111 = 228 and 10 + 5 + 8 = 23, so D1 is still exhaustively split.
+- **No test count moved in this pass.** D1, D2, D2a, D2b, D2c, D5, D8 and D9 read exactly as the
+  Architect's third pass left them, so the reconciliation the Specifier owes is that table and
+  nothing of mine.
+- `git status --short src features qa e2e` is empty. `git status --porcelain --ignored` lists
+  `bin/ build/ coverage/ dist/ node_modules/ test-results/` as `!!` and nothing as `??` but the one
+  new manifest below, so QA E1 still reads true.
+- `README.md`'s `Available Scripts` documents the nine scripts `package.json` declares and
+  `Other checks` still names two script files that exist, so E3 and E4 are unaffected by the
+  paragraph I added under `node scripts/acceptance-mutation.ts`.
+
+**What I changed**
+
+`scripts/acceptance-mutation.ts` and a paragraph of `README.md`. That is the whole source diff;
+everything else in the working tree is `.mutation/`, and every byte of it was written by a tool.
+
+**`.mutation/acceptance-implementation.json` is new and needs committing** with the rest of
+`.mutation/`, under the PLAN section 4 rule that mutation manifests are committed and never
+hand-edited. `.mutation/stryker-incremental.json` is now **4.3 MB**, up from 3.4, because it
+records 754 mutants instead of 726.
+
+**Left for the Specifier pass scheduled before QA**
+
+- Nothing from me. Every count in procedure D reads true against the tree at the values the
+  Architect's third pass recorded, and I moved none of them.
+- For the record, since two notes now carry an estimate: the acceptance-mutation tier presents
+  **26** candidates and all 26 are killed.
+
+**Left for QA**
+
+- `e2e/toolchain-commands.spec.ts` still carries the counts the Coder's and Architect's passes
+  moved, as literals: `22 passed (22)` / `214 passed (214)` at D1, `4 passed (4)` / `49 passed (49)`
+  at D2b, `54 + 49 + 111 = 214` and `10 + 4 + 8 = 22` at D2c, `24` in three places at D3 and D5, and
+  `11 passed (11)` / `95 passed (95)` at D8. The tree reads 23 / 228, 5 / 63, 54 + 63 + 111 = 228,
+  10 + 5 + 8 = 23, 26, and 14 / 141. D2a (10 / 54), D2c's own 8 / 111 and D9 (12 / 128) are still
+  true. I did not touch `e2e/`; recording the list so the pass that owns it does not have to find
+  them.
+- `npm run test:mutation` and `node scripts/acceptance-mutation.ts` both exit 0. Neither is a done
+  criterion and no QA procedure names them, which is still right - they are instruments.
+
+**Findings**
+
+1. **A differential acceptance-mutation run proves nothing about an implementation the manifest
+   never hashed.** Recorded above with the demonstration and the fix. The general point outlives
+   this project: `--level soft` deliberately reuses across implementation changes, so the driver
+   around the mutator has to decide when a stored result stopped being evidence. Nothing in the
+   mutator can do it, because the hash the spec gives it covers generated files.
+2. **The one decision that makes the acceptance tier build a production bundle is still unmutated.**
+   `NODE_ENV: 'production'` lives in `acceptance/fixtures.ts`, a shell that neither mutation stage
+   reaches - language mutation because shells are out of `modulesIn('core')`, acceptance mutation
+   because it rewrites example cells. What guards it is `production build 4` failing, which I
+   verified by hand above and which the stamp now re-verifies automatically whenever `acceptance/`
+   moves. Worth knowing before a later task decides the shells are safe because both stages are
+   green.
+3. **A tight timeout ceiling still silently converts survivors into kills**, and the ceiling is
+   still 60s with the reason in the config. The single remaining `Timeout` is `index -= 1` in
+   `readOptions`' argv loop, which genuinely does not terminate. Unchanged from the second pass and
+   restated because a later task mutating `src/` will be tempted to lower it.
+4. **Stryker's Vitest runner is still not usable on Vitest 5** and the command-runner workaround
+   still ships. Not re-tested: nothing in this pass changed the runner, Vitest or the finding's
+   premise, and the first pass records how to re-test it.
+5. **The stamp decision lives in an untested CLI wrapper**, exactly as `scripts/mutation.ts`'s
+   does. See open question 1.
+
+**Open questions**
+
+1. **Should the two mutation stamps become a tested `scripts/mutation/` package?** PLAN section 4
+   says project self-checks live under `scripts/` as tested packages alongside the CLI shells that
+   invoke them, and the ruling on my first pass' finding 4 said the same thing about
+   `scripts/crap.mjs`: logic the gate depends on should be judged by a tier. Both stamps are now
+   logic no tier judges. I followed the `scripts/mutation.ts` precedent rather than widening my own
+   pass into a new package, because the extraction costs a stamp-format change that invalidates
+   `.mutation/test-tier.json` and forces a full 754-mutant re-run, and because a package that only
+   the two wrappers import is the shape the Architect's finding 4 disapproved of. If the answer is
+   yes, the natural owner is the Cleaner, and the cheap moment to do it is a task that is paying
+   for a full re-run anyway.
+
 ### Project manager rulings on the Hardener handoff
 
 Verified independently: `npx tsc --noEmit` exits 0; `npm test` 119, `npx vitest run src` 54
@@ -3582,4 +3846,41 @@ not exercising the boundary, so the property was wrong, not the boundary.
 Counts moved and are recorded for the reconciliation pass that precedes QA: D1 228, D2b 63, D8 141,
 with 54 + 63 + 111 = 228 still exhaustive. D2's file list does not move, since no spec file was added
 or renamed.
+
+
+### Project manager rulings on the third Hardener pass
+
+Verified independently: a forced acceptance-mutation run against emptied manifests gives
+**26 candidates, 26 killed, exit 0**, with `production build`'s 5 among them; `npx tsc --noEmit`
+exits 0; `npx vitest run src` holds the D2a floor at 10 / 54. Accepted.
+
+**The main finding is correct, it is the most consequential in this task, and it corrects me.**
+The gherkin manifest's `implementation_hash` never covered the implementation: it hashes the
+generated entry point, a short loader naming its feature and IR path, so nothing in `steps.ts`,
+`assertions.ts` or `fixtures.ts` reaches it. Three handoff notes and one of my own rulings asserted
+that this hash had gone "stale by construction" and would therefore force a re-test. It would not
+have. I verified the blind spot and the fix in both directions: with manifests present and
+`responseContains` weakened to fold case, the run skipped all 26 and exited 0; with the new
+`.mutation/acceptance-implementation.json` stamp in place, the same weakening re-tests and reports
+7 survivors with exit 1.
+
+That is the third instance in this task of an *instrument* carrying the defect rather than the
+product, after the property tier measuring coverage that was never merged and `PACKAGES = []` making
+a spec pass vacuously. The pattern is now established well enough to state as standing guidance:
+**a check that cannot fail is worth less than no check, because it also suppresses the search for
+one.** Every later task should test its instruments in the failing direction before trusting a green
+result from them.
+
+Writing no hardening tests is correct: all 28 new mutants were already killed by the Coder's unit
+spec and the Architect's properties, and the Hardener confirmed the instrument reaches the new code
+by skipping the `scriptArgv` tests and watching 9 survivors return. Adding tests that kill nothing
+would be noise.
+
+**The open question is answered, but not here.** The two mutation stamps do hold logic no tier judges,
+and the precedent set when `scripts/crap.mjs` was brought under test says they should be. It is not
+reopened in task 01: the stamp is new, the Hardener has demonstrated it working in both directions,
+and it bears on none of this task's done criteria. It is recorded as carried work in `PLAN.md`
+section 4 and named in `tasks/02-testing-library-suite.md`, owned by that task's Cleaner.
+
+**Next: the Specifier reconciliation pass over QA procedure D, then QA.**
 

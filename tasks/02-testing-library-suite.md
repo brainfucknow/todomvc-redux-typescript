@@ -11,6 +11,7 @@ Component tests assert on what a user can observe in rendered output, not on unr
 - Rewrite `src/components/*.spec.tsx` against `@testing-library/react` and `@testing-library/user-event`: query by role, label, and text; drive behavior through simulated user interaction; assert on rendered DOM and on the callbacks the component was given.
 - Every behavior currently asserted by a shallow-renderer test keeps an assertion. Where a shallow test asserted an implementation detail with no user-observable counterpart (which child component type an element is, the positional index of a child in `props.children`), replace it with the observable behavior that detail was standing in for, and say so in the handoff note.
 - Remove `react-shallow-renderer`, `src/react-shallow-renderer.d.ts`, and the `@testing-library/dom` / `@testing-library/react` version pins that were installed but unused.
+- Carried from task 01, for the Cleaner: bring the mutation runners' stamp logic under test. `scripts/acceptance-mutation.ts` and the language-mutation runner each compute and compare a hash that decides whether a mutation is re-tested, and no tier judges that logic. Task 01 found the previous stamp did not cover what it claimed to; the replacement is verified by demonstration only. Same treatment as `scripts/crap.mjs`.
 - Container components rendered inside a component under test need a real store or a test wrapper; introduce one render helper rather than repeating provider setup per file.
 
 ## Out of scope
