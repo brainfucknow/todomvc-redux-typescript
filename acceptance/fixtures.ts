@@ -80,21 +80,17 @@ export async function startDevServer(): Promise<string> {
 }
 
 // Vite reads NODE_ENV, not its mode, to decide whether a build is a production
-// one, and Vitest runs this process with NODE_ENV=test - so building in this
-// process bundled React's development entry. The build gets a process of its
-// own, in the environment `npm run build` builds in.
-const bundleForProduction = async (): Promise<void> => {
-  const { code, output } = await runCommand(viteBundler, ['build'], {
-    ...process.env,
-    NODE_ENV: 'production',
-  })
+// one, and Vitest runs this process with NODE_ENV=test - so a build driven from
+// inside this process bundles React's development entry.
+const runProductionBuild = async (): Promise<void> => {
+  const { code, output } = await runCommand(viteBundler, ['build'], { NODE_ENV: 'production' })
   if (code !== 0) {
     throw new Error(`the production build failed (exit ${code}):\n${output}`)
   }
 }
 
 export async function buildForProduction(): Promise<void> {
-  fixtures.build ??= bundleForProduction()
+  fixtures.build ??= runProductionBuild()
   await fixtures.build
 }
 

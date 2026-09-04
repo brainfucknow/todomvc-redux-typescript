@@ -7,7 +7,7 @@ import {
   referencedScripts,
 } from './inspection.ts'
 
-const page = [
+const indexPage = [
   '<!doctype html>',
   '<html><head>',
   '<script type="module" crossorigin src="/assets/index-BPxiUVWS.js"></script>',
@@ -17,7 +17,7 @@ const page = [
 
 describe('referencedAssets', () => {
   it('finds script sources and stylesheet hrefs', () => {
-    expect(referencedAssets(page)).toEqual(['/assets/index-BPxiUVWS.js', '/assets/index-xAQXB6NR.css'])
+    expect(referencedAssets(indexPage)).toEqual(['/assets/index-BPxiUVWS.js', '/assets/index-xAQXB6NR.css'])
   })
 
   it('ignores inline scripts, which have nothing to request', () => {
@@ -39,7 +39,7 @@ describe('referencedAssets', () => {
 
 describe('referencedScripts', () => {
   it('finds the scripts and leaves the stylesheets out', () => {
-    expect(referencedScripts(page)).toEqual(['/assets/index-BPxiUVWS.js'])
+    expect(referencedScripts(indexPage)).toEqual(['/assets/index-BPxiUVWS.js'])
   })
 
   it('ignores an inline script, which is not a served bundle', () => {

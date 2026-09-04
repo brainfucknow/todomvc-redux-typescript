@@ -91,7 +91,8 @@ export const stepHandlers: StepHandler<World>[] = [
   {
     pattern: /^the served JavaScript bundle contains (.+)$/,
     run: async (world, [marker]) => {
-      responseContains(await requestPath(scriptReferencedByResponse(world)), marker)
+      const bundle = await requestPath(scriptReferencedByResponse(world))
+      responseContains(bundle, marker)
     },
   },
   {

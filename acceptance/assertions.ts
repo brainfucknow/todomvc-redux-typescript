@@ -47,13 +47,6 @@ export function assetsReferencedByResponse(world: World): string[] {
   return assets
 }
 
-export function statusIs(world: World, expected: string): void {
-  const { status } = observedResponse(world)
-  if (status !== Number(expected)) {
-    throw new Error(`expected status ${expected} but got ${status}`)
-  }
-}
-
 export function scriptReferencedByResponse(world: World): string {
   const scripts = referencedScripts(observedResponse(world).body)
   if (scripts.length === 0) {
@@ -63,6 +56,13 @@ export function scriptReferencedByResponse(world: World): string {
     throw new Error(`the index page references more than one script: ${scripts.join(', ')}`)
   }
   return scripts[0]
+}
+
+export function statusIs(world: World, expected: string): void {
+  const { status } = observedResponse(world)
+  if (status !== Number(expected)) {
+    throw new Error(`expected status ${expected} but got ${status}`)
+  }
 }
 
 export function responseContains(response: Response, content: string): void {

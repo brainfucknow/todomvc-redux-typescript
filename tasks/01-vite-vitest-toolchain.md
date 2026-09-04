@@ -1636,6 +1636,167 @@ half. D10's point holds too: no `property/` or `hardening/` file is in the unit 
    tiers do read each other's sources through the mutation tier. Recorded in case a later task
    disagrees.
 
+#### Fourth pass: the production-build fix, cleaned
+
+Done. Six files changed, all under `acceptance/`, all touched by the Coder's fourth pass. Nothing
+committed. `features/`, `qa/`, `e2e/`, `src/`, `.mutation/` and every config are untouched, and no
+test count moved.
+
+**What I changed**
+
+`acceptance/commands.ts` - the environment parameter is now overrides, not a whole environment:
+
+- `runCommand(command, args, environmentOverrides = {})` merges what a caller names onto
+  `process.env` itself. The caller was spreading `process.env` and appending one key, so the
+  knowledge that a child process has to inherit the parent environment lived at the call site,
+  where the next caller would have had to rediscover it. Now a caller states only what differs.
+  The two `tsc` calls pass nothing and are unaffected: `env: process.env` became a copy of it.
+- `executable(name)` names the `node_modules/.bin` convention that `typescriptCompiler` and
+  `viteBundler` each spelled out.
+
+`acceptance/fixtures.ts`:
+
+- `bundleForProduction` -> `runProductionBuild`. Two functions a line apart called
+  `bundleForProduction` and `buildForProduction` differ by one synonym and read as the same thing;
+  the names now say what each does - one runs the build, the other ensures it has been run once.
+- The call is one line again now that it names only `NODE_ENV`.
+- The comment keeps the `NODE_ENV`-not-`mode` fact the PM ruling asked to outlive this task, and
+  drops the sentence about the build getting a process of its own, which `runCommand` now says.
+
+`acceptance/steps.ts` - the new handler names what it fetched:
+
+```ts
+const bundle = await requestPath(scriptReferencedByResponse(world))
+responseContains(bundle, marker)
+```
+
+`acceptance/assertions.ts` - `scriptReferencedByResponse` moved up beside
+`assetsReferencedByResponse`. Both answer "what does the observed index page reference"; they were
+separated by `statusIs`. A pure move, no edit to either function.
+
+Test readability:
+
+- `acceptance/assertions.spec.ts`: `responseOf(body)` builds the `Response` the three
+  `responseContains` cases each spelled out as an object literal, and `served` is now built from
+  it; the index page moved into a named `indexPage` so the first assertion is one line instead of a
+  four-line nested literal.
+- `acceptance/inspection.spec.ts`: the module-scope `page` the Coder hoisted is now `indexPage`,
+  matching what it is and what the other spec calls it.
+
+**What I did not change, and why**
+
+- **The command-failure judgment stays duplicated between `compilationSucceeded` and
+  `runProductionBuild`.** Both decide "non-zero exit is a failure; report the code and the output",
+  and lifting the shape into one judgment was the obvious DRY move. It is the wrong one: one is a
+  step assertion the scenario makes about a compiler the scenario ran, the other is a fixture
+  refusing to continue because the world could not be built. Same shape, different knowledge, and
+  merging them would route a setup failure through the assertions module. Recorded so it is not
+  rediscovered as an oversight.
+- **`CommandResult` (`commands.ts`) and `Compilation` (`assertions.ts`) stay as two names for
+  `{ code, output }`,** for the same reason: one is what a runner returns, the other is what the
+  world recorded. `steps.ts` assigning one to the other is structural typing doing its job.
+- **`fixtures.ts` was not split.** It runs the servers, the production build, the client that talks
+  to whichever server is current, and the teardown. The client half is the only candidate, and it
+  reads `currentBaseUrl`, module-private mutable state; splitting it would mean exporting an
+  accessor for that state, which widens shared mutable state rather than reducing it. One job:
+  the world a scenario runs in - start it, address it, talk to it, tear it down.
+- **`startDevServer` and `startPreviewServer` remain near-duplicates.** Pre-existing, deliberately
+  left by the first Cleaner pass, and not touched by the pass I am cleaning after.
+
+**What I verified**
+
+Every number below was read off a command I ran.
+
+| Command | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0, no output |
+| `npm test` | 23 files / 224 tests, 0 failing, 0 skipped |
+| `npx vitest run src` | **10 / 54 - the D2a floor, untouched** |
+| `npx vitest run acceptance` | 5 / 59 |
+| `npx vitest run scripts` | 8 / 111 |
+| `npm run test:property` | 11 / 95 |
+| `npm run test:hardening` | 12 / 128 |
+| `npm run test:acceptance` | 5 features parse, 5 entry points generate, **26 scenario executions pass** |
+| `npm run build` | exit 0, `dist/assets/index-BPxiUVWS.js` 167.06 kB |
+
+- **No count moved.** 23 / 224 with 54 + 59 + 111 = 224 and 10 + 5 + 8 = 23 are exactly the figures
+  the Coder's fourth pass recorded, so QA procedure D needs nothing from me. Procedure D as the tree
+  holds it is still stale by that pass's table (D1 22->23, D2 gains `acceptance/assertions.spec.ts`,
+  D2b 4/49 -> 5/59, D5 24->26); that is the deferred Specifier reconciliation, not mine.
+- **The refactor of the environment plumbing was checked in the failing direction, not just the
+  passing one.** With `{ NODE_ENV: 'production' }` changed by hand to `'test'` and the
+  production-build entry point run alone, exactly `production build 4/example_1` and `example_2` go
+  red on the missing markers, with the file's other five executions passing; restoring it returns
+  the file to 7 passing and the tier to 26. So the override is being applied by the merge, and the
+  scenario still discriminates on the artifact.
+- The artifact the acceptance tier leaves in `dist/` is **md5-identical** to what `npm run build`
+  produces (`e432ae91...` / `1cba6aae...` / `43022ca5...`), 167,067 bytes, `Minified React error`
+  count 1, `src/index.tsx` count 0 in `dist/index.html`. QA C3, C3a and C3b read true.
+- Merged coverage over the two changed core modules is complete: `acceptance/assertions.ts` and
+  `acceptance/inspection.ts` have **zero uncovered statements** across the unit, property and
+  hardening tiers.
+- `git status --short` shows exactly the six `acceptance/` files. `git status --porcelain --ignored`
+  lists `bin/ build/ coverage/ dist/ node_modules/` as `!!` and nothing as `??`, so QA E1 still reads
+  true.
+- I ran no mutation of any kind and no Gherkin mutation, and I did not run the parser or dry checker
+  beyond what `npm run test:acceptance` does - no feature file changed.
+
+**CRAP**
+
+`node scripts/crap.mjs` (fresh coverage, unit + property + hardening merged): 40 files, 222
+functions, **2 over the gate**. Both are pre-existing `src/` application code, unchanged by this
+task, and the changed-file run is clean.
+
+| Function | cc | cov | CRAP | Disposition |
+| --- | --- | --- | --- | --- |
+| `src/middlewares/callapimiddleware.ts:18` | 5 | 0% | 30.0 | Coverage, not complexity. Task 01's Out of scope bars changing the API middleware, and the D2a floor (10 files / 54 cases) bars adding a `src` spec. Measured and left, as in every earlier pass. |
+| `src/reducers/apis.ts:4` `executing` | 13 | 100% | 13.0 | **CRAP exception applied and recorded**, per the shared definitions and the ruling on the CRAP correction: a single `switch` on `action?.type` answering one question. Splitting it would produce helpers taking a discriminant the caller already had. |
+
+- Changed files that the gate measures - `acceptance/assertions.ts`, `acceptance/inspection.ts`:
+  **30 functions, 0 over the gate.** The other four changed files are adapter shells and stay
+  excluded from the coverage include, per the shared definition.
+- The whole `acceptance` package: 56 functions, 0 over the gate, unchanged by this pass.
+
+**Mixed-job hint**
+
+Applied by reading the five changed sources and counting the jobs each does; my brief bars mutation
+runs, so no scan tool was invoked, which is how the earlier Cleaner passes discharged it and what the
+PM accepted. `assertions.ts` decides whether an observation satisfies a step; `inspection.ts` reads
+facts out of project text; `commands.ts` runs a project executable and reports its code and output;
+`steps.ts` is wiring; `fixtures.ts` is the world a scenario runs in, argued above. One job each, so
+nothing was split. The Coder's pass added no job to any of them - `buildForProduction` was already in
+`fixtures.ts`; only its mechanism moved.
+
+**Left for the Architect**
+
+- Nothing is routed. `scripts/architecture/layering.spec.ts` and `packages.spec.ts` still pass:
+  no module was added, removed or renamed, and no import crossed a layer. `commands.ts` and
+  `fixtures.ts` are both shell, so the import between them was already legal and still is.
+
+**Left for the Hardener**
+
+- `.mutation/` is untouched, and the two staleness items the Coder recorded are still exactly as
+  handed over: `.mutation/gherkin/production-build.manifest` keys reuse on an `implementation_hash`
+  that `steps.ts` has moved, and `.mutation/test-tier.json`'s `tier_hash` predates
+  `acceptance/assertions.spec.ts`. My changes move the same two hashes again and add no third.
+- New core surface to mutate is unchanged from the Coder's list - `referencedScripts`,
+  `scriptReferencedByResponse`, `responseContains`. I moved `scriptReferencedByResponse` within its
+  file and edited neither its body nor any message text, so nothing the hardening tier asserts moved;
+  the tier is green untouched at 12 / 128.
+- `runCommand`'s third parameter is now merged rather than substituted. A mutant that empties the
+  override object should be killed by `production build 4`, which is the only caller that passes one.
+
+**Left for the Specifier's reconciliation pass and QA**
+
+- **No count moved in this pass.** The reconciliation still owed is the Coder's fourth-pass table,
+  unchanged: D1 23 files / 224, D2 gains `acceptance/assertions.spec.ts` as a fifth `acceptance/`
+  file, D2b 5 / 59, D2c's sums 54 + 59 + 111 = 224 and 10 + 5 + 8 = 23, D5 26. `e2e/toolchain-commands.spec.ts`
+  carries the same numbers as literals and I did not touch `e2e/`.
+
+**Open questions**
+
+None.
+
 ### Project manager rulings on the Cleaner handoff
 
 Verified independently: `npx tsc --noEmit` exits 0, `npm test` passes 13 files / 99 tests,
@@ -3124,4 +3285,36 @@ Nothing is routed back. Counts moved as expected and are recorded for the reconc
 precedes QA; `.mutation/` is deliberately untouched, so the gherkin manifest's `implementation_hash`
 and `test-tier.json`'s `tier_hash` are stale by construction for the Hardener's re-run, which is the
 correct state to hand over rather than something to fix by hand.
+
+
+### Project manager rulings on the fourth Cleaner pass
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 23 files / 224 tests;
+`npx vitest run src` holds the D2a floor at 10 / 54; `npm run test:acceptance` 26 scenario
+executions; six changed files, all under `acceptance/` and all files the Coder's pass touched;
+`features/`, `qa/`, `e2e/`, `src/`, `.mutation/` and every config untouched. No test count moved,
+so procedure D needs nothing from this pass. Accepted.
+
+The `runCommand` change is the one that matters: its third parameter is now *overrides* merged onto
+`process.env` inside the function rather than a whole replacement environment. The caller previously
+had to know that a child process must inherit the parent environment, which is knowledge a caller
+asking for one variable should not need to carry. That is the right kind of local coupling to remove,
+and checking it in the failing direction - flipping `NODE_ENV` back to `test` and confirming exactly
+the two `production build 4` rows redden and nothing else - proves the merge actually applies the
+override rather than silently keeping the parent value.
+
+Its three refusals are all correct and worth recording, because each is a case where the obvious
+cleanup would have been wrong:
+
+- The `compilationSucceeded` / `runProductionBuild` failure judgments stay duplicated. Same shape,
+  different knowledge: one is a step assertion, the other a fixture refusing to continue. Merging
+  them would couple a spec judgment to a fixture's control flow.
+- `CommandResult` and `Compilation` stay as two names for the same shape, for the same reason.
+- `fixtures.ts` was not split, because the only candidate half reads module-private mutable state, so
+  the split would widen shared mutable state to lower a count. That is precisely what the mixed-job
+  hint forbids: never split a one-job source to lower counts.
+
+CRAP on changed measured files is 0 over the gate across 30 functions. The two whole-project
+offenders are the same pre-existing `src/` functions dispositioned several passes ago, with the
+documented exception applied to `executing` and recorded.
 

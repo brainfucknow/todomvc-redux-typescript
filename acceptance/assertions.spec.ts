@@ -3,17 +3,19 @@
 // The judgments `production build 4` rests on. The rest of this module's
 // judgments are exercised by `hardening/assertions.hardening.ts`.
 import { describe, expect, it } from 'vitest'
-import type { World } from './assertions.ts'
+import type { Response, World } from './assertions.ts'
 import { createWorld, responseContains, scriptReferencedByResponse } from './assertions.ts'
 
-const served = (body: string): World => ({ response: { status: 200, body } })
+const responseOf = (body: string): Response => ({ status: 200, body })
+
+const served = (body: string): World => ({ response: responseOf(body) })
+
+const indexPage = '<script type="module" crossorigin src="/assets/index-BPxiUVWS.js"></script>'
+  + '<link rel="stylesheet" href="/assets/index-xAQXB6NR.css">'
 
 describe('scriptReferencedByResponse', () => {
   it('returns the script the index page references', () => {
-    expect(scriptReferencedByResponse(served(
-      '<script type="module" crossorigin src="/assets/index-BPxiUVWS.js"></script>'
-      + '<link rel="stylesheet" href="/assets/index-xAQXB6NR.css">',
-    ))).toBe('/assets/index-BPxiUVWS.js')
+    expect(scriptReferencedByResponse(served(indexPage))).toBe('/assets/index-BPxiUVWS.js')
   })
 
   it('does not offer a stylesheet as the bundle', () => {
@@ -34,17 +36,17 @@ describe('scriptReferencedByResponse', () => {
 
 describe('responseContains', () => {
   it('accepts a marker anywhere in the body', () => {
-    expect(() => responseContains({ status: 200, body: 'x Minified React error y' }, 'Minified React error'))
+    expect(() => responseContains(responseOf('x Minified React error y'), 'Minified React error'))
       .not.toThrow()
   })
 
   it('rejects a body without the marker, quoting what it looked for', () => {
-    expect(() => responseContains({ status: 200, body: 'Invalid hook call' }, 'Minified React error'))
+    expect(() => responseContains(responseOf('Invalid hook call'), 'Minified React error'))
       .toThrow('response body does not contain "Minified React error"')
   })
 
   it('reports the body it looked in', () => {
-    expect(() => responseContains({ status: 200, body: 'a development bundle' }, 'Minified React error'))
+    expect(() => responseContains(responseOf('a development bundle'), 'Minified React error'))
       .toThrow('a development bundle')
   })
 })
