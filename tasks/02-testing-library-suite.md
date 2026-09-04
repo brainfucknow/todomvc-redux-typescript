@@ -580,3 +580,51 @@ recorded-rise rule the Specifier introduced, these need no procedure edit.
 ### Hardener
 
 ### QA
+
+
+### Project manager finding: `toolchain dependencies 1` has six live mutation survivors
+
+Found during verification of the Cleaner handoff, not reported by any role. The Cleaner's brief bars
+it from running mutation, so it could not have seen this; it is the Specifier's defect and the
+Specifier owns the fix.
+
+`node scripts/acceptance-mutation.ts` **exits 1**. On `toolchain-dependencies`, 12 candidates,
+6 killed, **6 survived**. The pattern is uniform:
+
+```
+killed   $.scenarios[0].examples[0].location: package.json -> packagE.json
+survived $.scenarios[0].examples[0].package:  react-scripts -> react-sCripts
+```
+
+The `<location>` column dies because a mutated location cannot be read. The `<package>` column
+survives because the step asserts an **absence**: "`package.json` contains no reference to
+`react-sCripts`" is true of any string that is not there, so every mutation of that operand keeps the
+assertion true. The scenario cannot fail for the reason the new rows exist.
+
+**This is the rule task 01 already recorded, violated by the change that introduced these rows.**
+`PLAN.md` section 4 carries it, and the task 01 Specifier stated it when it chose to assert the
+presence of production-build markers rather than the absence of development ones: an absence cannot
+be mutation tested, because a dithered copy of a missing string is still missing, so such rows
+survive by arithmetic. Parameterising the package name converted a safe inlined literal into exactly
+that shape.
+
+**The chain resumes from the Specifier.** Directions, without settling the design, which is the
+Specifier's:
+
+- The goal - having the acceptance tier judge done criterion 1 - is right, and should be kept. What
+  cannot stand is a mutable example cell whose mutation leaves the assertion true.
+- Two shapes are available. Inline the package names back into the step text so no mutable cell
+  exists, keeping `<location>` parameterised because mutating it does break the check. Or assert
+  something positive that implies the absence, so a mutated cell breaks it - for instance that the
+  declared dependency set equals an expected set, where changing any name makes the comparison fail.
+  There may be others; choose on merit and record why.
+- No skip list. That was refused in task 01 and is refused here for the same reason: a survivor is a
+  finding, not something to filter.
+
+Every downstream role runs again as a fresh agent: Specifier, then Coder, Cleaner, Architect,
+Hardener, QA. The Hardener re-run is what proves the replacement rows die.
+
+**Standing guidance strengthened.** `PLAN.md` section 4 now also says that a Gherkin step asserting
+an absence must not take its operand from an example column, since the whole column is unkillable by
+construction.
+
