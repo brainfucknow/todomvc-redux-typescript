@@ -1,4 +1,5 @@
 import type { ViteUserConfig } from 'vitest/config'
+import { modulesIn } from './scripts/architecture/packages.ts'
 
 type CoverageOptions = NonNullable<NonNullable<ViteUserConfig['test']>['coverage']>
 
@@ -17,22 +18,21 @@ export const measuredCoverage: CoverageOptions = {
   include: ['src/**/*.{ts,tsx}', 'acceptance/**/*.ts', 'scripts/**/*.ts'],
   // Adapter shells: browser mount, filesystem, servers and child processes,
   // and the CLI wrappers around them. Their logic lives in the modules they
-  // call; what is left is translation no tier can observe as a decision. A new
-  // module lands inside the gate unless it is declared a shell here.
+  // call; what is left is translation no tier can observe as a decision.
+  //
+  // Inside a declared package a module is a shell because its layer map says
+  // so, and `scripts/architecture/packages.spec.ts` makes every module in the
+  // package pick a side, so a new one cannot land here by being forgotten.
+  // Listed below are only the shells that belong to no package: the browser
+  // entry point, the test setup, and the CLI wrappers under `scripts/`.
   exclude: [
     '**/*.spec.{ts,tsx}',
     '**/*.d.ts',
     'src/index.tsx',
     'src/setupTests.ts',
-    'acceptance/commands.ts',
-    'acceptance/fixtures.ts',
-    'acceptance/generate-entrypoints.ts',
-    'acceptance/mutation-worker.ts',
-    'acceptance/pipeline.ts',
-    'acceptance/project-files.ts',
-    'acceptance/steps.ts',
     'scripts/acceptance.ts',
     'scripts/acceptance-mutation.ts',
     'scripts/mutation.ts',
+    ...modulesIn('shell'),
   ],
 }

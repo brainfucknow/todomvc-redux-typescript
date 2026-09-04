@@ -1,3 +1,6 @@
+// Whether an import graph obeys a package's layer map. Data in, faults out:
+// which module sits on which side of the boundary is the caller's to declare,
+// and reading the graph off the tree is the caller's to do.
 export type Layer = 'core' | 'shell'
 
 export type ModuleImports = {
@@ -8,30 +11,6 @@ export type ModuleImports = {
 export type LayerRules = {
   layers: Record<string, Layer>
   pureExternals: string[]
-}
-
-// Core modules answer questions; shell modules reach the filesystem, the
-// network, child processes or the test runner. Dependencies run shell -> core,
-// so a core module may import only other core modules and dependencies that
-// compute rather than perform.
-export const acceptanceRules: LayerRules = {
-  layers: {
-    'assertions.ts': 'core',
-    'generator.ts': 'core',
-    'inspection.ts': 'core',
-    'layering.ts': 'core',
-    'layout.ts': 'core',
-    'mutation-jobs.ts': 'core',
-    'runtime.ts': 'core',
-    'commands.ts': 'shell',
-    'fixtures.ts': 'shell',
-    'generate-entrypoints.ts': 'shell',
-    'mutation-worker.ts': 'shell',
-    'pipeline.ts': 'shell',
-    'project-files.ts': 'shell',
-    'steps.ts': 'shell',
-  },
-  pureExternals: ['node:crypto', 'node:path'],
 }
 
 const packageMember = (specifier: string): string | undefined =>

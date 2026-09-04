@@ -1,28 +1,10 @@
 // @vitest-environment node
 //
-// The project's boundary rules run in the unit tier, and this package is the
-// only non-application code the unit tier collects, so they live here.
-import { readdirSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import ts from 'typescript'
+// The engine, on graphs written by hand. `packages.spec.ts` runs it over the
+// real tree.
 import { describe, expect, it } from 'vitest'
 import type { LayerRules, ModuleImports } from './layering.ts'
-import { acceptanceRules, importCycles, layerViolations } from './layering.ts'
-
-const acceptanceDir = dirname(fileURLToPath(import.meta.url))
-const srcDir = resolve(acceptanceDir, '..', 'src')
-
-const isSource = (file: string): boolean =>
-  /\.tsx?$/.test(file) && !/\.spec\.tsx?$/.test(file) && !file.endsWith('.d.ts')
-
-const importsOf = (file: string): string[] =>
-  ts.preProcessFile(readFileSync(file, 'utf8'), true, true).importedFiles.map((found) => found.fileName)
-
-const packageModules = (directory: string): ModuleImports[] =>
-  readdirSync(directory)
-    .filter(isSource)
-    .map((module) => ({ module, imports: importsOf(join(directory, module)) }))
+import { importCycles, layerViolations } from './layering.ts'
 
 const rules: LayerRules = { layers: { 'a.ts': 'core', 'b.ts': 'shell' }, pureExternals: ['node:path'] }
 
@@ -101,32 +83,5 @@ describe('importCycles', () => {
 
   it('ignores dependencies outside the package', () => {
     expect(importCycles([{ module: 'a.ts', imports: ['node:path', '../elsewhere.ts'] }])).toEqual([])
-  })
-})
-
-describe('the acceptance package', () => {
-  const modules = packageModules(acceptanceDir)
-
-  it('keeps every module on the side of the boundary the rules declare', () => {
-    expect(layerViolations(modules, acceptanceRules)).toEqual([])
-  })
-
-  it('has no import cycles', () => {
-    expect(importCycles(modules)).toEqual([])
-  })
-})
-
-describe('the application sources', () => {
-  const files = readdirSync(srcDir, { recursive: true, encoding: 'utf8' }).filter(isSource)
-
-  it('depend on nothing outside src', () => {
-    const escapes = files.flatMap((file) => {
-      const from = join(srcDir, file)
-      return importsOf(from)
-        .filter((specifier) => specifier.startsWith('.'))
-        .filter((specifier) => relative(srcDir, resolve(dirname(from), specifier)).startsWith('..'))
-        .map((specifier) => `src/${file} imports ${specifier}`)
-    })
-    expect(escapes).toEqual([])
   })
 })

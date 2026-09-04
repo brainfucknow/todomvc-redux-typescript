@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { importCycles } from '../acceptance/layering.ts'
+import { importCycles } from '../scripts/architecture/layering.ts'
 
 describe('reporting an import cycle', () => {
   test('names only the modules the cycle runs through, not the way in', () => {

@@ -50,6 +50,7 @@ Every role in every task works to these. They are project-manager decisions, not
 - **Scenario-name comments.** A comment line carrying the scenario name goes immediately before each `Scenario:`.
 - **Test tiers, separate commands.** `npm test` runs unit tests only. `npm run test:acceptance` runs parse -> generate -> execute. `npm run test:property` runs property tests. `npm run test:mutation` runs language mutation. `npm run test:e2e` runs the QA-owned E2E tests. Generated acceptance tests never live beside unit tests.
 - **Tooling picks, to be introduced by whichever role first needs them.** Language mutation: Stryker (`@stryker-mutator/core` with its Vitest runner). Property tests: `fast-check`. E2E: `@playwright/test`, using the preinstalled Chromium at `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH` is already set; never run `playwright install`). CRAP has no off-the-shelf JS tool: a small `scripts/crap.mjs` computing cyclomatic complexity against Vitest coverage is expected, first written by the task 01 cleaner and reused thereafter.
+- **Project self-checks live under `scripts/`,** as tested packages (`scripts/crap/`, `scripts/architecture/`), alongside the CLI shells that invoke them. `scripts/` means the project's own tooling; a checker is tooling, not application code.
 - **CRAP gate is <= 10** on changed files, per the shared definitions handed to each role.
 - **Mutation manifests** live under `.mutation/` and are committed. Never hand-edit them; preserve them across file splits.
 - **Node 22.x**, matching CI.

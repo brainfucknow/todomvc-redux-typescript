@@ -29,12 +29,16 @@ Run `npm run build` first.
 
 ### `npm test`
 
-Runs the unit tests once with Vitest in a jsdom environment.
+Runs the unit tests once with Vitest in a jsdom environment. The project's
+boundary rules run here too: `scripts/architecture/` declares which modules of
+each package are core and which are shells, and fails the run on a dependency
+that points the wrong way.
 
 ### `npm run test:property`
 
 Runs the property tests in `property/` with [fast-check](https://fast-check.dev),
-against the pure parts of the application and the acceptance pipeline.
+against the pure parts of the application, the acceptance pipeline, the CRAP
+gate and the boundary rules.
 
 ### `npm run test:acceptance`
 
@@ -50,7 +54,7 @@ found nothing else was pinning.
 
 ### `npm run test:mutation`
 
-Runs language mutation over the acceptance package's testable core with
+Runs language mutation over the testable core the packages declare, with
 [Stryker](https://stryker-mutator.io), judged by the unit, property and
 hardening tests together. Results are reused from the manifest in `.mutation/`
 when neither the mutated source nor the tests have moved.
@@ -80,6 +84,7 @@ which the unit tier covers like any other module.
 | --- | --- |
 | `features/` | Gherkin feature files (the [APS](https://github.com/unclebob/Acceptance-Pipeline-Specification) subset) |
 | `acceptance/` | Entrypoint generator, runtime, step handlers, fixtures |
+| `scripts/architecture/` | Which modules of each package are core and which are shells, and the check over them |
 | `build/acceptance/` | Parser IR and generated entry points (gitignored) |
 | `build/acceptance-mutation/` | Staged features, IR and entry points for a mutation run (gitignored) |
 | `hardening/` | Tests written against surviving mutants |

@@ -1444,6 +1444,223 @@ against, so I left the tool alone and recorded the measurement. See open questio
    deletes that directory. If task 01's Architect was meant to take it, say so and it is a
    type-only move with no behavior change.
 
+#### Second pass: `scripts/crap/` brought under the boundary rule, and the rule given a home
+
+Done. The boundary check governs three packages instead of one, the core/shell decision has a
+single owner, and the property tier reaches the gate's own core. `src/`, `features/` and `qa/`
+untouched; nothing committed; no npm script and no dependency added.
+
+**The routed item, and why it moved a file to close it**
+
+`scripts/crap/` had a core/shell split nobody could break loudly: a `node:fs` import into
+`score.ts` passed every check in the tree. The machinery to catch it was `acceptance/layering.ts`,
+which already takes a rules map per package. But that module is not an acceptance-pipeline part -
+`PLAN.md` section 4 says `acceptance/` holds "entrypoint generator, runtime, step handlers, runner
+adapter", and `layering.spec.ts`'s own header admitted it was parked there for want of a home
+("this package is the only non-application code the unit tier collects, so they live here"), which
+stopped being true the moment `scripts/crap/` existed. Leaving it would have made the APS package
+either declare the CRAP gate's internals or be imported by the CRAP gate's tests, and the Cleaner
+routed me the second of those specifically to avoid.
+
+So the checker is its own package now, governing from outside every package it governs:
+
+| Module | Its one job |
+| --- | --- |
+| `scripts/architecture/layering.ts` | whether an import graph obeys a layer map (moved, engine unchanged) |
+| `scripts/architecture/packages.ts` | which directories are packages, and each one's layer map |
+| `scripts/architecture/layering.spec.ts` | the engine, on graphs written by hand (moved) |
+| `scripts/architecture/packages.spec.ts` | the engine over the real tree, per declared package |
+
+`scripts/architecture/` rather than a new top-level directory, because `scripts/**/*.spec.ts` is
+already in the unit tier's `include`, `scripts/**/*.ts` is already in the coverage `include`, and
+`scripts` is already a QA attribution bucket. The move therefore needed no config glob and adds no
+fourth `npx vitest run <dir>` command. See open question 1.
+
+**What each package now declares, and what the check refuses**
+
+- `acceptance` - the same map as before, minus `layering.ts`, which is no longer in the package.
+- `scripts/crap` - all six modules core; `node:path` and `typescript` are the pure dependencies.
+  `typescript` is pure as these modules use it: text in, AST out, never `ts.sys`. The package's
+  only shell is `scripts/crap.mjs`, which sits outside the directory.
+- `scripts/architecture` - both modules core, no pure externals at all. The checker is held to the
+  rule it enforces; reading the tree is the spec's job.
+
+The rules were already satisfied - nothing had to move to make them pass, which is what
+"behaviour-preserving" means here. Verified each refusal bites by breaking it and putting it back:
+
+| Break | What fails |
+| --- | --- |
+| `import { readFileSync } from 'node:fs'` in `scripts/crap/score.ts` | `core module score.ts imports node:fs, which is not a pure dependency` |
+| a new `scripts/crap/stray.ts` | `stray.ts is not declared in the layer map` |
+| `scripts/crap/tiers.ts` importing `../../acceptance/project-files.ts` | `tiers.ts imports ../../acceptance/project-files.ts, which leaves the package` |
+| a core module added to the coverage `exclude` by hand | `leaves no core module out of the report` |
+
+**One owner for the core/shell decision, which was written down three times**
+
+`acceptanceRules.layers`, `vitest.coverage.ts`'s `exclude` and `stryker.config.json`'s `mutate`
+each restated which modules are shells and which are core. They agreed, and nothing made them.
+
+`vitest.coverage.ts` now spreads `modulesIn('shell')` into its exclude and lists only the shells
+that belong to no package (the browser entry point, the test setup, the three CLI wrappers under
+`scripts/`). A module inside a package is declared a shell once, in its layer map, and both the
+boundary check and the CRAP gate follow - and `packages.spec.ts` makes every module in a declared
+directory pick a side, so a new one cannot land in the gate by being forgotten.
+
+The third copy, Stryker's `mutate`, is JSON and cannot import the list, and it is the Hardener's
+file. I repointed the entry I moved and left the rest alone; see the routing below. What I did add
+is the assertion the derivation cannot make for itself: **no core module is excluded from the
+gate**. The shell direction is now true by construction, so the direction worth checking is a core
+module someone excludes by hand, which would be a module nothing scores.
+
+**Property tests: the gate's own core had none**
+
+`npm run test:property` goes from 6 files / 60 properties to **11 / 95**. The five new files cover
+the two packages that no property tier reached, which is where the coverage assessment pointed -
+`scripts/crap/*` had 100% statement coverage from examples only, and it is the instrument every
+later task is measured by.
+
+- `property/layering.property.ts` (10) - a graph in which every import runs shell -> core has no
+  faults; a core module importing a shell, or an impure dependency, is always reported; a shell may
+  import anything that is not a member; a relative import that climbs out is reported from either
+  layer; map and package must agree in both directions. Cycles: a ring of *n* modules is reported
+  once and names all *n*; a forward-only graph reports nothing; a specifier that is not a member
+  never closes a cycle.
+- `property/complexity.property.ts` (5) - one per decision form, over all fifteen: the module scope
+  is one plus the decisions outside any function; a function is one plus the decisions it holds; a
+  callback is charged its own, so the function it is passed to keeps none; nothing scores below
+  one; a function is reported at the line it starts on.
+- `property/coverage.property.ts` (5) - conservation (merged hits are the sum, whatever id each
+  tier gave the statement), reached-anywhere is reached, order independence, a single report comes
+  back unchanged one statement per location, and the file list is the union.
+- `property/score.property.ts` (6) - the formula itself; fully covered scores exactly `cc` and
+  untouched exactly `cc^2 + cc`; covering one more statement never scores worse; a function holding
+  no measured statement is covered; a statement is charged to the innermost function containing it.
+- `property/options.property.ts` (9) - flags read the same wherever they appear among the paths,
+  `--max` likewise; a non-number and an unknown option are refused by name; trailing slashes do not
+  change a path; `isGated` gates everything when nothing was named, gates a directory and what is
+  under it, and does not gate a sibling that merely shares a prefix.
+
+**That they bite, checked by hand rather than argued.** Each of these turns its file red and goes
+back green when restored: `(1 - coverage) ** 3` -> `** 2`; dropping the `+ merged.get(key).hits`
+from the merge; `/\/+$/` -> `/\/$/` in the path trim; dropping `QuestionQuestionToken` from the
+short-circuit set; dropping the `rules.layers[module] === 'core'` guard from `memberFault`.
+
+**One property was flaky when written, and it was my test.** `charges a callback its own decisions`
+generated the function name `do`, which is not an identifier, so the source did not parse and the
+function was not found. The generator now emits a trailing digit. Ran the tier **20 times** after
+the fix with no failure.
+
+**What I verified**
+
+- `npx tsc --noEmit` exits 0 with no output.
+- `npm test` **22 files / 214 tests**, 0 failing, 0 skipped. `npx vitest run src` **10 files / 54
+  tests - the D2a floor, intact**. `npx vitest run acceptance` 4 / 49. `npx vitest run scripts`
+  8 / 111. 54 + 49 + 111 = 214, so D1 is still exhaustively split across the three buckets.
+- `npm run test:property` 11 / 95. `npm run test:hardening` 7 / 92, unchanged.
+- `npm run test:acceptance`: 5 features parse, 5 entry points generate, **24 scenario executions
+  pass**. The generated entry points and metadata are **byte-identical** to what was in the tree
+  before I started (`diff -r` against a copy), implementation hashes included.
+- `npm run build` exits 0 and emits `index-BPxiUVWS.js` and `index-xAQXB6NR.css` - the same content
+  hashes every role since the first Cleaner pass has recorded. Config now imports a package module,
+  so this was worth checking rather than assuming.
+- **CRAP.** `node scripts/crap.mjs scripts` (what this pass changed): 8 files, 72 functions, **0
+  over the gate**, every function at 100% statement coverage. `node scripts/crap.mjs acceptance`:
+  6 files, 52 functions, 0 over. `node scripts/crap.mjs` whole project: 40 files, 218 functions,
+  **2 over the gate**, the same two as every pass since the Cleaner's merge - `src/reducers/apis.ts`
+  `executing` at 13.0 and `src/middlewares/callapimiddleware.ts` at 30.0. Both are pre-existing
+  `src/` code this task's Out of scope bars me from. **I am applying the CRAP exception to
+  `executing` and recording that I did**: one flat `switch` answering one question, at 100%
+  coverage, so its 13.0 is cc alone. The other is IO at 0% coverage.
+- `git status --short src features qa` is empty. `git status --porcelain --ignored` shows `bin/`,
+  `build/`, `coverage/`, `dist/`, `node_modules/` ignored and nothing untracked-but-unignored
+  except the sources I added. `.mutation/` is unmodified: I ran no mutation tooling of any kind.
+- No dependency added, so no lockfile change and no `npm ci` needed.
+
+**Test counts moved. The Specifier pass scheduled before QA reconciles them.**
+
+| Step | As the Cleaner's third pass left it | Now |
+| --- | --- | --- |
+| D1 `npm test` | 21 files / 209 | **22 files / 214** |
+| D2 file list | 10 `src` + 5 `acceptance` + 6 `scripts/crap` | 10 `src` + **4** `acceptance` + **8** `scripts` |
+| D2a `npx vitest run src` | 10 / 54 | **10 / 54, the floor, intact** |
+| D2b `npx vitest run acceptance` | 5 / 65 | **4 / 49** |
+| D2c `npx vitest run scripts` | 6 / 90 | **8 / 111** |
+| D8 `npm run test:property` | 6 / 60 | **11 / 95** |
+| D5, D9, D10 | 24, 7 / 92, tiers separate | unchanged |
+
+**D2b drops by 16 and that is a move, not a loss.** `acceptance/layering.spec.ts` (16 cases) is now
+`scripts/architecture/layering.spec.ts` (13) plus `scripts/architecture/packages.spec.ts` (8); the
+`scripts` half gains those 21 and nothing was deleted. D2's list needs both moves and the two new
+file names. D10's point still holds: no `property/` or `hardening/` file is in the unit run.
+
+**Left for the Hardener**
+
+- **Read this before running mutation.** `stryker.config.json` now names
+  `scripts/architecture/layering.ts` and `scripts/architecture/packages.ts` in `mutate`, where
+  `acceptance/layering.ts` used to be, but `vitest.mutation.config.ts`'s `mutationTierTests` still
+  lists only `acceptance` / `hardening` / `property`. Their unit specs are in `scripts/`, so until
+  you add the `{ directory: 'scripts', suffix: '.spec.ts' }` entry the PM already routed to you,
+  those two files' mutants are judged by the hardening and property tiers only - `importCycles` is
+  covered by both, `layerViolations` and `modulesIn` by the property tier and the unit spec. Add
+  the entry in the same pass as `scripts/crap/*.ts`, and it is one full run for both.
+- The manifest: the moved file changes path, so its recorded results are orphaned and it re-runs.
+  I hand-edited nothing under `.mutation/` and ran no mutation. The two
+  `// Stryker disable next-line` waivers in `importCycles` moved with the file, text unchanged.
+- If you want the core list to have one owner the way the shell list now does,
+  `scripts/mutation.ts` already spawns Stryker and could pass `--mutate` from
+  `modulesIn('core')`, which would delete the `mutate` array from the JSON. I did not do it: it is
+  your file, and it changes which files are mutated in the same pass that you are widening them.
+
+**Left for the Specifier pass before QA**
+
+- The counts table above, and D2's file list. Nothing else in `qa/` is affected: no script was
+  added or renamed, no command changed, `node scripts/crap.mjs` is still the file E4 looks for,
+  and `README.md` still documents exactly the eight scripts `package.json` declares (E3 holds -
+  I edited prose inside existing sections and added no `###` heading).
+
+**Left for QA**
+
+- Nothing new. The boundary rules run inside `npm test`, so procedure D covers them already.
+
+**Findings I did not fix, and who owns them**
+
+1. **`src/selectors/index.ts` and `src/middlewares/callapimiddleware.ts` import `RootState` from
+   `src/containers/index.ts`** - domain policy and an IO adapter depending on the UI barrel. Still
+   true, still `tasks/04-hooks-replace-connect.md`'s, per the PM's ruling on the first Architect
+   pass. The boundary check covers `src` only with "imports nothing outside `src`", which passes;
+   when task 04 lands, `src` becomes a fourth entry in `PACKAGES` with a real layer map.
+2. **The UI re-walks facts the domain already knows.** `components/MainSection.tsx` still derives
+   `activeCount = todosCount - completedCount` and "all complete" as `completedCount === todosCount`
+   from two counts the container passes, while `reducers/todos.ts` answers the same "are they all
+   marked?" question itself for `COMPLETE_ALL_TODOS`, and no selector owns either observable. Task
+   04, unchanged from the first pass.
+3. **`projectRoot` is derived identically in `acceptance/project-files.ts` and `scripts/crap.mjs`,
+   and I am deliberately not collapsing it** - this is the question the Cleaner routed to me. Two
+   packages that must not depend on each other each deriving their own root from their own module
+   URL is correct; sharing the constant would make the CRAP gate import the APS package for a
+   path. That is now enforced rather than merely intended: the check refuses it, as the third row
+   of the table above shows.
+4. `resolveArgument`, `matchStep`, `metadataFileName`, `relativeImportPath` and friends are still
+   exported and still used in production only by a sibling in their own file. I re-checked the
+   whole export surface of all three packages for policy that only tests reach; there is none that
+   an adapter reimplements. The first pass's disposition stands.
+
+**Open questions**
+
+1. **Is `scripts/architecture/` the right home?** `PLAN.md` section 4 fixes `features/`,
+   `acceptance/`, `build/acceptance*/`, `qa/` and `.mutation/`, and names `scripts/crap.mjs`, but
+   says nothing about where project self-checks live. I chose a package under `scripts/` because it
+   needed no config glob and no fourth QA attribution bucket, and because `scripts/crap/` set the
+   precedent for a tested core under `scripts/`. A top-level `architecture/` would read better and
+   costs a line in `vite.config.ts`, one in `vitest.coverage.ts`, one in `tsconfig.json` and a new
+   `D2d` step. Say the word and it is a rename.
+2. **`vitest.coverage.ts` now imports `scripts/architecture/packages.ts`,** so a root config
+   depends on a package module. I judged that the right direction - a config is a shell, and it is
+   asking policy what the shells are rather than restating them - and the production build is
+   unaffected (same content hashes). Recorded in case the project would rather keep root configs
+   free of project imports, in which case the alternative is the assertion I deleted as
+   tautological: keep the two lists apart and have a spec require they agree.
+
 ### Project manager rulings on the Architect handoff
 
 Verified independently: `npx tsc --noEmit` exits 0; `npm test` 15 files / 119 tests;
@@ -1953,4 +2170,42 @@ right that it is the one thing that fails QA as written, and that pass is what f
 The Cleaner's two routed items stand: the Architect covers `scripts/crap/`'s unenforced core/shell
 split with the machinery `acceptance/layering.ts` already has, and the Hardener adds
 `scripts/crap/*.ts` to Stryker's `mutate` and a `scripts` entry to `mutationTierTests`.
+
+
+### Project manager rulings on the second Architect pass
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 22 files / 214 tests, split
+54 src + 49 acceptance + 111 scripts, which is exhaustive; `npx vitest run src` holds the D2a floor
+at 10 / 54; property 95; hardening 92; `npm run test:acceptance` 24 scenario executions;
+`src/`, `features/`, `qa/` and `.mutation/` untouched. Accepted.
+
+Moving the layering checker out of `acceptance/` is accepted, and it improves conformance with the
+plan rather than bending it: `PLAN.md` section 4 says `acceptance/` holds project-written *pipeline*
+parts, and a checker that governs the whole tree was never one. Having it govern from outside
+everything it governs, including itself, is the right shape. Collapsing the core/shell decision to a
+single owner is the same correction the Cleaner made to `TIERS`, applied one level up.
+
+The two open questions are settled as follows.
+
+1. **`scripts/architecture/` is the right home. Keep it.** In this repository `scripts/` already
+   means the project's own tooling: the CRAP gate, the acceptance runner, the mutation runner. A
+   self-check is tooling, and `scripts/crap/` set the precedent for a tested core living there. A
+   top-level `architecture/` would read as application architecture rather than as a checker, and it
+   would cost a config glob in three files plus a fourth QA attribution bucket in a procedure that has
+   already absorbed more count churn than anything else in this task. Promoted to a shared convention
+   in `PLAN.md` section 4 so no later task relitigates it.
+
+2. **`vitest.coverage.ts` importing `scripts/architecture/packages.ts` is correct. Keep it.** The
+   Architect's reading is right: a config is a shell, and a shell asking policy what the shells are
+   is the dependency pointing inward. The alternative it names, two lists plus a spec requiring they
+   agree, is precisely the duplication this task has spent three passes removing, and the `TIERS`
+   defect showed what a restated derived fact costs when nothing reads the restatement.
+
+Findings 1 to 5 in the Architect's note are already dispositioned: 1 and 2 to task 04, 3 to task 04
+by the earlier ruling that amended its scope, 4 accepted as a known limitation, 5 judged correctly
+as runtime contract rather than accidental API. Nothing new is needed.
+
+Test counts moved again, as expected, and stay deferred to the single Specifier pass scheduled
+between the Hardener and QA. The Architect recorded them in a table for that pass, which is what the
+ruling asks for.
 
