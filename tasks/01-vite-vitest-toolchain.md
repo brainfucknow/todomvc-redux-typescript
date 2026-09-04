@@ -600,6 +600,108 @@ there.
 None. Ruling 1 is discharged, and both my earlier open questions are closed: ruling 1
 settled the TypeScript major, ruling 2 settled the QA spec inventory.
 
+#### Third pass: `api proxy 1`'s new columns, checked rather than taken on trust
+
+Done. **No file changed.** The step handlers already carry the Specifier's split, and I confirmed
+that by running the pipeline rather than by reading the previous note. Nothing committed;
+`git status --short` is empty.
+
+**Why no handler change is needed**
+
+The mechanism, traced from the parser output rather than from the claim:
+
+- `build/acceptance/ir/api-proxy.json` carries `parameters: ["path", "stub_body"]` on the Given
+  and `["expected_body"]` on the Then, and each example row carries all three cells.
+- `steps.ts` matches the **raw** step text: `replies to (\S+) with (.+)$` captures the literal
+  `<stub_body>`, `body equals (.+)$` captures the literal `<expected_body>`. Neither pattern
+  names a column, so renaming one cannot reach the handler table.
+- `runExecution` maps `resolveArgument` over every capture of every step against that step's own
+  example row. `resolveArgument` matches `^<([A-Za-z0-9_]+)>$`, which `stub_body` and
+  `expected_body` satisfy, looks the name up once, and returns the value without rescanning it.
+
+So the two sides meet only through a real HTTP round trip: `backendRepliesTo` puts the resolved
+`stub_body` in the stub's route map, and `bodyEquals` compares the body the dev server's proxy
+actually returned against the separately resolved `expected_body`. Nothing in the handlers ties
+them together, which is what the split needs in order to bite.
+
+**That the split bites, checked in both directions, without writing to `features/`**
+
+I staged a dithered copy of the feature in the scratchpad, parsed *that* into
+`build/acceptance/ir/api-proxy.json`, regenerated the entry point and ran it. `features/` was
+never written to; `git status --short` was empty before and after.
+
+| Dither | Result |
+| --- | --- |
+| `stub_body` row 1, `{"id":1,` -> `{"id":1, ` | `api proxy 1/example_1` red, `example_2` green. Message: expected the row's `expected_body`, got the dithered stub. |
+| `expected_body` row 2, `true` -> `tru` | `api proxy 1/example_2` red, `example_1` green. |
+
+Each side fails alone, and each failure names the other column's value, so the assertion is
+genuinely about pass-through and no longer about a cell against itself.
+
+**The scenario is still wired to the proxy, not just to the stub.** Deleting `server.proxy` from
+`vite.config.ts` turns both rows red (`Tests 2 failed | 22 passed`); restoring it returns the tier
+to 24 passing. Both dither runs and this one were restored by re-running the tier, and the whole
+tree is back to what the Specifier left.
+
+**What I verified**
+
+Every tier run directly, and every count matches procedure D as the Specifier reconciled it:
+
+| Command | Result | Procedure D |
+| --- | --- | --- |
+| `npm run test:acceptance` | 5 features parse, 5 entry points generate, **24 scenario executions pass** | D3, D5 |
+| `npm test` | 15 files / 119 tests, 0 failing, 0 skipped | D1 |
+| `npx vitest run src` | **10 files / 54 tests** - the D2a floor, intact | D2a |
+| `npx vitest run acceptance` | 5 files / 65 tests | D2b |
+| `npm run test:property` | 6 files / 60 | D8 |
+| `npm run test:hardening` | 7 files / 92 | D9 |
+| `npx tsc --noEmit` | exit 0, no output; `--version` 5.9.3 | D6, D7 |
+| `npm run build` | exit 0, `index-BPxiUVWS.js` + `index-xAQXB6NR.css` - the same content hashes every role since the Cleaner has recorded; `grep -c 'src/index.tsx' dist/index.html` is 0 | C1-C3 |
+
+Also: `react-scripts` count 0 in `package.json`, `package-lock.json` and `src`, and `npm ls
+react-scripts` reports an empty tree (A3-A5). `git status --porcelain --ignored` shows `bin/`,
+`build/`, `coverage/`, `dist/` and `node_modules/` ignored and nothing untracked-but-unignored (E1).
+`package.json` declares exactly the eight scripts `toolchain dependencies 2` lists, and
+`README.md`'s `Available Scripts` documents those eight and no others (E3).
+
+I ran the property tier only to reconcile its count against D8; my brief otherwise leaves it alone.
+No mutation, CRAP or DRY tooling ran, and I applied no Gherkin mutation - the dither above is two
+hand edits to a scratchpad copy, and the Hardener re-run is what records the mutants as killed.
+
+**No new unit test, and why that is not a gap**
+
+I added no test because I added no code. The behaviour the split depends on is already pinned by
+the tiers: `resolveArgument` reading a value by name, passing a literal through, failing on a
+missing name, and *not* rescanning a value that looks like a placeholder are all in
+`acceptance/runtime.spec.ts` and again as properties in `property/runtime.property.ts`, and
+`hardening/runtime.hardening.ts` pins the near-miss forms (`<path>/1`, `api<path>`,
+`<path><path>`). A plausible wrong implementation - resolve the first capture and pass the rest
+raw - dies on the dither above and on the acceptance tier; the Hardener's run already reports 0
+survivors in `runtime.ts`, so no mutant of that mapping is alive either.
+
+**Left for the next role**
+
+- Cleaner, Architect, Hardener: I changed nothing, so nothing new is routed to you. Everything
+  earlier roles left standing still stands - the Vitest isolation hint, the third-party
+  lightningcss warning from `todomvc-app-css`, CI wiring for the five test commands (task 06), the
+  `console.log` in `src/reducers/apis.ts` (task 06 by PM ruling), and `scripts/crap.mjs` having no
+  tier over it (PM ruling 3 on the Hardener handoff assigns that to the Cleaner in this chain).
+- Hardener: the two `api proxy 1` survivors are the point of this chain. `api-proxy.feature` now
+  presents 6 candidate mutations, not 4.
+- QA: nothing in `qa/` moved for me, and D1-D10 all read true against the tree today.
+
+**Open questions**
+
+1. **QA adding `test:e2e` will break QA step E3 as written.** PM ruling 2 on the second Specifier
+   pass authorises QA to add `@playwright/test` and a `test:e2e` script, but E3 says `README.md`'s
+   `Available Scripts` documents "exactly the eight scripts `package.json` declares, and no
+   others", and names the eight. A ninth script fails E3 whether or not the README documents it,
+   because the number is written into the step. `toolchain dependencies 2` is unaffected - it only
+   asserts that the scripts it lists exist. This is not mine to fix: the script is QA's to add and
+   E3 is the Specifier's to edit. Flagging it so it is decided before QA runs rather than
+   discovered as a false failure, which is the same trap the PM recorded for E3's previous count.
+
+
 ### Project manager rulings on the Coder handoff
 
 Verified independently before ruling: `npx tsc --noEmit` exits 0, `npm test` passes 13 files
@@ -1500,3 +1602,35 @@ are dead.
 
 
 ### QA
+
+
+### Project manager rulings on the second Coder pass
+
+Accepted, and accepted as a no-change pass. The Coder confirmed the Specifier's conclusion from the
+mechanism rather than from the earlier note: it read the parsed IR, the handler patterns and
+`runExecution`'s capture resolution, then proved the split bites in both directions by staging a
+dithered copy outside `features/`, and separately proved the scenario is still wired to the proxy by
+deleting `server.proxy` and watching both rows go red. That is what running a role with nothing to do
+is supposed to look like. Adding no unit test for code it did not write is correct.
+
+The Coder's open question is a real deadlock and is settled here.
+
+**QA step E3 is too brittle to survive its own authorized change, and the Specifier fixes it.**
+E3 requires the README to document "exactly the eight scripts `package.json` declares, and no
+others", naming all eight. The `test:e2e` script that ruling 2 authorizes QA to add would fail E3
+whatever the README says, and the Coder was right to flag it rather than edit either side.
+
+This is not a one-off. `tasks/06-lint-typecheck-ci.md` adds `lint` and `typecheck`, so a frozen
+literal list would fail again there. E3 is to be re-expressed as a set equality evaluated against the
+tree at the time QA runs it: the scripts documented in the README and the scripts `package.json`
+declares must be the same set, with neither side hardcoded into the procedure. That keeps the check's
+teeth, which are that the README neither omits a script nor invents one, while removing a number that
+goes stale every time any task adds a command.
+
+**A targeted Specifier correction runs now, and the chain then continues from the Cleaner.** The
+Coder is not re-run. The earlier resume from the Specifier was warranted because changing example
+columns changes the parsed IR and therefore the step vocabulary the handlers implement. Rewording a
+Markdown verification procedure changes no feature file, no IR, and no code, so there is nothing a
+fresh Coder could reach a different conclusion about, and its immediately preceding pass already
+verified every tier against the current tree.
+
