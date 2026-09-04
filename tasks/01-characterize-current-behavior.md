@@ -119,3 +119,112 @@ back.
 
 ### QA
 
+**Changed.** Added the driver, the stub backend, and one executable test per
+procedure. No procedure needed changing: all 21 pass exactly as the specifier
+wrote them. `src/` is untouched (`git status -- src` is empty).
+
+- `qa/stub/` — the stub backend, plain CommonJS so `node qa/stub/main.js` runs it
+  with no build step. `fixtures.js` (the four named fixtures), `todo-store.js`
+  (the todo collection and next-free-id), `faults.js` (the fault registry),
+  `todo-api.js` (`api/todos/` routes to store operations), `control-api.js` (the
+  `/__qa/` control channel), `static-files.js` (serves the built app at the site
+  root), `http-io.js`, `server.js` (routing), `main.js` (entry).
+- `qa/tests/` — 21 spec files, one per procedure, plus `support/` (`screen.ts`
+  holds the README's element vocabulary, `stub-control.ts` the control-channel
+  client and the faulted-request wait, `app-test.ts` the fixtures).
+- `qa/playwright.config.ts` — Playwright, as expected. `workers: 1` and
+  `fullyParallel: false` because one stub serves the whole suite; `retries: 0`
+  because a retry would hide the flake this suite exists to rule out;
+  `expect.timeout` 5000 to match the README's "wait for X, fail after 5 seconds".
+- `package.json` — `@playwright/test` devDependency and the suite command.
+- `.gitignore` — `qa/.artifacts/` (Playwright report and traces).
+
+**The command.** `npm run test:e2e`. It builds the app, starts the stub, runs all
+22 test cases, and stops the stub. No Docker, no manually started backend, no
+`playwright install`. Passes with `CI=1` too.
+
+**How the app is served.** The stub serves the production build at the site root
+and answers `api/todos/` on the same origin, so the relative URL the client
+fetches resolves correctly and no CRA dev-server proxy is involved. The
+procedures allow either the dev server or a build; the build was chosen because
+it removes the StrictMode double mount and the HMR socket as sources of noise.
+The stub still meets the specifier's constraint anyway: faults are armed per
+method-and-path and stay armed until reset, so a suite run against the dev server
+would behave the same. `main.js` serves `build/`, falling back to `dist/`, and
+honours `QA_APP_DIR`; after the Vite task the command needs no change.
+
+**The control channel.** `POST /__qa/reset {fixture}` (seeds a fixture and clears
+faults), `POST /__qa/faults {kind, method, path, code, body}` (arms
+`transport` or `status`), `DELETE /__qa/faults`, `GET /__qa/faults` (reports each
+armed fault's `matched` count). Every test resets before navigating. The
+failure tests wait on `matched > 0` for synchronization only, then assert on
+screen; no test decides pass or fail from the channel and no test drives the app
+through `api/todos/`.
+
+**Verified.**
+
+- 22 test cases (21 procedures; procedure 21 has two cases) pass against the
+  unmodified repository. Run twice in a row green, and once more at
+  `--repeat-each=3` (66 passes) to look for flake. None seen.
+- The harness fails when the app does: a deliberately wrong expectation in
+  procedure 01's count was confirmed to fail before being reverted.
+- Faults genuinely change what the app does, so procedures 16 to 21 are not
+  vacuous: the seed row appears only under a faulted load, and the 500 body of
+  case B renders as the list.
+- Baseline still green: `npx react-scripts test --watchAll=false` -> 10 suites,
+  54 tests; `npx react-scripts build` -> compiles (also under `CI=1`, so no
+  warnings).
+- `git status -- src` shows nothing.
+
+Procedures and their tests:
+
+| Procedure | Test |
+| --- | --- |
+| `01-initial-load.md` | `qa/tests/01-initial-load.spec.ts` |
+| `02-empty-list-state.md` | `qa/tests/02-empty-list-state.spec.ts` |
+| `03-add-todo.md` | `qa/tests/03-add-todo.spec.ts` |
+| `04-add-todo-text-rules.md` | `qa/tests/04-add-todo-text-rules.spec.ts` |
+| `05-edit-todo.md` | `qa/tests/05-edit-todo.spec.ts` |
+| `06-edit-todo-blur-commit.md` | `qa/tests/06-edit-todo-blur-commit.spec.ts` |
+| `07-edit-todo-to-empty-deletes.md` | `qa/tests/07-edit-todo-to-empty-deletes.spec.ts` |
+| `08-delete-todo.md` | `qa/tests/08-delete-todo.spec.ts` |
+| `09-toggle-todo.md` | `qa/tests/09-toggle-todo.spec.ts` |
+| `10-toggle-all.md` | `qa/tests/10-toggle-all.spec.ts` |
+| `11-clear-completed.md` | `qa/tests/11-clear-completed.spec.ts` |
+| `12-filter-all.md` | `qa/tests/12-filter-all.spec.ts` |
+| `13-filter-active.md` | `qa/tests/13-filter-active.spec.ts` |
+| `14-filter-completed.md` | `qa/tests/14-filter-completed.spec.ts` |
+| `15-item-count.md` | `qa/tests/15-item-count.spec.ts` |
+| `16-load-failure.md` | `qa/tests/16-load-failure.spec.ts` |
+| `17-add-failure.md` | `qa/tests/17-add-failure.spec.ts` |
+| `18-edit-failure.md` | `qa/tests/18-edit-failure.spec.ts` |
+| `19-toggle-failure.md` | `qa/tests/19-toggle-failure.spec.ts` |
+| `20-delete-failure.md` | `qa/tests/20-delete-failure.spec.ts` |
+| `21-http-error-status-ignored.md` | `qa/tests/21-http-error-status-ignored.spec.ts` (two cases) |
+
+**Left for the next role.**
+
+- Run `npm run test:e2e` on every later task. A procedure and its test change
+  together; nobody but QA writes, runs, or maintains them.
+- The Vite task changes the build output directory. The stub already falls back
+  from `build/` to `dist/` and honours `QA_APP_DIR`, so the suite command should
+  survive, but confirm it rather than assume it.
+- The React 19 task removes `react-shallow-renderer` and `propTypes`. Neither is
+  observable through the UI, so nothing here should move.
+- `qa/` is deliberately outside `tsconfig.json`'s `include`: TypeScript 3.9
+  cannot parse the Playwright type definitions, and Playwright transpiles the
+  specs without typechecking them. When the TypeScript 5 task lands, adding a
+  `qa/` typecheck becomes possible and worth doing.
+- Two behaviours the procedures record but no test can pin any tighter, because
+  the app renders nothing at the moment they happen: that toggle-all and
+  clear-completed issue no request at all (the tests observe only that a reload
+  discards them), and that a failed request produces no UI at all (the tests
+  observe only the absence of change). If a later task adds a loading or error
+  indicator, procedures 16 to 20 and the `expectNoErrorUi` helper must be
+  rewritten by the specifier first; that is a behaviour change, not a
+  refactoring.
+
+**Open questions.** None. On the specifier's flagged judgment call: the 21-file
+split is kept, one test per procedure. It maps cleanly and each failure names one
+workflow, so folding it back would cost information for no gain. If the project
+manager still wants one file per listed workflow, say so and it can be merged.
