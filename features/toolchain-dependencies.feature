@@ -24,3 +24,4 @@ Feature: Toolchain dependencies
       | test:property   |
       | test:hardening  |
       | test:mutation   |
+      | test:e2e        |

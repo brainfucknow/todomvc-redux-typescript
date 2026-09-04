@@ -66,25 +66,28 @@ Fail C if the build exits non-zero, if any asset 404s, if the previewed page
 differs from the dev page, or if C3a/C3b show the bundle carrying React's
 development entry instead of its production one.
 
-C3a and C3b read the artifact C1 emitted. Read them before procedure D: D3
-builds for production itself, so it may replace `dist/` with a build C1 did not
-make. If D has already run, re-run C1 before C3a.
+C3a and C3b read the artifact C1 emitted. D3 rebuilds `dist/` itself, by
+running the project's own `build` script, so it leaves the same artifact C1
+emitted - byte-for-byte, checked by hashing `dist/` before and after D3. Read
+C3a and C3b whenever you like. If they read differently after D than before,
+report it: the acceptance tier is building something other than what this
+project ships, and that is a finding rather than a reason to re-run C1.
 
 ## Procedure D: test tiers
 
 | # | Action | Expected observable result |
 | --- | --- | --- |
-| D1 | `npm test` | Exits 0. Reports 22 test files and 214 passing tests, 0 failing, 0 skipped. |
-| D2 | Read the D1 file list (Vitest prints one line per file in a terminal; through a pipe, re-run as `npm test -- --reporter=verbose`) | It is exactly the 22 spec files present in the tree: the 10 matching `src/**/*.spec.{ts,tsx}`; `acceptance/generator.spec.ts`, `acceptance/inspection.spec.ts`, `acceptance/layout.spec.ts` and `acceptance/runtime.spec.ts`; and `scripts/architecture/layering.spec.ts`, `scripts/architecture/packages.spec.ts` and `scripts/crap/{complexity,coverage,options,report,score,tiers}.spec.ts`. No file from `build/acceptance/generated/`, `property/`, or `hardening/` appears in it. |
+| D1 | `npm test` | Exits 0. Reports 23 test files and 228 passing tests, 0 failing, 0 skipped. |
+| D2 | Read the D1 file list (Vitest prints one line per file in a terminal; through a pipe, re-run as `npm test -- --reporter=verbose`) | It is exactly the 23 spec files present in the tree: the 10 matching `src/**/*.spec.{ts,tsx}`; `acceptance/assertions.spec.ts`, `acceptance/generator.spec.ts`, `acceptance/inspection.spec.ts`, `acceptance/layout.spec.ts` and `acceptance/runtime.spec.ts`; and `scripts/architecture/layering.spec.ts`, `scripts/architecture/packages.spec.ts` and `scripts/crap/{complexity,coverage,options,report,score,tiers}.spec.ts`. No file from `build/acceptance/generated/`, `property/`, or `hardening/` appears in it. |
 | D2a | `npx vitest run src` | Exits 0. Reports 10 test files and 54 passing tests. This is the pre-existing suite; task 01 converts its Jest globals but adds and removes no case. |
-| D2b | `npx vitest run acceptance` | Exits 0. Reports 4 test files and 49 passing tests. These are unit tests of the acceptance-pipeline code under `acceptance/`, not generated acceptance tests. |
+| D2b | `npx vitest run acceptance` | Exits 0. Reports 5 test files and 63 passing tests. These are unit tests of the acceptance-pipeline code under `acceptance/`, not generated acceptance tests. |
 | D2c | `npx vitest run scripts` | Exits 0. Reports 8 test files and 111 passing tests. These are unit tests of the project's own tooling under `scripts/` - the CRAP gate and the architecture checker - not application code. |
 | D3 | `npm run test:acceptance` | Exits 0. Output shows each `features/*.feature` file being parsed, entry points being generated, and every scenario passing. |
 | D4 | `ls build/acceptance` | Contains the JSON IR and the generated entry points produced by D3. |
-| D5 | Count the scenario executions reported by D3, per scenario (D3's runner takes no reporter flag; for the breakdown re-run the entry points it generated with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose`, where each test is named `<scenario>/example_<n>`) | 26 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 + 2 for `production build 1/2/3/4`, 3 + 8 for `toolchain dependencies 1/2`, 1 + 1 for `typescript compilation 1/2`. |
+| D5 | Count the scenario executions reported by D3, per scenario (D3's runner takes no reporter flag; for the breakdown re-run the entry points it generated with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose`, where each test is named `<scenario>/example_<n>`) | 27 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 + 2 for `production build 1/2/3/4`, 3 + 9 for `toolchain dependencies 1/2`, 1 + 1 for `typescript compilation 1/2`. |
 | D6 | `npx tsc --noEmit` | Exits 0 with no diagnostic output. |
 | D7 | `npx tsc --version` | Major version is 5 or higher. |
-| D8 | `npm run test:property` | Exits 0. Reports 11 test files and 95 passing tests, 0 failing, 0 skipped. |
+| D8 | `npm run test:property` | Exits 0. Reports 14 test files and 141 passing tests, 0 failing, 0 skipped. |
 | D9 | `npm run test:hardening` | Exits 0. Reports 12 test files and 128 passing tests, 0 failing, 0 skipped. |
 | D10 | Compare the D8 and D9 file lists against the D1 list (same as D2: add `-- --reporter=verbose` to see them through a pipe) | They do not overlap. No `property/` or `hardening/` file appears in D1, and no `src/`, `acceptance/` or `scripts/` spec file appears in D8 or D9. Each tier is a separate command. |
 
@@ -92,7 +95,7 @@ Fail D on any non-zero exit, any failing or skipped test, any missing spec file,
 or any scenario not reported.
 
 D2a, D2b and D2c split the D1 total so a change is attributable. The three
-buckets are disjoint and exhaustive - 54 + 49 + 111 = 214 accounts for D1
+buckets are disjoint and exhaustive - 54 + 63 + 111 = 228 accounts for D1
 exactly - so check that sum as part of D2c; a case lost from one bucket cannot
 hide behind a case gained in another. A drop below 10 files or 54 cases in
 D2a is a regression in the pre-existing suite and fails D outright. A change in

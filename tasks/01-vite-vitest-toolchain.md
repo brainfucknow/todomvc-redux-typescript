@@ -694,6 +694,146 @@ appended in the D2a style rather than renumbered in.
 None.
 
 
+#### Seventh pass: the reconciliation before QA, and `test:e2e` gets its row
+
+Done. Two files changed, both mine: `features/toolchain-dependencies.feature` and
+`qa/toolchain-commands.md`. `qa/todo-app-regression.md` needed nothing. Nothing committed.
+
+**Every number below was read off a command I ran in this tree.** Four roles moved counts since the
+last reconciliation and each recorded the move; I used those records only to know where to look, and
+two of them turned out to be incomplete in a way a copied number would have carried forward.
+
+**`test:e2e` is now a row in `toolchain dependencies 2`**
+
+The script exists in `package.json` and under `Available Scripts`, so the condition the ruling on my
+fourth pass attached to the row is met and the row goes in. That takes the scenario from 8 rows to 9
+and the feature total from 26 scenario executions to **27**.
+
+I checked the row in the failing direction rather than trusting a green tier, per PLAN section 4:
+dithering the cell to `test:e2f` reddens exactly `toolchain dependencies 2/example_9` and nothing
+else, with the handler naming the nine scripts it did find. Restoring returns the tier to 27 passing.
+A hand edit for verification, not a mutator run.
+
+**Procedure D reconciled against the tree**
+
+| Step | As the last reconciliation left it | Now |
+| --- | --- | --- |
+| D1 `npm test` | 22 files / 214 | **23 files / 228** |
+| D2 file list | 10 `src` + 4 `acceptance` + 8 `scripts` | 10 + **5** + 8; adds `acceptance/assertions.spec.ts` |
+| D2a `npx vitest run src` | 10 / 54 | **10 / 54 - the floor, intact through every role in this task** |
+| D2b `npx vitest run acceptance` | 4 / 49 | **5 / 63** |
+| D2c `npx vitest run scripts` | 8 / 111 | **8 / 111, unchanged** |
+| D5 scenario executions | 26 | **27**, `toolchain dependencies 1/2` now 3 + 9 |
+| D8 `npm run test:property` | 11 / 95 | **14 / 141** |
+| D9 `npm run test:hardening` | 12 / 128 | **12 / 128, unchanged** |
+| sum paragraph | 54 + 49 + 111 = 214 | **54 + 63 + 111 = 228** |
+
+No step letter moved and none was added, so every earlier citation of D1-D10 still resolves. The
+split stays exhaustive and disjoint, which is the property D2a/D2b/D2c exist for.
+
+**Two of the recorded moves were understated, which is why this pass measures rather than copies.**
+The ruling on the third Architect pass records D2b at 63 and D8 at 141, and it is right about both,
+but it also says "D2's file list does not move, since no spec file was added or renamed" - and
+`acceptance/assertions.spec.ts` is in the tree and in the `npm test` list, taking `acceptance/` from
+four files to five. Separately, D9 was recorded as moving in an earlier note and has not: the
+hardening tier is 12 / 128 today, the same as the last reconciliation. Both are the same lesson in
+opposite directions: a file list and a count are different facts and each has to be read.
+
+**Procedure C's ordering caveat was stale and is now a check**
+
+It told QA that D3 "may replace `dist/` with a build C1 did not make", and to re-run C1 before C3a
+if D had already run. That was true when the acceptance fixture built with `NODE_ENV=test`. It is
+not true now: the fixture asks `package.json` for the build command and runs it with
+`NODE_ENV=production`, so D3 leaves the artifact C1 emitted. I checked rather than reasoning from
+the handoff note - `rm -rf dist && npm run build`, hash, `npm run test:acceptance`, hash again; both
+`dist/index.html` and `dist/assets/index-BPxiUVWS.js` are byte-identical across the two.
+
+Worse than stale, the old wording told QA to paper over the exact defect the sixth pass was spawned
+to specify against: a development bundle sitting in `dist/` after the acceptance tier is a finding,
+and "re-run C1" hides it. The paragraph now says the artifacts are the same, tells QA to read C3a and
+C3b whenever it likes, and makes a difference between the before and after readings something to
+report. `production build 4` is what guards the property inside the tier; the procedure no longer
+has to guard it by discipline.
+
+**What I verified**
+
+Each command run directly, in the tree as it stands:
+
+| Command | Result | Step |
+| --- | --- | --- |
+| `npm test` | 23 files / 228 tests, 0 failing, 0 skipped | D1 |
+| `npm test -- --reporter=verbose` | the 23 files D2 names, and no others | D2, D10 |
+| `npx vitest run src` | 10 / 54 | D2a |
+| `npx vitest run acceptance` | 5 / 63 | D2b |
+| `npx vitest run scripts` | 8 / 111; 54 + 63 + 111 = 228 | D2c |
+| `npm run test:acceptance` | 5 parse, 5 generate, 27 scenario executions pass | D3, D5 |
+| `ls build/acceptance` | `ir/` (5 JSON) and `generated/` (5 entry points + `metadata/`) | D4 |
+| `npx tsc --noEmit` / `--version` | exit 0, no output / `Version 5.9.3` | D6, D7 |
+| `npm run test:property` | 14 / 141, every file under `property/` | D8, D10 |
+| `npm run test:hardening` | 12 / 128, every file under `hardening/` | D9, D10 |
+
+- D5's per-scenario split was re-derived from a verbose run of the generated entry points, not
+  carried forward: 4 + 2 + (3+1+1+2) + (3+9) + (1+1) = 27, matching the step row by row.
+- All five feature files parse with `bin/gherkin-parser`, and `bin/gherkin-ir-dry-checker
+  --include-exact` reports **0 findings** on each, `toolchain-dependencies` included. Adding an
+  example row changes no step text, so the dry checker had nothing new to see - I ran it anyway
+  because the file changed.
+- A3-A5 and C1-C3b read true on a fresh build: `react-scripts` count 0 in `package.json`,
+  `package-lock.json` and `src`; `dist/index.html` plus `assets/index-BPxiUVWS.js` and
+  `assets/index-xAQXB6NR.css`; `grep -c 'src/index.tsx' dist/index.html` is 0; the two production
+  markers are 1 each and `Invalid hook call` is 0.
+- E1-E4 read true. `git status --porcelain --ignored` lists `bin/ build/ coverage/ dist/
+  node_modules/ test-results/` as `!!` with nothing as `??`; `README.md` documents nine scripts
+  under `###` headings and `package.json` declares the same nine, so E3's set equality holds at its
+  new size without an edit to E3 - which is the point of the fourth pass; `Other checks` names
+  `scripts/acceptance-mutation.ts` and `scripts/crap.mjs`, both present.
+- `qa/todo-app-regression.md`'s one dependency on the tree still holds: `src/index.tsx` still wraps
+  the app in `React.StrictMode`, which is why F1 accepts one or two initial `GET api/todos/` calls.
+- `git status --short` shows exactly the two files above. `src/`, `e2e/`, `.mutation/`, `acceptance/`
+  and every config are untouched.
+
+I ran no verification or quality tooling beyond the parser, the dry checker, the test tiers above,
+`tsc` and `npm run build`. No mutation of any kind.
+
+**Left for the Hardener, if it runs again**
+
+- `toolchain-dependencies.feature` now presents **12** candidate mutations (3 locations + 9 scripts),
+  not 11, taking the total across the five features from 26 to **27**.
+- `.mutation/gherkin/toolchain-dependencies.manifest` keys reuse on `hashJSON(scenario)`, which
+  covers the examples table, so `toolchain dependencies 2`'s scenario hash has moved and its 8
+  recorded kills are no longer reusable - the next run re-tests all 9, which is correct.
+  `toolchain dependencies 1`'s hash and the feature's background hash are untouched, so its 3 kills
+  stand. I did not touch `.mutation/`.
+
+**Left for QA**
+
+`e2e/toolchain-commands.spec.ts` is yours and carries these counts as literals. It is currently
+stale in two generations at once - it was written before `production build 4` existed - so it needs
+all of the following, not only my changes:
+
+| Location | Is | Becomes |
+| --- | --- | --- |
+| D1 step | `'22 passed (22)'` / `'214 passed (214)'` | `'23 passed (23)'` / `'228 passed (228)'` |
+| D2 step | four `acceptance/*.spec.ts` entries | five; add `'acceptance/assertions.spec.ts'` |
+| D2b step | `'4 passed (4)'` / `'49 passed (49)'` | `'5 passed (5)'` / `'63 passed (63)'` |
+| D2c step | `expect(54 + 49 + 111).toBe(214)`, `expect(10 + 4 + 8).toBe(22)` | `54 + 63 + 111 = 228`, `10 + 5 + 8 = 23` |
+| D3 step | `'24 passed (24)'` | `'27 passed (27)'` |
+| D5 map | no `production build 4`; `'toolchain dependencies 2': 8` | add `'production build 4': 2`; `'toolchain dependencies 2': 9` |
+| D5 total | `.toBe(24)` twice | `.toBe(27)` twice |
+| D8 step | `'11 passed (11)'` / `'95 passed (95)'` | `'14 passed (14)'` / `'141 passed (141)'` |
+| D10 step | `expect(inProperty.length).toBe(11)` | `.toBe(14)` |
+
+D9's literals (`12` / `128`) are correct as they stand, and nothing in procedures A, B or E moved.
+
+Procedure C gained no new row, but its trailing paragraph changed meaning: the spec should no longer
+rebuild `dist/` between D and C3a. If the executable form has any such re-run, drop it and instead
+assert what the paragraph now says - that the hash of `dist/` is the same before and after D3.
+
+**Open questions**
+
+None.
+
+
 ### Project manager rulings on the Specifier handoff
 
 The Specifier handoff is accepted. Its assumptions and open questions are settled as follows.
@@ -3883,4 +4023,35 @@ and it bears on none of this task's done criteria. It is recorded as carried wor
 section 4 and named in `tasks/02-testing-library-suite.md`, owned by that task's Cleaner.
 
 **Next: the Specifier reconciliation pass over QA procedure D, then QA.**
+
+
+### Project manager rulings on the seventh Specifier pass
+
+Verified independently: `npm test` 23 files / 228 tests; `npx vitest run src` holds the D2a floor at
+10 / 54; `npx vitest run acceptance` 5 / 63; `npm run test:property` 14 / 141;
+`npm run test:acceptance` 27 scenario executions; `src/`, `e2e/`, `.mutation/`, `acceptance/` and
+every config untouched. Accepted.
+
+**Finding 2 is the one that mattered.** Procedure C carried a caveat telling QA that `npm run
+test:acceptance` may replace `dist/` with a build C1 did not make, and to re-run C1. That was written
+when the fixture built a development bundle, and it instructed QA to paper over *precisely the defect
+`production build 4` was added to catch*. A verification procedure that tells the verifier to work
+around a real difference is worse than one that omits the check. Turning it into a finding when the
+two readings differ is the correct inversion, and hashing `dist/` before and after to prove they are
+now byte-identical is the right evidence.
+
+**Finding 1 corrects the record, including my own.** The third-Architect ruling states that D2's file
+list did not move; `acceptance/assertions.spec.ts` is in the tree and in the `npm test` list, so it
+did. And D9 was recorded as moving but had not. Reconciling by running the commands rather than by
+copying numbers out of handoff notes is exactly why that instruction was given, and it caught two
+errors that would otherwise have reached QA as false failures.
+
+**The mutation state left by the feature change is verified, so no Hardener re-run is ordered.**
+Adding a row to `toolchain dependencies 2` moves that scenario's IR hash, which the Specifier
+correctly predicted would retire its recorded kills. I ran `node scripts/acceptance-mutation.ts`
+myself: it re-tested exactly that scenario's **9 candidates and killed all 9**, while skipping the
+scenarios whose hashes are unchanged. That is both the prediction confirmed and independent evidence
+that the manifest mechanism the Hardener rebuilt discriminates at the right granularity.
+
+**Next: QA. This is the third time task 01 has reached it.**
 
