@@ -1,19 +1,18 @@
-const SCRIPT_TAG = /<script\b[^>]*\bsrc\s*=\s*("([^"]*)"|'([^']*)')[^>]*>/gi
-const STYLESHEET_TAG = /<link\b[^>]*>/gi
-const HREF_ATTRIBUTE = /\bhref\s*=\s*("([^"]*)"|'([^']*)')/i
+const SCRIPT_SRC = /<script\b[^>]*\bsrc\s*=\s*("[^"]*"|'[^']*')[^>]*>/gi
+const LINK_TAG = /<link\b[^>]*>/gi
+const HREF_ATTRIBUTE = /\bhref\s*=\s*("[^"]*"|'[^']*')/i
 const STYLESHEET_REL = /\brel\s*=\s*("stylesheet"|'stylesheet'|stylesheet\b)/i
 const VERSION_BANNER = /\b(\d+)\.\d+\.\d+/
 
-const attributeValue = (match: RegExpMatchArray, doubleQuoted: number, singleQuoted: number): string =>
-  match[doubleQuoted] ?? match[singleQuoted]
+const unquoted = (attribute: string): string => attribute.slice(1, -1)
 
 export function referencedAssets(html: string): string[] {
-  const scripts = [...html.matchAll(SCRIPT_TAG)].map((match) => attributeValue(match, 2, 3))
-  const stylesheets = [...html.matchAll(STYLESHEET_TAG)]
-    .filter((match) => STYLESHEET_REL.test(match[0]))
-    .map((match) => HREF_ATTRIBUTE.exec(match[0]))
+  const scripts = [...html.matchAll(SCRIPT_SRC)].map((match) => unquoted(match[1]))
+  const stylesheets = [...html.matchAll(LINK_TAG)]
+    .filter((link) => STYLESHEET_REL.test(link[0]))
+    .map((link) => HREF_ATTRIBUTE.exec(link[0]))
     .filter((href): href is RegExpExecArray => href !== null)
-    .map((href) => attributeValue(href, 2, 3))
+    .map((href) => unquoted(href[1]))
   return [...scripts, ...stylesheets]
 }
 

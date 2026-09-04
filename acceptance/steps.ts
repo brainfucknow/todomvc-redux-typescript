@@ -1,15 +1,14 @@
-import type { CommandResult } from './fixtures.ts'
+import type { CommandResult } from './commands.ts'
+import { runCommand, typescriptCompiler } from './commands.ts'
 import {
   backendRepliesTo,
   buildForProduction,
-  runCommand,
   serverUrl,
   startDevServer,
   startPreviewServer,
-  typescriptCompiler,
 } from './fixtures.ts'
 import { availableScripts, compilerMajorVersion, referencedAssets } from './inspection.ts'
-import { filesReferencing, readProjectFile } from './repository.ts'
+import { filesReferencing, readProjectFile } from './project-files.ts'
 import type { StepHandler } from './runtime.ts'
 
 export { releaseFixtures } from './fixtures.ts'
@@ -127,10 +126,10 @@ export const stepHandlers: StepHandler<World>[] = [
     pattern: /^every referenced asset responds with status (\d+)$/,
     run: (world, [expected]) => {
       const assets = world.assets ?? []
-      const failures = assets.filter((asset) => asset.status !== Number(expected))
       if (assets.length === 0) {
         throw new Error('no referenced assets were requested in this scenario')
       }
+      const failures = assets.filter((asset) => asset.status !== Number(expected))
       if (failures.length > 0) {
         throw new Error(`assets did not respond with ${expected}: ${failures
           .map((asset) => `${asset.path} -> ${asset.status}`)
@@ -140,10 +139,10 @@ export const stepHandlers: StepHandler<World>[] = [
   },
   {
     pattern: /^(\S+) contains no reference to (\S+)$/,
-    run: (_world, [location, needle]) => {
-      const offenders = filesReferencing(location, needle)
+    run: (_world, [location, reference]) => {
+      const offenders = filesReferencing(location, reference)
       if (offenders.length > 0) {
-        throw new Error(`"${needle}" still appears in ${offenders.join(', ')}`)
+        throw new Error(`"${reference}" still appears in ${offenders.join(', ')}`)
       }
     },
   },

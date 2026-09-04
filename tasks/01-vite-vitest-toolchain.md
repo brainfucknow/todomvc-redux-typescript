@@ -439,6 +439,193 @@ Two corrections are required before the chain continues.
 
 ### Cleaner
 
+Done. Behaviour-preserving cleanup of the toolchain and acceptance-pipeline sources, plus
+`scripts/crap.mjs`. Nothing committed. `features/` and `qa/` untouched.
+
+**What I changed**
+
+`scripts/crap.mjs` (new, the tool PLAN section 4 assigns to this role):
+
+- CRAP = `cc^2 * (1 - coverage)^3 + cc`, per function. Cyclomatic complexity comes from the
+  TypeScript compiler API (already a project dependency, so no new tool): `if`, `?:`, the
+  four loop forms, `case`, `catch`, and `&& || ?? &&= ||= ??=`. Coverage comes from
+  `coverage/coverage-final.json`. Every decision point and every statement is attributed to
+  the *innermost* enclosing function, so a callback never inflates the complexity of the
+  function it is passed to. Module top-level code is reported as `(module)`.
+- `node scripts/crap.mjs [--max <n>] [--reuse] [--all] [<path> ...]`. Paths restrict the
+  gate (`node scripts/crap.mjs acceptance`); `--reuse` skips re-running the unit tier;
+  `--all` lists every function instead of only the offenders. Exit 0 clean, 1 over the gate,
+  2 on a usage error - the same convention `acceptance/generate-entrypoints.ts` uses.
+- I added **no npm script** for it. The task scope fixes the script surface at `dev`,
+  `build`, `preview`, `test`, `test:acceptance`, PM ruling 3 treats an extra script as a
+  scope violation, and QA E3 reads the README against that list. Later tasks invoke it as
+  `node scripts/crap.mjs`, which is how PLAN section 4 names it.
+- `@vitest/coverage-v8@^5.0.0` added as a devDependency (PLAN section 4: the role that first
+  needs a tool introduces it) and a `test.coverage` block added to `vite.config.ts`. The
+  block excludes the adapter shells, per the shared definition that they stay out of test
+  tooling: `src/index.tsx`, `src/setupTests.ts`, `acceptance/commands.ts`,
+  `acceptance/fixtures.ts`, `acceptance/generate-entrypoints.ts`, `acceptance/project-files.ts`,
+  `acceptance/steps.ts`.
+
+Moved behaviour out of an environmental module into a testable one:
+
+- `acceptance/generator.ts` gains `featureArtifacts()` - it decides both artifact paths, the
+  entry-point source and the whole metadata document, and returns them as two
+  `{ path, content }` records relative to the working directory. `relativeImportPath()` moved
+  in with it. `acceptance/generate-entrypoints.ts` is now only argv handling, one read, two
+  writes and the exit codes; every path decision and the metadata schema are testable.
+- The generated entry points and metadata files are **byte-for-byte identical** before and
+  after, implementation hashes included (`diff -r` against a saved baseline).
+
+Split a mixed source:
+
+- `acceptance/fixtures.ts` was doing three jobs: servers, running child processes, and owning
+  `projectRoot`. Process running moved to a new `acceptance/commands.ts` (`runCommand`,
+  `typescriptCompiler`), and `projectRoot` moved to `acceptance/project-files.ts`, where the
+  other project-tree readers already live. `fixtures.ts` is now only "the servers a scenario
+  runs against", and `project-files.ts` no longer has to import the server fixtures to learn
+  where the project root is.
+
+Renames and local cleanups:
+
+- `acceptance/repository.ts` -> `acceptance/project-files.ts`. In a TypeScript project
+  `repository.ts` reads as a data-access repository; the module reads files out of the
+  project tree, and its functions already said `Project`. `filesReferencing(location, needle)`
+  -> `(location, reference)`, matching the step text it serves.
+- `acceptance/generator.ts` held two literal NUL bytes as the hash separator, which made git
+  treat the file as binary (`Bin 0 -> 1766 bytes` in the Coder's commit - no reviewable diff).
+  They are now the escape `\0`. Same bytes hashed, same hashes; the file is text again.
+- `acceptance/inspection.ts`: the quoted-attribute regexes captured the value twice, once per
+  quote style, and call sites passed the group indices (`attributeValue(match, 2, 3)`). One
+  capture of the whole quoted string plus `unquoted()` says the same thing with no magic
+  numbers. `SCRIPT_TAG`/`STYLESHEET_TAG` -> `SCRIPT_SRC`/`LINK_TAG` (the latter matches every
+  link; the `rel` filter is separate).
+- `acceptance/fixtures.ts`: `releaseFixtures` cleared six fields by hand and would silently
+  go stale when a seventh was added; it now closes what is open and re-seeds one
+  `emptyFixtures()` record. The two identical server-close promises collapsed into
+  `closeServer`, and `addressed()` names the "this is the server the client steps talk to"
+  assignment that both start functions repeated.
+- `acceptance/steps.ts`: the every-asset handler computed the failure list before checking
+  that any asset had been requested; the empty check now comes first.
+- `scripts/acceptance.ts`: spawns `process.execPath` rather than whatever `node` is on PATH,
+  so the pipeline runs on the Node that started it, and the generator and vitest paths are
+  hoisted up beside `parser` instead of being rebuilt inline.
+- `package.json`: removed `resolutions` and `browserslist`. Both are dead - npm ignores
+  `resolutions` (it reads `overrides`; the installed `@types/react` is 18.3.31, not the
+  18.0.0 that key names), and Vite reads `build.target`, not browserslist. Verified dead:
+  `npm run build` emits the same two asset **content hashes** with and without them.
+- `.gitignore`: `dist` was listed twice and `build/` sat under no heading; one comment now
+  covers the acceptance-pipeline entries. `coverage/` was already ignored.
+
+**What I verified**
+
+- `npx tsc --noEmit` exits 0 with no output.
+- `npm test`: **13 files, 99 tests**, 0 failing, 0 skipped. `npx vitest run src`: **10 files,
+  54 tests** - the Specifier's D2a floor, untouched. `npx vitest run acceptance`: **3 files,
+  45 tests** (was 38; see the QA note below).
+- `npm run test:acceptance` from a clean `rm -rf bin build dist`: bootstrap builds the three
+  Go binaries, 5 features parse, 5 entry points generate, **21 scenario executions pass**.
+- The generated entry points and metadata are byte-identical to the Coder's output
+  (`diff -r` against a copy taken before I started), so the generator refactor and the NUL
+  escape changed no artifact and no implementation hash.
+- `npm run build` exits 0 and emits `dist/index.html` plus `assets/index-BPxiUVWS.js` and
+  `assets/index-xAQXB6NR.css` - the same content hashes as before the package.json cleanup.
+  `grep -c 'src/index.tsx' dist/index.html` is 0. The preview server, the dev server and the
+  port-4000 proxy are all exercised by the acceptance run.
+- `npm ci` from the regenerated lockfile succeeds. `react-scripts` count is 0 in
+  `package.json`, `package-lock.json` and `src`.
+- `git status --porcelain --ignored`: `bin/`, `build/`, `coverage/`, `dist/`, `node_modules/`
+  all ignored, nothing untracked-but-unignored.
+- **CRAP.** `node scripts/crap.mjs acceptance`: 27 functions, 0 over the gate, worst is
+  `resolveArgument` at 4.0. Statement coverage of the testable acceptance modules
+  (`generator`, `inspection`, `runtime`) is **72/72 = 100%**.
+
+**CRAP over the gate, all of it pre-existing `src/` application code**
+
+`node scripts/crap.mjs` (whole project): 121 functions in 29 files, 5 over the gate.
+
+| Function | cc | cov | CRAP |
+| --- | --- | --- | --- |
+| `src/reducers/apis.ts:4` `executing` | 13 | 0% | 182.0 |
+| `src/middlewares/callapimiddleware.ts:18` (the middleware body) | 5 | 0% | 30.0 |
+| `src/reducers/apis.ts:47` `errorMessage` | 4 | 0% | 20.0 |
+| `src/selectors/index.ts:10` (the `getVisibleTodos` selector) | 4 | 0% | 20.0 |
+| `src/reducers/todos.ts:23` `todoApiResults` | 5 | 33% | 12.4 |
+
+Every one is driven by **missing coverage, not by complexity** - `executing` is a single
+`switch` answering one question, which the CRAP exception permits at cc 13. Task 01 changed
+none of these files, and its Out-of-scope list bars me from them ("any change to ... Redux
+shape ... or the API middleware"), while D2a bars me from adding `src` test cases (10 files,
+54 tests, "adds and removes no case"). So I measured them and left them. `src` statement
+coverage is 123/196 = 63%.
+
+**Open questions**
+
+1. **QA D1/D2b are stale again, by 7 cases, and only the Specifier can fix them.** `npm test`
+   now reports **13 files / 99 tests**; D1 says 92 and D2b says 38 for the acceptance half.
+   The seven new cases are all in the existing `acceptance/generator.spec.ts` - no new spec
+   file, so **D2's file list is still exactly right** and **D2a is untouched at 10/54**. They
+   cover `featureArtifacts` and `relativeImportPath`, the logic I moved out of the CLI shell;
+   without them the move would have traded a testable module's 100% coverage for a hole. QA's
+   own rule is that a D2b change is acceptable when the handoff records it and D1/D2/D2b move
+   together, so this note is that record: **D1 -> 13 files / 99 tests, D2b -> 3 files / 45
+   tests, D2 unchanged.**
+2. **`src/reducers/apis.ts:22` has a leftover `console.log('action', action)` inside the
+   reducer.** It is debug output in shipping code and it prints on every PATCH/DELETE
+   request. Removing it is one line, but it is observable behaviour in a file this task puts
+   out of scope, so I did not touch it. It belongs to whichever task takes `src/reducers/`;
+   no task in PLAN section 5 currently claims that file.
+3. **`scripts/crap.mjs` cannot measure itself.** Coverage `include` covers `src/**` and
+   `acceptance/**`, so `scripts/` is outside the report and the tool has no CRAP number of its
+   own. Its functions are each one job; the widest is `readOptions` at cc 6, which is the
+   single argument `cond` the CRAP exception describes.
+
+**Left for the next role**
+
+- Architect: the dependency direction question I deliberately did not settle - `acceptance/`
+  now has a clean testable core (`runtime`, `generator`, `inspection`) and a shell
+  (`commands`, `fixtures`, `project-files`, `steps`, `generate-entrypoints`), but nothing
+  enforces that a core module never imports a shell one.
+- Hardener: `acceptance/steps.ts` is excluded from the unit tier as wiring, and it is the one
+  place where a wrong assertion would go unnoticed by anything except the acceptance tier
+  itself.
+- Everything the Coder left standing still stands: the Vitest isolation hint, the third-party
+  lightningcss warning, CI wiring for `test:acceptance` (task 06), and the missing Playwright
+  driver for `qa/todo-app-regression.md`.
+- No mutation tooling ran. `.mutation/` does not exist yet, Stryker is not installed, and my
+  brief bars mutation runs and Gherkin mutation; I applied the mixed-job hint by reading the
+  changed sources and splitting `fixtures.ts`, which was the only one doing more than one job.
+
+### Project manager rulings on the Cleaner handoff
+
+Verified independently: `npx tsc --noEmit` exits 0, `npm test` passes 13 files / 99 tests,
+`npx vitest run src` holds the D2a floor at 10 files / 54 tests, `npm run test:acceptance`
+passes 21 scenario executions, and `src/`, `features/` and `qa/` are all untouched. Accepted.
+
+The NUL-byte finding is confirmed and was worth catching: the committed `acceptance/generator.ts`
+contained 2 literal NUL bytes, so git classified it as binary and the file had no reviewable diff
+in its own commit. The replacement contains none and reads as text.
+
+The two items the Cleaner routed are settled as follows.
+
+1. **QA procedure D's totals are refreshed once, after the Hardener, before QA.** They are stale
+   again (99 total, acceptance half 45), and the Hardener will move them again by design. Procedure
+   D already permits this: D2a is the hard floor and is intact at 10 / 54, D2's file list is intact,
+   and D's own fail clause allows a D2b change that a handoff note records, which this one does.
+   Refreshing after every role that adds tests is churn that buys nothing, so a single fresh
+   Specifier pass runs between the Hardener and QA to reconcile D1, D2 and D2b against the tree.
+   No role before then should edit `qa/`, and no role should adjust its own test count to match a
+   stale procedure.
+
+2. **The stray `console.log` in `src/reducers/apis.ts` is assigned to task 06.** The Cleaner was
+   right that it is out of task 01's scope and that no task claimed it. `tasks/06-lint-typecheck-ci.md`
+   is amended to name it as an authorized removal, because `no-console` is exactly what that task's
+   rule set will flag. It stays in place until then.
+
+Also noted: the Cleaner's removal of the dead `resolutions` and `browserslist` keys means
+`tasks/03-react-19.md` no longer has a `resolutions` pin to remove. That task file is amended.
+
+
 ### Architect
 
 ### Hardener

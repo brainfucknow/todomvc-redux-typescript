@@ -1,43 +1,33 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Feature } from './runtime.ts'
-import { entrypointSource, implementationHash, metadataFileName } from './generator.ts'
+import type { GeneratedFile } from './generator.ts'
+import { featureArtifacts } from './generator.ts'
 
 const USAGE = 'usage: generate-entrypoints <json-ir> <generated-test-output>'
 const acceptanceDir = dirname(fileURLToPath(import.meta.url))
 
-const toImportPath = (fromDir: string, target: string): string => {
-  const relativePath = relative(fromDir, target).split('\\').join('/')
-  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`
+const write = (cwd: string, file: GeneratedFile): void => {
+  const target = resolve(cwd, file.path)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, file.content)
 }
 
 const generate = (irPath: string, outputDir: string): void => {
   const featureIr: Feature = JSON.parse(readFileSync(irPath, 'utf8'))
-  const slug = basename(irPath, '.json')
-  const featurePath = `features/${slug}.feature`
-  const entrypointPath = join(outputDir, `${slug}.acceptance.ts`)
-  const generatedFile = relative(process.cwd(), resolve(entrypointPath))
-
-  const content = entrypointSource({
+  const cwd = process.cwd()
+  const { entrypoint, metadata } = featureArtifacts({
     featureName: featureIr.name,
-    irPath: relative(process.cwd(), resolve(irPath)),
-    runtimeImport: toImportPath(outputDir, join(acceptanceDir, 'runtime.ts')),
-    stepsImport: toImportPath(outputDir, join(acceptanceDir, 'steps.ts')),
+    irPath,
+    outputDir,
+    acceptanceDir,
+    cwd,
   })
 
-  mkdirSync(join(outputDir, 'metadata'), { recursive: true })
-  writeFileSync(entrypointPath, content)
-  writeFileSync(join(outputDir, 'metadata', metadataFileName(featurePath)), `${JSON.stringify({
-    schema_version: 1,
-    feature_path: featurePath,
-    ir_path: relative(process.cwd(), resolve(irPath)),
-    implementation_hash: implementationHash([{ path: generatedFile, content }]),
-    hash_scope: 'generated_files',
-    generated_files: [generatedFile],
-  }, null, 2)}\n`)
-
-  process.stdout.write(`generated ${generatedFile}\n`)
+  write(cwd, entrypoint)
+  write(cwd, metadata)
+  process.stdout.write(`generated ${entrypoint.path}\n`)
 }
 
 const [irPath, outputDir] = process.argv.slice(2)

@@ -8,6 +8,8 @@ const featuresDir = join(projectRoot, 'features')
 const irDir = join(projectRoot, 'build', 'acceptance', 'ir')
 const generatedDir = join(projectRoot, 'build', 'acceptance', 'generated')
 const parser = join(projectRoot, 'bin', 'gherkin-parser')
+const generator = join(projectRoot, 'acceptance', 'generate-entrypoints.ts')
+const vitest = join(projectRoot, 'node_modules', 'vitest', 'vitest.mjs')
 
 const run = (command: string, args: string[]): void => {
   execFileSync(command, args, { cwd: projectRoot, stdio: 'inherit' })
@@ -36,13 +38,8 @@ for (const feature of features) {
   const irPath = join(irDir, `${basename(feature, '.feature')}.json`)
   announce(`parsing features/${feature}`)
   run(parser, [join(featuresDir, feature), irPath])
-  run('node', [join(projectRoot, 'acceptance', 'generate-entrypoints.ts'), irPath, generatedDir])
+  run(process.execPath, [generator, irPath, generatedDir])
 }
 
 announce('running generated acceptance tests')
-run('node', [
-  join(projectRoot, 'node_modules', 'vitest', 'vitest.mjs'),
-  'run',
-  '--config',
-  'vitest.acceptance.config.ts',
-])
+run(process.execPath, [vitest, 'run', '--config', 'vitest.acceptance.config.ts'])

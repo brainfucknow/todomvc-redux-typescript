@@ -13,6 +13,10 @@ The project lints and typechecks by explicit command, with rules it owns rather 
 - Rewrite `.github/workflows/nodejs.yml`: current action versions (`actions/checkout@v4` or later, `actions/setup-node@v4` or later), npm caching, Node 22.x, and steps for lint, typecheck, unit tests, acceptance tests, property tests, and build. E2E runs in CI if it can do so reliably against the stubbed network boundary; if it cannot, say why in the handoff note rather than adding a flaky job.
 - Add whatever dependency-direction, forbidden-import, or cycle check the architect established in earlier tasks to the lint run, so the boundary rules are enforced rather than documented.
 - Update `README.md` to describe the real command set.
+- Remove the leftover `console.log('action', action)` in `src/reducers/apis.ts`. This is an explicitly
+  authorized exception to the out-of-scope rule below: it is debug output left in a reducer, `no-console`
+  is exactly what this task's rule set flags, and the task 01 Cleaner correctly declined it as out of its
+  own scope. Removing it is the only behavior change this task may make.
 
 ## Out of scope
 

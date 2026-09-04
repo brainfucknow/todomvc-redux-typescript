@@ -8,7 +8,7 @@ The project runs on current React (19.x) with matching `@types/react` and `@type
 
 ## Scope
 
-- Upgrade `react`, `react-dom`, `@types/react`, `@types/react-dom` to current 19.x. Remove the `resolutions` pin on `@types/react` if the upgrade makes it unnecessary.
+- Upgrade `react`, `react-dom`, `@types/react`, `@types/react-dom` to current 19.x. The `resolutions` pin on `@types/react` was already removed as dead configuration by the task 01 Cleaner, so there is nothing to unpin here.
 - Upgrade `react-redux` and any other React-peer dependency to a version that supports React 19.
 - Fix what React 19 breaks: removed APIs, the stricter `@types/react` 19 typings (notably that `children` is no longer implicit on `React.FunctionComponent`), and any ref or `propTypes` handling React 19 no longer supports on function components.
 - Confirm StrictMode double-invocation does not produce duplicate `loadTodos` requests; if it does, that is behavior this task must fix.

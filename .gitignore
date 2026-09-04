@@ -80,7 +80,6 @@ typings/
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 
 # Gatsby files
 .cache/
@@ -103,12 +102,11 @@ dist
 # TernJS port file
 .tern-port
 
-build/
-
 # Vite build output
 dist/
 
-# Acceptance pipeline: parser IR, generated entry points, mutation output,
-# and the APS Go binaries built by scripts/bootstrap-aps.sh
+# Acceptance pipeline: the APS checkout, parser IR, generated entry points and
+# mutation output, plus the Go binaries built by scripts/bootstrap-aps.sh
+build/
 build/acceptance*/
 bin/

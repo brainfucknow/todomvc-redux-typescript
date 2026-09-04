@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { entrypointSource, implementationHash, metadataFileName } from './generator.ts'
+import {
+  entrypointSource,
+  featureArtifacts,
+  implementationHash,
+  metadataFileName,
+  relativeImportPath,
+} from './generator.ts'
 
 describe('metadataFileName', () => {
   it('maps a feature path to lowercase hyphenated metadata', () => {
@@ -75,5 +81,60 @@ describe('entrypointSource', () => {
   it('embeds paths and names as escaped literals', () => {
     const source = entrypointSource({ ...options, featureName: "Bob's \"feature\"" })
     expect(source).toContain(JSON.stringify("Bob's \"feature\""))
+  })
+})
+
+describe('relativeImportPath', () => {
+  it('walks up out of the generated directory to the acceptance sources', () => {
+    expect(relativeImportPath('/p/build/acceptance/generated', '/p/acceptance/runtime.ts'))
+      .toBe('../../../acceptance/runtime.ts')
+  })
+
+  it('marks a same-directory target as relative, so it never reads as a package', () => {
+    expect(relativeImportPath('/p/acceptance', '/p/acceptance/steps.ts')).toBe('./steps.ts')
+  })
+})
+
+describe('featureArtifacts', () => {
+  const request = {
+    featureName: 'API proxy',
+    irPath: '/p/build/acceptance/ir/api-proxy.json',
+    outputDir: '/p/build/acceptance/generated',
+    acceptanceDir: '/p/acceptance',
+    cwd: '/p',
+  }
+
+  it('names both artifacts after the IR file', () => {
+    const { entrypoint, metadata } = featureArtifacts(request)
+    expect(entrypoint.path).toBe('build/acceptance/generated/api-proxy.acceptance.ts')
+    expect(metadata.path)
+      .toBe('build/acceptance/generated/metadata/features-api-proxy-feature.json')
+  })
+
+  it('records the feature, the IR and the emitted file as working-directory paths', () => {
+    const document = JSON.parse(featureArtifacts(request).metadata.content)
+    expect(document).toMatchObject({
+      schema_version: 1,
+      feature_path: 'features/api-proxy.feature',
+      ir_path: 'build/acceptance/ir/api-proxy.json',
+      hash_scope: 'generated_files',
+      generated_files: ['build/acceptance/generated/api-proxy.acceptance.ts'],
+    })
+  })
+
+  it('hashes exactly the entry point it emits', () => {
+    const { entrypoint, metadata } = featureArtifacts(request)
+    expect(JSON.parse(metadata.content).implementation_hash)
+      .toBe(implementationHash([entrypoint]))
+  })
+
+  it('imports the runtime and the step handlers from the generated file location', () => {
+    const { entrypoint } = featureArtifacts(request)
+    expect(entrypoint.content).toContain('from "../../../acceptance/runtime.ts"')
+    expect(entrypoint.content).toContain('from "../../../acceptance/steps.ts"')
+  })
+
+  it('ends the metadata document with a newline', () => {
+    expect(featureArtifacts(request).metadata.content.endsWith('}\n')).toBe(true)
   })
 })

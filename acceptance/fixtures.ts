@@ -1,31 +1,25 @@
-import { execFile } from 'node:child_process'
 import { createServer as createHttpServer } from 'node:http'
 import type { Server } from 'node:http'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
-
-const runFile = promisify(execFile)
-
-export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const BACKEND_PORT = 4000
 
-export type CommandResult = {
-  code: number
-  output: string
+type RunningServer = {
+  url: string
+  close: () => Promise<void>
 }
 
 type Fixtures = {
   backendRoutes: Map<string, string>
   backend?: Server
-  devServer?: { close: () => Promise<void>; url: string }
-  previewServer?: { close: () => Promise<void>; url: string }
+  devServer?: RunningServer
+  previewServer?: RunningServer
   build?: Promise<void>
   currentBaseUrl?: string
 }
 
-const fixtures: Fixtures = { backendRoutes: new Map() }
+const emptyFixtures = (): Fixtures => ({ backendRoutes: new Map() })
+
+let fixtures = emptyFixtures()
 
 const firstLocalUrl = (urls: { local: string[] } | null, what: string): string => {
   const url = urls?.local[0]
@@ -33,6 +27,19 @@ const firstLocalUrl = (urls: { local: string[] } | null, what: string): string =
     throw new Error(`${what} did not report a local URL`)
   }
   return url
+}
+
+type Closable = { close: (whenClosed: (failure?: Error) => void) => void }
+
+const closeServer = (server: Closable): Promise<void> =>
+  new Promise((closed, failed) => {
+    server.close((failure) => (failure ? failed(failure) : closed()))
+  })
+
+// The server the client steps talk to, until another one is started.
+const addressed = (server: RunningServer): string => {
+  fixtures.currentBaseUrl = server.url
+  return server.url
 }
 
 export async function backendRepliesTo(path: string, body: string): Promise<void> {
@@ -67,8 +74,7 @@ export async function startDevServer(): Promise<string> {
       close: () => server.close(),
     }
   }
-  fixtures.currentBaseUrl = fixtures.devServer.url
-  return fixtures.devServer.url
+  return addressed(fixtures.devServer)
 }
 
 export async function buildForProduction(): Promise<void> {
@@ -85,13 +91,10 @@ export async function startPreviewServer(): Promise<string> {
     const server = await preview({ preview: { port: 0 }, logLevel: 'error' })
     fixtures.previewServer = {
       url: firstLocalUrl(server.resolvedUrls, 'the preview server'),
-      close: () => new Promise<void>((closed, failed) => {
-        server.httpServer.close((failure) => (failure ? failed(failure) : closed()))
-      }),
+      close: () => closeServer(server.httpServer),
     }
   }
-  fixtures.currentBaseUrl = fixtures.previewServer.url
-  return fixtures.previewServer.url
+  return addressed(fixtures.previewServer)
 }
 
 export function serverUrl(): string {
@@ -101,32 +104,11 @@ export function serverUrl(): string {
   return fixtures.currentBaseUrl
 }
 
-export async function runCommand(command: string, args: string[]): Promise<CommandResult> {
-  try {
-    const { stdout, stderr } = await runFile(command, args, { cwd: projectRoot })
-    return { code: 0, output: `${stdout}${stderr}` }
-  } catch (failure) {
-    const failed = failure as { code?: number; stdout?: string; stderr?: string }
-    return { code: failed.code ?? 1, output: `${failed.stdout ?? ''}${failed.stderr ?? ''}` }
-  }
-}
-
-export const typescriptCompiler = join(projectRoot, 'node_modules', '.bin', 'tsc')
-
 export async function releaseFixtures(): Promise<void> {
   await fixtures.devServer?.close()
   await fixtures.previewServer?.close()
-  await new Promise<void>((closed) => {
-    if (!fixtures.backend) {
-      closed()
-      return
-    }
-    fixtures.backend.close(() => closed())
-  })
-  fixtures.backendRoutes.clear()
-  fixtures.backend = undefined
-  fixtures.devServer = undefined
-  fixtures.previewServer = undefined
-  fixtures.build = undefined
-  fixtures.currentBaseUrl = undefined
+  if (fixtures.backend) {
+    await closeServer(fixtures.backend)
+  }
+  fixtures = emptyFixtures()
 }
