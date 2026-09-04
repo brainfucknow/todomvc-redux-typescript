@@ -12,9 +12,32 @@ export default defineConfig({
   preview: {
     proxy: apiProxy,
   },
+  /**
+   * Two suites with nothing in common but the runner, so each is its own
+   * project and `vitest run --project <name>` reports either one's file and
+   * test counts on its own:
+   *
+   *   unit     the application's specs, in a browser-shaped environment
+   *   scripts  the repository's own tooling, in Node, with no DOM to speak of
+   */
   test: {
-    environment: 'jsdom',
-    globals: true,
-    include: ['src/**/*.spec.{ts,tsx}'],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          environment: 'jsdom',
+          globals: true,
+          include: ['src/**/*.spec.{ts,tsx}'],
+        },
+      },
+      {
+        test: {
+          name: 'scripts',
+          environment: 'node',
+          include: ['scripts/**/*.spec.mjs'],
+        },
+      },
+    ],
   },
 })

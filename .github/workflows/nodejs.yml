@@ -1,25 +1,94 @@
+# Every gate this project has, in the order that fails cheapest first.
+#
+# A gate nobody runs automatically is close in effect to a gate that cannot
+# fail, and until this file was rewritten the lint, format, type and end-to-end
+# gates were all in that position. Each `run:` below is a command a developer
+# can run locally by the same name, so a red job is reproducible in one line.
+#
+# Node version: one entry, 22.x, which is what this repository is developed and
+# verified on. Vite requires ^20.19 || >=22.12 and Vitest ^22.12 || ^24 || >=26,
+# so 24.x would very likely work - but "very likely" is the kind of claim this
+# project has been burned by, and nothing here has been run on 24. Adding it is
+# a one-line change for whoever is willing to prove it.
+
 name: Node CI
 
 on: [push]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     strategy:
       matrix:
         node-version: [22.x]
 
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v5
+
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
-      - name: npm install, build, and test
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run format:check
+
+      - run: npm run typecheck
+
+      # scripts/typecheck.mjs anchors its projects to itself rather than to the
+      # working directory, and scripts/typecheck-gate.spec.mjs holds the test
+      # for that. Do not add a `working-directory:` here without re-reading it.
+
+      - run: npm test
+
+      - run: npm run build
+
+      # React 19 ignores propTypes, and @types/react 19 still declares the
+      # property, so a block that crept back would be dead code that lint, the
+      # type gate, the unit tests and the build all accept in silence. A grep is
+      # the only thing that catches it. Task 07 removed the last three blocks.
+      - name: No propTypes under src/
         run: |
-          npm ci
-          npm run build --if-present
-          npm test
-        env:
-          CI: true
+          found=0
+          grep -rn 'propTypes' src/ || found=$?
+          if [ "$found" -eq 0 ]; then
+            echo "::error::propTypes is dead code under React 19; the prop interface is the contract."
+            exit 1
+          fi
+          if [ "$found" -ne 1 ]; then
+            echo "::error::grep failed with status $found, so nothing was checked."
+            exit "$found"
+          fi
+
+      # The runner image ships no Playwright browsers, and the suite pins the
+      # build that matches @playwright/test in package-lock.json. `npx` runs the
+      # CLI that npm ci just installed, so the browser and the client always
+      # agree on a version. Only chromium: qa/suite-config.ts declares one
+      # project and it is chromium. `--with-deps` adds the system libraries the
+      # browser needs, which the image does not guarantee either.
+      - name: Install the Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # Builds the app and runs it against the stub backend in qa/. The dev- and
+      # preview-server variants of the same procedures (test:e2e:dev,
+      # test:e2e:preview) are deliberately not here: they re-run these cases
+      # through a second server and a proxy hop, which adds moving parts without
+      # adding covered behavior.
+      - run: npm run test:e2e
+
+      - name: Keep the Playwright report from a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-node-${{ matrix.node-version }}
+          path: qa/.artifacts/
+          retention-days: 7
