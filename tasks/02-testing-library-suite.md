@@ -699,6 +699,134 @@ Coder to delete `pressEnter()` from `src/test-utils.tsx`. That helper now lives 
 `src/test-render.tsx`, and `src/test-utils.tsx` is gone. The instruction still holds as
 written otherwise; I did not edit another task's file to say so.
 
+**Second pass, after the chain resumed from the Specifier.** Owned `scripts/`; `src/`,
+`features/`, `qa/` and `e2e/` untouched, no component, action, reducer, selector or
+middleware changed, and no behaviour added. Nothing under `src/` or `scripts/` had moved
+since the first Cleaner pass - the resumed Specifier touched only `features/` and `qa/`,
+and the Coder changed nothing - so I re-read the tree as a fresh subject rather than
+re-doing work the first pass had done.
+
+**One finding, and it is the last piece of `.mutation/` layout still living in a shell.**
+The two runners each spelled the record directory themselves, and spelled it under the
+same name for two different directories: `MANIFEST_DIR` was `.mutation` in
+`scripts/mutation.ts` and `.mutation/gherkin` in `scripts/acceptance-mutation.ts`. A
+reader comparing the two runners - which is exactly what the first pass's `Stamp` type
+invites - meets the same name meaning two things.
+
+`scripts/mutation-reuse/layout.ts` (core) is new and is now the one place that spells
+`.mutation`: `ACCEPTANCE_IMPLEMENTATION_STAMP`, `MUTATION_TIER_STAMP` and
+`gherkinManifest(slug)`. It mirrors `acceptance/layout.ts`, which is where this project
+already keeps "where things live" as a tested module rather than as a constant in a CLI
+shell. Each runner now asks for the record it wants and joins it to the project root; both
+create the directory from `dirname` of the path they are about to write, so neither names
+a directory it does not otherwise use. `MANIFEST_EXTENSION` and the `gherkin` segment
+moved with it: naming a manifest after its feature slug is a decision - a renamed feature
+must start from no record rather than from the one its old name earned - and it was
+untested in a shell.
+
+`layout.ts` is declared core in `scripts/architecture/packages.ts`, so the boundary check,
+the CRAP gate and Stryker all reach it. The package's `pureExternals` are unchanged:
+`node:path` was already granted.
+
+**Behaviour preservation is demonstrated, not assumed.** Recomputing the acceptance
+implementation fingerprint through the refactored path gives
+`sha256:ca92e55f3150f9a48ddf3914bd7a1923087d20bffe94e341e0c908d3a91517b4`, the value
+committed in `.mutation/acceptance-implementation.json`, and `resultsAreReusable` answers
+true against it, so the five stored gherkin manifests stay reusable across this change;
+`gherkinManifest` resolves to all five committed manifest files by name. `node
+scripts/mutation.ts --help` runs the refactored shell end to end - it fingerprints the
+tier, reads the stamp at the new path, reports correctly that the tier has moved, and
+spawns Stryker with `--force`. I restored `.mutation/test-tier.json` afterwards; `git
+status` on `.mutation/` is clean and no mutation was run.
+
+**The new spec was tested in the failing direction,** one mutation at a time, each
+reverted: writing the gherkin manifests into the records root instead of `gherkin/` fails
+"names a feature manifest after the feature"; swapping the two stamp file names fails
+"stamps the acceptance implementation beside the gherkin manifests"; dropping the slug
+from the manifest name fails both "names a feature manifest after the feature" and "gives
+two features two manifests".
+
+**What I looked at and deliberately left alone.**
+
+- The eight component spec files and the two test helpers. The ids, the mapping and the
+  reading helpers are as the first pass left them and I found nothing to improve. The
+  two-todo sample (`Use Redux` / `Run the tests`) is spelled in `App.spec.tsx`,
+  `MainSection.spec.tsx` and `TodoList.spec.tsx`; each of those specs asserts the exact
+  texts a line or two away from the data, so hoisting it into a shared fixture would put
+  the expectation and what it is about in different files. Inline is the clearer of the
+  two, so it stays.
+- `src/reducers/todos.spec.ts` is the one file in the tree with real internal duplication
+  (the same todo literal eleven times). It is this task's Out of scope and D2a2 freezes it
+  by name and count; it belongs to whichever task next has reason to open it.
+- `claimedHash` in `stamp.ts` lets `JSON.parse` throw on a corrupt stamp file rather than
+  reading it as "nothing recorded". Turning that into a `false` would change error-handling
+  policy, which my brief bars, so it is recorded here instead.
+- The two functions over the CRAP gate are the same two, untouched:
+  `src/middlewares/callapimiddleware.ts:18` (cc 5, cov 0%, CRAP 30.0), which Out of scope
+  bars me from testing, and `src/reducers/apis.ts:4` `executing` (cc 13, cov 100%), the
+  single-switch exception the shared definition names.
+
+**Verified.**
+
+- `npm test`: 27 files, 267 tests, 0 failing, 0 skipped. Buckets: `src` 10 / 55,
+  `acceptance` 5 / 63, `scripts` 12 / 149. 10+5+12 = 27 and 55+63+149 = 267, so D2c's sum
+  check holds.
+- D2a1 by hand over `npx vitest run src --reporter=verbose`: all 41 ids (`C01`-`C40`,
+  `N01`) appear in the name of a passing test, none missing.
+- D2a3-D2a5 against the tree as I leave it, one at a time, each reverted and the tree clean
+  after: `Footer`'s item word forced to `items` fails C05 (and C03, C19, C02);
+  `deleteTodo(todo.id + 1)` in `TodoItem` fails C25 and nothing else; dropping `selected`
+  in `Link` fails C13 and nothing else.
+- `npm run test:acceptance` 5 files / 30 executions green. `npm run test:property`
+  14 / 141. `npm run test:hardening` 12 / 129. `npx tsc --noEmit` clean. `npm run build`
+  succeeds.
+- CRAP gate over the whole tree: 46 files, 263 functions, 2 over the gate - the two above.
+  `layout.ts` is at 100% coverage, cc 1, CRAP 1.
+- Mixed-job scan, by Stryker mutant count on a dry run into a scratch incremental file (no
+  mutants tested, `.mutation/` untouched): `layout.ts` 6, against 19-30 for the package's
+  other core modules and 60-64 for the single-job modules the first pass measured. One job;
+  nothing to split.
+- No mutation run and no gherkin mutation, per the role brief.
+
+**Floors that moved, which the D2b/D2c/D8/D9 floor rule asks me to record.**
+
+- **D2c rises from 11 files / 145 tests to 12 files / 149 tests**, the four cases in
+  `scripts/mutation-reuse/layout.spec.ts`.
+- **D1 rises from 26 files / 263 tests to 27 / 267**, the same four.
+- D2a (10 / 55), D2b (5 / 63), D8 (14 / 141) and D9 (12 / 129) are unmoved.
+
+**Left for the Architect.** Both findings from the first pass stand and neither is narrowed
+by this change: `fingerprint()` and `acceptance/generator.ts`'s `implementationHash()` are
+the same digest on either side of a boundary that bars the import, and both runner shells
+still reach into `acceptance/project-files.ts` for `projectRoot`. One more of the same
+shape, now visible because the layout is not: `scripts/mutation.ts` defines its own
+one-line `announce`, while `scripts/acceptance-mutation.ts` imports `announce` from
+`acceptance/pipeline.ts` - the language-mutation runner would depend on the acceptance
+pipeline for a `process.stdout.write` if it shared it, which is a boundary question, not a
+cleaning one.
+
+**Left for the Hardener.** `scripts/mutation-reuse/layout.ts` is in `modulesIn('core')`, so
+Stryker mutates it: 6 candidates, all string or template-part mutations that the spec's
+exact-path assertions should kill. The mutation tier's own fingerprint has moved again (one
+new spec file), so the next `npm run test:mutation` is a full run by design. Everything the
+first pass left you stands: `files.ts` is a declared shell and deliberately outside both the
+gate and the mutate set, and the inventory's "Gaps in the baseline" section still stands in
+full - the rewrite covers none of those five. For the acceptance tier, expect 15 candidates
+for `toolchain-dependencies` and none surviving.
+
+**Left for QA.** The numbers procedure D wants, as this pass leaves them: D2a 10 files / 55
+tests, D2b 5 / 63, D2c **12 / 149**, D1 **27 / 267**, D8 14 / 141, D9 12 / 129, D3 30 with
+the breakdown 3 / 9 / 3 for `toolchain dependencies 1/2/3`. A7's answer is
+`@testing-library/react` and `@testing-library/user-event` in both directions.
+`e2e/toolchain-commands.spec.ts` is still yours to move and still carries the pre-task
+figures; its explicit list of `scripts/` spec files is now twelve - the eight it names plus
+`scripts/mutation-reuse/fingerprint.spec.ts`, `layout.spec.ts`, `manifest.spec.ts` and
+`stamp.spec.ts`.
+
+**Open questions.** None. The first pass's open question about
+`tasks/05-function-components.md` was answered by the project manager's amendment; I
+checked the file names `src/test-render.tsx`, and it does.
+
 ### Project manager rulings on the Cleaner handoff
 
 Verified independently: `npx tsc --noEmit` exits 0; `npm test` 26 files / 263 tests; `npx vitest run
@@ -839,4 +967,30 @@ running the three component failing-direction checks against the tree as this pa
 than trusting the earlier run, is the right standard.
 
 Nothing is routed back. The chain continues from the Cleaner.
+
+
+### Project manager rulings on the second Cleaner pass
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 27 files / 267 tests;
+`npx vitest run src` unchanged at 10 / 55; `npx vitest run scripts` 12 / 149;
+`npm run test:acceptance` 30 / 30; `node scripts/acceptance-mutation.ts` exits 0 with zero
+survivors, so the committed manifests still resolve through the moved layout. Accepted.
+
+The find is small and real: `MANIFEST_DIR` named `.mutation` in one runner and `.mutation/gherkin`
+in the other - the same identifier meaning two different directories in the two files a reader
+compares side by side. Giving the layout one tested owner, mirroring `acceptance/layout.ts`, is the
+convention this project already established, and moving the slug-to-filename rule with it is the
+right call for the stated reason: naming a manifest after its feature slug is a decision, not
+formatting, because a renamed feature must start from no record.
+
+Proving behavior preservation by recomputing the fingerprint already committed in
+`.mutation/acceptance-implementation.json` and confirming all five manifests still resolve is the
+correct evidence for a change that moves where files are found, and I confirmed it end to end by
+running the mutator itself.
+
+Re-reading a tree that had not moved as a fresh subject, rather than reporting nothing because an
+earlier pass of the same role had already cleaned it, is the right reading of a resumed chain.
+
+Floors moved as recorded: D1 26 / 263 -> 27 / 267 and D2c 11 / 145 -> 12 / 149, both permitted by the
+recorded-rise rule without a procedure edit. D2a, D2b, D8 and D9 unmoved.
 

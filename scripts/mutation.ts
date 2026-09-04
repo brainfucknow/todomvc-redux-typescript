@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { projectRoot } from '../acceptance/project-files.ts'
 import { readFiles, readIfPresent } from './mutation-reuse/files.ts'
 import { fingerprint, selectedFiles } from './mutation-reuse/fingerprint.ts'
+import { MUTATION_TIER_STAMP } from './mutation-reuse/layout.ts'
 import { MUTATION_TIER, reachedVerdict, resultsAreReusable, stampText } from './mutation-reuse/stamp.ts'
 import { mutationTierTests } from '../vitest.mutation.config.ts'
 
@@ -17,8 +18,7 @@ import { mutationTierTests } from '../vitest.mutation.config.ts'
 // across a change in the tests that judge the mutants. A change to a mutated
 // source is Stryker's own to notice, so only the tests are fingerprinted here.
 
-const MANIFEST_DIR = join(projectRoot, '.mutation')
-const TIER_STAMP = join(MANIFEST_DIR, 'test-tier.json')
+const tierStamp = join(projectRoot, MUTATION_TIER_STAMP)
 
 const stryker = join(projectRoot, 'node_modules', '.bin', 'stryker')
 
@@ -39,7 +39,7 @@ const announce = (message: string): void => {
 }
 
 const current = tierFingerprint()
-const reusable = resultsAreReusable(MUTATION_TIER, readIfPresent(TIER_STAMP), current)
+const reusable = resultsAreReusable(MUTATION_TIER, readIfPresent(tierStamp), current)
 
 announce(reusable
   ? 'mutation tier unchanged since the manifest was written; reusing recorded results'
@@ -51,8 +51,8 @@ const mutation = spawnSync(stryker, ['run', ...(reusable ? [] : ['--force']), ..
 })
 
 if (reachedVerdict([mutation.status])) {
-  mkdirSync(MANIFEST_DIR, { recursive: true })
-  writeFileSync(TIER_STAMP, stampText(MUTATION_TIER, current))
+  mkdirSync(dirname(tierStamp), { recursive: true })
+  writeFileSync(tierStamp, stampText(MUTATION_TIER, current))
 }
 
 process.exit(mutation.status ?? 1)

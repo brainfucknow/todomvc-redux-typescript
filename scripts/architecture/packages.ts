@@ -63,6 +63,7 @@ const crapRules: LayerRules = {
 const mutationReuseRules: LayerRules = {
   layers: {
     'fingerprint.ts': 'core',
+    'layout.ts': 'core',
     'manifest.ts': 'core',
     'stamp.ts': 'core',
     'files.ts': 'shell',
