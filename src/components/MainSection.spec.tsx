@@ -1,40 +1,25 @@
 import React from 'react'
-import { render, fireEvent } from '@testing-library/react'
-import { Provider } from 'react-redux'
-import { configureStore } from '@reduxjs/toolkit'
+import { fireEvent } from '@testing-library/react'
 import MainSection, { MainSectionProps } from './MainSection'
-import reducer from '../reducers'
-import { callAPIMiddleware } from '../middlewares/callapimiddleware'
+import { renderWithStore } from '../test-support/store'
+import { stubPendingFetch } from '../test-support/fetch'
 
-beforeEach(() => {
-  // VisibleTodoList loads todos on mount; keep the request pending so the
-  // store never changes underneath an assertion.
-  (global as any).fetch = jest.fn(() => new Promise(() => {}))
-})
+beforeEach(stubPendingFetch)
 
 const setup = (propOverrides?:Partial<MainSectionProps>) => {
   const props = Object.assign({
     todosCount: 2,
     completedCount: 1,
     actions: {
-      editTodo: jest.fn(),
-      deleteTodo: jest.fn(),
-      completeTodo: jest.fn(),
-      completeAllTodos: jest.fn(),
-      clearCompleted: jest.fn()
+      editTodo: vi.fn(),
+      deleteTodo: vi.fn(),
+      completeTodo: vi.fn(),
+      completeAllTodos: vi.fn(),
+      clearCompleted: vi.fn()
     }
   }, propOverrides)
 
-  const store = configureStore({
-    reducer,
-    middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(callAPIMiddleware),
-  })
-
-  const { container } = render(
-    <Provider store={store}>
-      <MainSection {...props} />
-    </Provider>
-  )
+  const { container } = renderWithStore(<MainSection {...props} />)
 
   return {
     props: props,

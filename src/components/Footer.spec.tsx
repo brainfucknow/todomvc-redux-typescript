@@ -1,10 +1,7 @@
 import React from 'react'
-import { render, fireEvent } from '@testing-library/react'
-import { Provider } from 'react-redux'
-import { configureStore } from '@reduxjs/toolkit'
+import { fireEvent } from '@testing-library/react'
 import Footer, { FooterProps } from './Footer'
-import reducer from '../reducers'
-import { callAPIMiddleware } from '../middlewares/callapimiddleware'
+import { createTestStore, renderWithStore } from '../test-support/store'
 import { setVisibilityFilter } from '../actions'
 import TodoFilters from '../constants/TodoFilters'
 const {SHOW_ALL, SHOW_ACTIVE, SHOW_COMPLETED}=TodoFilters;
@@ -13,20 +10,13 @@ const setup = (propOverrides?:Partial<FooterProps>, visibilityFilter:TodoFilters
   const props:FooterProps = Object.assign({
     completedCount: 0,
     activeCount: 0,
-    onClearCompleted: jest.fn(),
+    onClearCompleted: vi.fn(),
   }, propOverrides)
 
-  const store = configureStore({
-    reducer,
-    middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(callAPIMiddleware),
-  })
+  const store = createTestStore()
   store.dispatch(setVisibilityFilter(visibilityFilter))
 
-  const { container } = render(
-    <Provider store={store}>
-      <Footer {...props} />
-    </Provider>
-  )
+  const { container } = renderWithStore(<Footer {...props} />, store)
 
   return {
     props: props,

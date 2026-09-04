@@ -36,6 +36,7 @@ Things `react-scripts` does today that must keep working:
 - Update `.gitignore` for Vite's output directory if it differs from `build/`.
 - Confirm `npm run test:e2e` still runs. The E2E stub serves the built app from `build/`, falling back to `dist/`, and honours a `QA_APP_DIR` override, so the command is expected to survive the output-directory change. Confirm that; do not assume it. The stub and the tests belong to QA: if the command needs a change, QA makes it, not the coder.
 - Update `README.md` where it documents CRA commands and `npm run eject`.
+- Decide `"type": "module"` in `package.json`. Vite 8 prints a deprecation warning on every run because `vite.config.ts` is ESM loaded as CJS. Task 03 left this alone deliberately: setting it changes how `react-scripts` and `qa/playwright.config.ts` load, and `react-scripts` is still present there. It is gone by the time you run, so settle it here. If setting it breaks `qa/playwright.config.ts`, that file is QA's; stop and report rather than editing it.
 
 ## Out of scope
 

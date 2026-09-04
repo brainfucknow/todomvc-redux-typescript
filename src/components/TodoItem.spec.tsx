@@ -1,6 +1,7 @@
 import React from 'react'
 import { render, fireEvent } from '@testing-library/react'
 import TodoItem from './TodoItem'
+import { pressReturn } from '../test-support/keyboard'
 
 const setup = ( editing = false ) => {
   const props = {
@@ -9,9 +10,9 @@ const setup = ( editing = false ) => {
       text: 'Use Redux',
       completed: false
     },
-    editTodo: jest.fn(),
-    deleteTodo: jest.fn(),
-    completeTodo: jest.fn()
+    editTodo: vi.fn(),
+    deleteTodo: vi.fn(),
+    completeTodo: vi.fn()
   }
 
   const { container } = render(
@@ -32,9 +33,6 @@ const setup = ( editing = false ) => {
     editInput: editInput
   }
 }
-
-const pressReturn = (input:HTMLInputElement) =>
-  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 })
 
 describe('components', () => {
   describe('TodoItem', () => {

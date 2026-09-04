@@ -1,28 +1,12 @@
 import React from 'react'
-import { render } from '@testing-library/react'
-import { Provider } from 'react-redux'
-import { configureStore } from '@reduxjs/toolkit'
 import App from './App'
-import reducer from '../reducers'
-import { callAPIMiddleware } from '../middlewares/callapimiddleware'
+import { renderWithStore } from '../test-support/store'
+import { stubPendingFetch } from '../test-support/fetch'
 
-beforeEach(() => {
-  // The todo list loads todos on mount; keep the request pending so the store
-  // never changes underneath an assertion.
-  (global as any).fetch = jest.fn(() => new Promise(() => {}))
-})
+beforeEach(stubPendingFetch)
 
 const setup = () => {
-  const store = configureStore({
-    reducer,
-    middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(callAPIMiddleware),
-  })
-
-  const { container } = render(
-    <Provider store={store}>
-      <App />
-    </Provider>
-  )
+  const { container } = renderWithStore(<App />)
   return container
 }
 

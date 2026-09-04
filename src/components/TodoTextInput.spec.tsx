@@ -1,10 +1,11 @@
 import React from 'react'
 import { render, fireEvent } from '@testing-library/react'
 import TodoTextInput, { TodoTextInputProps } from './TodoTextInput'
+import { pressReturn } from '../test-support/keyboard'
 
 const setup = (propOverrides?:Partial<TodoTextInputProps>) => {
   const props:TodoTextInputProps = Object.assign({
-    onSave: jest.fn(),
+    onSave: vi.fn(),
     text: 'Use Redux',
     placeholder: 'What needs to be done?',
     editing: false,
@@ -19,9 +20,6 @@ const setup = (propOverrides?:Partial<TodoTextInputProps>) => {
     input: input
   }
 }
-
-const pressReturn = (input:HTMLInputElement) =>
-  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 })
 
 describe('components', () => {
   describe('TodoTextInput', () => {

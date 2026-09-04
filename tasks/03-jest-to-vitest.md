@@ -43,4 +43,71 @@ Vitest reads `vite.config.ts`. Introducing that file here is expected and is wha
 
 ### Coder
 
+**What changed**
+
+- Added `vitest` 5.0.0, `vite` 8.2.2, `@vitejs/plugin-react` 6.1.1 and `jsdom` 30.0.1 as devDependencies.
+- Added `vite.config.ts` at the repository root: `@vitejs/plugin-react`, and a `test` block with
+  `environment: 'jsdom'`, `globals: true`, and `include: ['src/**/*.spec.{ts,tsx}']`. The config is
+  imported from `vitest/config` so the `test` key is typed. No setup file: the suites assert on plain
+  DOM properties and never use a `@testing-library/jest-dom` matcher, and that package is not in the
+  project, so there was nothing to wire. `globals: true` also gives `@testing-library/react` 14 the
+  global `afterEach` it needs to auto-cleanup, which is what Jest was giving it before.
+- `npm test` is now `vitest run`. Run mode, no watch, so CI's `npm test` under `CI: true` is unchanged
+  in shape. `npm start` and `npm run build` still run `react-scripts`.
+- Removed `@types/jest`. Added `"types": ["vitest/globals"]` to `tsconfig.json` so the specs' global
+  `describe`/`it`/`expect`/`beforeEach`/`vi` still resolve. TypeScript 3.9 parses `vitest/globals`
+  without complaint (checked with `tsc --noEmit`: no diagnostic under `src/`).
+- API differences edited at the call sites, nothing more: `jest.fn(` -> `vi.fn(` in six specs. The
+  assertion aliases the suites use (`toBeCalled`, `toBeCalledWith`) exist in Vitest, so no assertion
+  was rewritten and no assertion changed meaning.
+- Absorbed task 02's three deferred DRY findings into `src/test-support/`, one job per file:
+  - `store.tsx` - `createTestStore()` (root reducer + `callAPIMiddleware`) and
+    `renderWithStore(ui, store?)`. `App.spec`, `Footer.spec` and `MainSection.spec` use it; `Footer`
+    passes its own store because it dispatches `setVisibilityFilter` before rendering.
+  - `keyboard.ts` - `pressReturn(input)`, used by `Header.spec`, `TodoItem.spec` and
+    `TodoTextInput.spec`.
+  - `fetch.ts` - `stubPendingFetch()`, the never-settling `fetch`, used by `App.spec` and
+    `MainSection.spec` as `beforeEach(stubPendingFetch)`.
+  Nothing outside a `.spec` file imports `src/test-support/`; the directory is unreachable from
+  `src/index.tsx`, which the unchanged bundle hash confirms.
+- Bumped `@types/node` from `^13.13.6` to `^22.19.1` (resolves 22.20.1). This was forced, not
+  opportunistic: every Vite version declares `@types/node` as an optional peer with a floor far above
+  13, so `npm ci` failed with `ERESOLVE` while the old range stood, which would have broken the CI
+  workflow. `@types/node` was CRA boilerplate that nothing under `src/` imports, and with the
+  `types` array now set it is no longer auto-included in the compilation either. `npm install` and
+  `npm ci` both resolve strictly, with no `--legacy-peer-deps` and no `.npmrc`.
+
+**Verified**
+
+- `npm test` -> Vitest, 10 test files, 55 tests, all passing. Same ten files as the Jest baseline
+  (`CI=true npx react-scripts test --watchAll=false`, re-run here before any change: 10 suites, 55
+  tests). Vitest's `include` keeps `qa/tests/*.spec.ts` out of the unit run.
+- `npm run build` -> `react-scripts`, compiled successfully, `build/static/js/main.1875e386.js`
+  at 56.9 kB gzipped and `main.344fbdf7.css` at 1.76 kB: the same chunk hash the build has produced
+  since task 01.
+- `npm run test:e2e` -> 22 passed, unchanged. Nothing under `qa/` was touched.
+- `npm ci --dry-run` -> resolves.
+- `npx tsc --noEmit` -> no diagnostic under `src/`. (Raw `tsc` still reports parse errors inside
+  `node_modules/@reduxjs/toolkit`; that predates this task, TypeScript 3.9 cannot read those
+  declarations, and `react-scripts`' checker filters diagnostics to `**/src/**`. Task 05 clears it.)
+- `git diff --stat` -> only the eight `*.spec.tsx`, `package.json`, `package-lock.json`,
+  `tsconfig.json`, plus the new `vite.config.ts` and `src/test-support/`. No application source
+  differs. `grep -rn jest src/` returns nothing.
+
+**Left for the next role**
+
+- `react-scripts`, its bundled Jest 27, and `@testing-library/*` are all still installed. Removing
+  the runner half of `react-scripts` is task 04's business, not this task's.
+- Vite 8 prints one warning on every `vitest run`: `vite.config.ts` uses ESM syntax but loads as
+  CommonJS, because the root `package.json` has no `"type": "module"`. It is a
+  forward-compatibility warning about a future default config loader, not an error, and the run is
+  unaffected. Adding `"type": "module"` would change how `react-scripts` and
+  `qa/playwright.config.ts` load, so it belongs to task 04 along with the rest of the bundler move.
+- `tsconfig.json`'s new `types: ["vitest/globals"]` narrows automatic `@types` inclusion to that one
+  package. Nothing under `src/` needed the others, but task 05 should revisit the array when it
+  rewrites the tsconfig.
+- `resolutions` is still the inert Yarn field `PLAN.md` records; untouched here.
+
+No open questions.
+
 ### QA

@@ -17,6 +17,7 @@ Move the project to the current TypeScript 5.x line with a compiler configuratio
 Known type debt that the bump will surface:
 
 - `@types/react` is pinned to 18.0.0 through a `resolutions` field that npm ignores.
+- `tsconfig.json` gained `"types": ["vitest/globals"]` in task 03 so the specs' global test API resolves. Keep that working.
 - `@types/react-redux` is an explicit dependency, but react-redux 9 ships its own types.
 - `src/middlewares/callapimiddleware.ts` imports `AnyAction` and `Dispatch` from `redux`; `AnyAction` is deprecated in Redux 5 in favour of `UnknownAction`. It also types the middleware's `action` parameter as `any`.
 - `src/containers/index.ts` hand-declares `RootState` with only `todos` and `visibilityFilter`, while the root reducer also combines `errorMessage` and `exec`.
@@ -28,7 +29,7 @@ Known type debt that the bump will surface:
 - With `react-jsx`, the default `React` import is no longer required for JSX. Removing those now-unused imports is in scope for this task; it is a mechanical consequence of the compiler option and moves no logic.
 - Fix type errors the bump surfaces, with the narrowest change that keeps behavior identical.
 - Remove the ineffective `resolutions` field.
-- Remove `@types/react-redux` if react-redux's own types suffice. Remove `@types/node` if nothing needs it.
+- Remove `@types/react-redux` if react-redux's own types suffice. Leave `@types/node` alone: task 03 raised it from `^13.13.6` to `^22.19.1` because every Vite version declares it as an optional peer with a floor far above 13, and `npm ci` failed with `ERESOLVE` until it moved. It is excluded from automatic inclusion by the `types` array and no source imports it, but removing it breaks install resolution.
 - `qa/` sits outside `tsconfig.json`'s `include` because TypeScript 3.9 cannot parse Playwright's type definitions, and Playwright transpiles the specs without typechecking them. TypeScript 5 can. Bring `qa/tests/` under a typecheck, in its own project reference or its own config rather than by widening the app's `include`, so the app's compilation stays free of test types. Fix any type error this surfaces in the test sources. Do not change what any test asserts; if a type error can only be resolved by changing an assertion, stop and report it.
 
 ## Out of scope

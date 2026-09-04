@@ -1,10 +1,11 @@
 import React from 'react'
 import { render, fireEvent } from '@testing-library/react'
 import Header from './Header'
+import { pressReturn } from '../test-support/keyboard'
 
 const setup = () => {
   const props = {
-    addTodo: jest.fn()
+    addTodo: vi.fn()
   }
 
   const { container } = render(<Header {...props} />)
@@ -15,9 +16,6 @@ const setup = () => {
     input: container.querySelector('input') as HTMLInputElement
   }
 }
-
-const pressReturn = (input:HTMLInputElement) =>
-  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 })
 
 describe('components', () => {
   describe('Header', () => {
