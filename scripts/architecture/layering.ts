@@ -1,6 +1,7 @@
 // Whether an import graph obeys a package's layer map. Data in, faults out:
 // which module sits on which side of the boundary is the caller's to declare,
-// and reading the graph off the tree is the caller's to do.
+// and reading the graph off the tree is the caller's to do. What a CLI shell
+// outside every package may reach is a different rule, in `./shells.ts`.
 export type Layer = 'core' | 'shell'
 
 export type ModuleImports = {

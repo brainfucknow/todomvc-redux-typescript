@@ -855,6 +855,196 @@ recorded-rise rule the Specifier introduced, these need no procedure edit.
 
 ### Architect
 
+Owned `src/`, `scripts/` and `vitest.coverage.ts`; `features/`, `qa/`, `e2e/`, `acceptance/` and
+`.mutation/` untouched. No component, reducer, action or selector changed, and no rendered output
+moved: `npx vitest run src` is 10 files / 55 tests with the same 41 ids on the same tests.
+
+**The three findings the Cleaner routed here, answered.** Two of them are the same defect and one is
+not a defect at all.
+
+- **`scripts/mutation.ts` importing `projectRoot` from `acceptance/project-files.ts` is a
+  wrong-direction dependency, and it is gone.** The language-mutation runner mutates the whole tree
+  and has no other business with the APS pipeline; it took one constant from it. Every other shell
+  in this project outside that package - `scripts/crap.mjs`, `hardening/packages.hardening.ts`,
+  `scripts/architecture/packages.spec.ts`, `scripts/crap/tiers.spec.ts`, `e2e/harness.ts` - finds
+  the root from its own location, which is not shared knowledge but each file knowing where it sits.
+  The runner now does the same. `scripts/acceptance.ts` and `scripts/acceptance-mutation.ts` keep
+  theirs: they drive the acceptance pipeline, so the dependency points the right way.
+- **The `announce` duplication stays, deliberately.** The only module with one to share is
+  `acceptance/pipeline.ts`, so sharing it would give the language-mutation runner a dependency on
+  the acceptance pipeline for a `process.stdout.write` - the very shape the point above removes. A
+  one-line stdout adapter is a shell doing its own output, not knowledge two unrelated pieces of
+  tooling hold in common, and if the two ever diverge nothing breaks. The argument is now a comment
+  at the definition, where the next reader meets it before reaching for the shared copy.
+- **`fingerprint()` and `acceptance/generator.ts`'s `implementationHash()` stay two functions,
+  deliberately, and for a stronger reason than the boundary.** They are not one decision wearing two
+  hats. `implementationHash` produces the `implementation_hash` the generator writes into a metadata
+  document that **gherkin-mutator reads back** - it is half of an agreement with a tool outside this
+  project, and moving it invalidates records that tool wrote. `fingerprint` is read only by the
+  runner that wrote it, against a stamp in `.mutation/`, and the `Stamp.version` field exists
+  precisely so it can widen. Sharing them would tie an external contract to an internal convenience,
+  so a change made for one would silently move the other. That is also recorded at the definition.
+
+**What now stops the dependency coming back: `CLI_SHELLS`.** The layer maps govern what is inside a
+package. Nothing at all governed the wrappers that invoke them, which is how the language-mutation
+runner came to import from the acceptance pipeline without any tier noticing. `scripts/architecture/
+packages.ts` now also declares, for each command-line entry point under `scripts/`, which packages
+it may reach:
+
+- `scripts/acceptance.ts` -> `acceptance`; `scripts/acceptance-mutation.ts` -> `acceptance` and
+  `scripts/mutation-reuse`; `scripts/crap.mjs` -> `scripts/crap`; `scripts/mutation.ts` ->
+  `scripts/mutation-reuse` and nothing else.
+- The list is read in **both directions**, like a layer map: reaching an undeclared package is a
+  fault, and so is declaring one that is no longer imported, so a grant cannot outlive its reason.
+  A shell under `scripts/` that appears in neither the tree nor the list is a fault as well, so a
+  new runner has to make the decision rather than inherit silence.
+- `vitest.coverage.ts` reads the shell **modules** back out of the same declaration instead of
+  spelling the three paths again, which is the trick the file already used for `modulesIn('shell')`.
+  A CLI shell is now declared once and both the boundary check and the CRAP gate follow.
+- The rule is a tested core module, not logic in a spec: `scripts/architecture/shells.ts`, judged by
+  `shells.spec.ts` (9 cases), `property/shells.property.ts` (5 properties) and, over the real tree,
+  `packages.spec.ts`. `node:path` joins the architecture package's `pureExternals` because
+  `shells.ts` needs `posix.join`/`posix.dirname` to resolve a specifier, and the hardening tier's
+  "grants exactly what its core modules import" check holds.
+
+**Why `shells.ts` is its own module.** I first wrote the rule into `layering.ts`, and its opening
+comment came out with an "and" in it. The mixed-job scan agreed: `layering.ts` went from 89 Stryker
+candidates to 132, against 60-64 for this project's single-job reference modules. Split by job, it
+is back to exactly 89 and `shells.ts` is 43. The two rules share only the `ModuleImports` shape:
+one is about the inside of a package, the other about what a module belonging to no package may
+depend on, and they take different declarations (`LayerRules` vs `ShellDependencies`).
+
+**Two smaller findings in `src/`, both about an adapter re-deciding something.**
+
+- **The test double re-decided which actions `callAPIMiddleware` acts on.** `withoutTheNetwork` in
+  `src/test-render.tsx` recognised an API action as `Array.isArray(action.types)` while the
+  middleware recognises it as `!action.types` - two spellings of one rule, free to drift, in a
+  helper whose whole job is to stand in for that middleware. `isApiAction` is now published from
+  `src/middlewares/callapimiddleware.ts` and asked by the stand-in. The middleware's behaviour is
+  unchanged (`!action.types` and `!isApiAction(action)` are the same test); the double's changes
+  only for a malformed action carrying a truthy non-array `types`, which no test dispatches and
+  which the real middleware would reject anyway. Side effect worth having: that predicate was dead
+  0%-covered policy inside a 0%-covered file and is now at 100%, cc 1. I did **not** touch the
+  `RootState` import in that file - task 04 owns it.
+- **`createTestStore` was exported and imported by nothing.** It is `renderWithStore`'s private
+  helper; it is now module-private. `TestState` stays exported because it names a public parameter.
+
+**Property tests: what was undercovered, and what I added.** The property tier covered every core
+module the project had except the four this task's Cleaner introduced -
+`scripts/mutation-reuse/{fingerprint,stamp,manifest,layout}.ts` had example tests and nothing else.
+`fast-check` is already the project's framework, so no pick was needed. Four new files, 32
+properties:
+
+- `property/fingerprint.property.ts` - `selectedFiles` answers only with entries of the directory it
+  was asked about carrying the suffix it asked for, never with what the exclusion covers, in the
+  order the selections were given; `fingerprint` is a sha256 whatever it covers, is unmoved by the
+  order of the listing, leaves its argument in the order it was given, and moves for any rewrite or
+  addition. One that earns its place: a rename cannot be disguised as an edit that shifts the same
+  text across the path/content boundary - the `\0` separator is what makes that true, and it is the
+  exact failure this package exists to prevent.
+- `property/stamp.property.ts` - round trip: a stamp is believed by the runner that wrote it for any
+  fingerprint, disbelieved once the fingerprint moves at all, disbelieved by the **other** runner
+  (they keep their records side by side and record different things), and disbelieved at any other
+  version. `reachedVerdict` is exactly "every process exited on its own", and is unmoved by exit
+  codes, so a red run is still stamped.
+- `property/manifest.property.ts` - round trip and idempotence: a stored manifest comes back exactly
+  as it went in, the feature text below it is unchanged, staging what came back reaches the same
+  text (a manifest that grew or shrank a line per run would be silent), and an end marker inside the
+  feature text does not extend the block.
+- `property/shells.property.ts` - the new rule, as above.
+
+`scripts/mutation-reuse/layout.ts` is three constants and a slug join; its four example cases pin the
+exact committed paths, which is the whole of what it can be wrong about, so it gets no properties.
+
+**Confirmed, not fixed - both task 04 findings still hold.**
+
+- `src/selectors/index.ts` and `src/middlewares/callapimiddleware.ts` both still `import { RootState }
+  from '../containers'`, the UI container barrel, and that barrel still declares only `todos` and
+  `visibilityFilter` while `src/reducers/index.ts` combines four slices.
+- The UI still re-derives what no selector owns: `src/components/MainSection.tsx` computes
+  `todosCount - completedCount` for the active count and `completedCount === todosCount` for "all
+  complete", and `src/selectors/index.ts` offers only `getVisibleTodos` and `getCompletedTodoCount`.
+  Two more of the same family, for whoever takes it: `src/containers/MainSection.ts` derives
+  `todosCount: state.todos.length` and `src/containers/FilterLink.ts` derives
+  `active: ownProps.filter === state.visibilityFilter`, both in a container rather than a selector.
+  All of it belongs to `tasks/04-hooks-replace-connect.md`; I changed none of it.
+
+**Also checked and left alone.** There are no import cycles under `src/` - I resolved the graph with
+directory- and index-aware resolution, which the package check's `importCycles` cannot do because it
+only understands package members. A `src`-wide cycle check would need that resolver; task 04 rewrites
+the container/selector/component graph, so it is the task with a reason to add one, not this one.
+
+**Verified.**
+
+- `npm test`: **28 files / 277 tests**, 0 failing, 0 skipped. Buckets `src` 10 / 55, `acceptance`
+  5 / 63, `scripts` 13 / 159. 10+5+13 = 28 and 55+63+159 = 277, so D2c's sum check holds.
+- D2a1 by hand over `npx vitest run src --reporter=verbose`: all 41 ids (`C01`-`C40`, `N01`) appear
+  in the name of a passing test, none missing, over 55 passing tests.
+- D2a3-D2a5 against the tree as I leave it, one at a time, each reverted and the tree clean after:
+  `Footer`'s item word forced to `items` fails C05 (and C03, C19, C02); `deleteTodo(todo.id + 1)` in
+  `TodoItem` fails C25 and nothing else; dropping `selected` in `Link` fails C13 and nothing else.
+- **The new check tested in the failing direction**, as PLAN section 4 requires, each reverted:
+  restoring the `acceptance/project-files.ts` import in `scripts/mutation.ts` fails with
+  `scripts/mutation.ts imports acceptance, which its declared dependencies do not include`; granting
+  `scripts/mutation.ts` a dependency it does not take fails; a scratch `scripts/probe-shell.ts` that
+  no list declares fails; dropping the relative-specifier guard in `shells.ts` fails "does not take
+  an installed package for a project package it is named like"; dropping the `/` from the directory
+  comparison fails "does not take a directory a package name is a prefix of for that package". The
+  last two are mutants that would otherwise have survived - I added those two cases after checking
+  what the existing ones could not kill.
+- `npm run test:acceptance` 5 files / 30 executions green. `npm run test:property` 18 / 168.
+  `npm run test:hardening` 12 / 129. `npx tsc --noEmit` clean. `npm run build` succeeds.
+- CRAP gate over the whole tree: 47 files, 283 functions, 2 over the gate - the same two, untouched:
+  `src/middlewares/callapimiddleware.ts:25` (cc 5, cov 0%, CRAP 30.0), which this task's Out of scope
+  bars me from testing, and `src/reducers/apis.ts:4` `executing` (cc 13, cov 100%), the single-switch
+  exception the shared definition names. Everything new is at 100% coverage and cc 1.
+- `node scripts/mutation.ts --help` runs the refactored shell end to end: it fingerprints the tier
+  from its own project root, reads the stamp, correctly reports the tier has moved, and spawns
+  Stryker with `--force`. I restored `.mutation/test-tier.json` afterwards; `git status` on
+  `.mutation/` is clean and no mutation was run.
+- Mixed-job scan by Stryker dry-run mutant count into a scratch incremental file (no mutants tested,
+  `.mutation/` untouched): `layering.ts` 89 - identical to its count before this pass - `shells.ts`
+  43, against 60-64 for the single-job reference modules `scripts/crap/options.ts`,
+  `scripts/crap/score.ts` and `scripts/architecture/packages.ts`. Nothing else indicates a source
+  doing more than one job.
+
+**Floors that moved, which the D2b/D2c/D8/D9 floor rule asks me to record.**
+
+- **D1 rises from 27 files / 267 tests to 28 / 277.**
+- **D2c rises from 12 files / 149 tests to 13 / 159** - `scripts/architecture/shells.spec.ts` is the
+  new file; nine of its cases plus one in `packages.spec.ts`.
+- **D8 rises from 14 files / 141 tests to 18 / 168** - the four new property files.
+- D2a (10 / 55), D2b (5 / 63), D9 (12 / 129) and D3 (30) are unmoved.
+
+**Left for the Hardener.**
+
+- `scripts/architecture/shells.ts` is declared core, so Stryker mutates it: 43 candidates. The two
+  it would most likely have survived are covered by the two cases named above. `layering.ts` is back
+  to its pre-pass 89 and its tests are byte-identical to what they were.
+- The mutation tier's own fingerprint has moved again (four new property files and one new spec
+  file), so the next `npm run test:mutation` is a full run by design.
+- The **acceptance** implementation fingerprint has **not** moved: I changed nothing under
+  `acceptance/`, so `.mutation/acceptance-implementation.json` still describes the tree and the five
+  stored gherkin manifests stay reusable at `--level soft`. Expect 15 candidates for
+  `toolchain-dependencies` and none surviving, as the Cleaner and the Specifier said.
+- `scripts/mutation-reuse/files.ts` is still a declared shell, deliberately outside both the gate and
+  the mutate set. The inventory's "Gaps in the baseline" section still stands in full: the rewrite
+  covers none of those five, and neither does this pass.
+
+**Left for QA.** The numbers procedure D wants, as this pass leaves them: D2a 10 files / 55 tests,
+D2b 5 / 63, D2c **13 / 159**, D1 **28 / 277**, D8 **18 / 168**, D9 12 / 129, D3 30 with the breakdown
+3 / 9 / 3 for `toolchain dependencies 1/2/3`. A7's answer is unchanged: `@testing-library/react` and
+`@testing-library/user-event` in both directions. `e2e/toolchain-commands.spec.ts` is still yours to
+move and still carries the pre-task figures; its explicit list of `scripts/` spec files is now
+**thirteen** - the twelve the Cleaner named plus `scripts/architecture/shells.spec.ts`.
+
+**Open questions.** None. Two judgements I made rather than asked, both argued above: publishing
+`isApiAction` from `src/middlewares/callapimiddleware.ts` - an application source, in a task about
+the test suite - because the alternative is a stand-in that re-decides a domain question, and it is
+behaviour-preserving in the middleware and untouched by task 04's `RootState` item; and keeping the
+`announce` and digest duplications with the reasons recorded at the definitions rather than removing
+them into a dependency that would point the wrong way.
+
 ### Hardener
 
 ### QA
@@ -993,4 +1183,47 @@ earlier pass of the same role had already cleaned it, is the right reading of a 
 
 Floors moved as recorded: D1 26 / 263 -> 27 / 267 and D2c 11 / 145 -> 12 / 149, both permitted by the
 recorded-rise rule without a procedure edit. D2a, D2b, D8 and D9 unmoved.
+
+
+### Project manager rulings on the Architect handoff
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 28 files / 277 tests;
+`npx vitest run src` unchanged at 10 / 55 with all 41 inventory ids on passing tests;
+`npm run test:acceptance` 30 / 30; property 168; hardening 129. Accepted.
+
+**The `withoutTheNetwork` finding is the most valuable thing in this pass, and it is a test-fidelity
+defect rather than a tidiness one.** The stand-in decided which actions to swallow with
+`Array.isArray(action.types)` while the real middleware used `!action.types`. Two different answers
+to "what is an API action", one of them reached only in tests. Any action the two classified
+differently would have behaved one way under test and another in the app, and nothing in the project
+would have reported it. Publishing `isApiAction` from the middleware and having the stand-in ask is
+exactly the shared definition's rule that adapters never re-decide domain questions, and it takes
+that predicate from 0% to 100% covered as a side effect.
+
+One note for the record: `isApiAction` uses optional chaining where the original dereferenced
+`action.types` directly, so a null action now returns false instead of throwing. For any action Redux
+actually dispatches the two are identical, and the difference is strictly more robust. Accepted, and
+recorded so it is not later mistaken for an unnoticed change.
+
+**The ungoverned CLI shells are a genuine gap in the project's own boundary checks.** The layer maps
+governed the insides of packages while nothing governed the entry points, which is how the
+language-mutation runner came to import `projectRoot` from the acceptance pipeline for one constant.
+Declaring `CLI_SHELLS` and reading it in both directions closes the class; deriving
+`vitest.coverage.ts`'s shell list from the same declaration instead of respelling three paths is the
+same single-owner correction this project has now made four times. Splitting the rule into its own
+core module on the strength of a measured mutant count (89 to 132 inline, 89 and 43 after) is the
+mixed-job hint used as intended rather than by eye.
+
+**Both kept duplications are correctly reasoned.** `announce` cannot be shared without reaching into
+the acceptance package, and `fingerprint()` versus `implementationHash()` is the stronger case: one
+is half of an agreement with `gherkin-mutator` and the other an internal stamp free to widen. Merging
+them would couple a private decision to an external contract.
+
+Confirming the two standing task-04 findings still hold, and adding two more of the same family
+(`containers/MainSection.ts` deriving `todos.length`, `containers/FilterLink.ts` deriving `active`)
+to that task rather than fixing them here, is the right handling.
+
+Floors moved as recorded: D1 28 / 277, D2c 13 / 159, D8 18 / 168. D2a, D2b, D9 and D3 unmoved, and
+`.mutation/`, `acceptance/`, `features/`, `qa/` and `e2e/` untouched, so the acceptance fingerprint
+has not moved and the stored gherkin manifests stay reusable.
 

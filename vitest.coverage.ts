@@ -1,5 +1,5 @@
 import type { ViteUserConfig } from 'vitest/config'
-import { modulesIn } from './scripts/architecture/packages.ts'
+import { cliShells, modulesIn } from './scripts/architecture/packages.ts'
 
 type CoverageOptions = NonNullable<NonNullable<ViteUserConfig['test']>['coverage']>
 
@@ -10,8 +10,7 @@ type CoverageOptions = NonNullable<NonNullable<ViteUserConfig['test']>['coverage
 //
 // `scripts/**` is in so that the gate measures its own core, which is the one
 // piece of project logic nothing else judges. The entry point that runs the
-// tiers is `scripts/crap.mjs`, a shell like the others below, and the include
-// reaches only TypeScript, so it stays out without an exclude of its own.
+// tiers is `scripts/crap.mjs`, a CLI shell like the other three.
 export const measuredCoverage: CoverageOptions = {
   provider: 'v8',
   reporter: ['text-summary', 'json'],
@@ -22,17 +21,18 @@ export const measuredCoverage: CoverageOptions = {
   //
   // Inside a declared package a module is a shell because its layer map says
   // so, and `scripts/architecture/packages.spec.ts` makes every module in the
-  // package pick a side, so a new one cannot land here by being forgotten.
-  // Listed below are only the shells that belong to no package: the browser
-  // entry point, the test setup, and the CLI wrappers under `scripts/`.
+  // package pick a side, so a new one cannot land here by being forgotten. The
+  // CLI wrappers under `scripts/` belong to no package, and `CLI_SHELLS`
+  // declares them and what each may import, so they come out of the same place
+  // rather than being spelled again here. Listed by hand are only the two
+  // shells that belong to nothing at all: the browser entry point and the test
+  // setup.
   exclude: [
     '**/*.spec.{ts,tsx}',
     '**/*.d.ts',
     'src/index.tsx',
     'src/setupTests.ts',
-    'scripts/acceptance.ts',
-    'scripts/acceptance-mutation.ts',
-    'scripts/mutation.ts',
+    ...cliShells(),
     ...modulesIn('shell'),
   ],
 }

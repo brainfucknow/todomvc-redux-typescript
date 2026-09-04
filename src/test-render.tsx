@@ -13,17 +13,17 @@ import type { Mock } from 'vitest'
 import * as TodoActions from './actions'
 import { LOAD_TODO_SUCCESS } from './constants/ActionTypes'
 import TodoFilters from './constants/TodoFilters'
+import { isApiAction } from './middlewares/callapimiddleware'
 import type { Todo } from './models/Todo'
 import rootReducer from './reducers'
 
 // Container components dispatch API actions from their effects. This stands in
-// for `callAPIMiddleware`, recognising an API action exactly as it does and
-// answering it with nothing, so a unit test never reaches the network.
-const isApiCall = (action: unknown): boolean =>
-  typeof action === 'object' && action !== null && Array.isArray((action as { types?: unknown }).types)
-
+// for `callAPIMiddleware` and answers those with nothing, so a unit test never
+// reaches the network. Which actions those are is the middleware's own answer,
+// asked for rather than spelled again: a stand-in that recognised a different
+// set would let one through to a reducer that cannot read it.
 const withoutTheNetwork: Middleware = () => (next) => (action) =>
-  isApiCall(action) ? undefined : next(action)
+  isApiAction(action) ? undefined : next(action)
 
 export interface TestState {
   todos?: Todo[]
@@ -33,7 +33,7 @@ export interface TestState {
 // The starting state is dispatched rather than preloaded, so the app's own
 // reducers decide its shape and a test cannot seed a state the app could not
 // hold. The todos always go in: the reducer starts from one of its own.
-export const createTestStore = ({ todos = [], visibilityFilter = TodoFilters.SHOW_ALL }: TestState = {}) => {
+const createTestStore = ({ todos = [], visibilityFilter = TodoFilters.SHOW_ALL }: TestState = {}) => {
   const store = configureStore({
     reducer: rootReducer,
     middleware: (getDefaultMiddleware) =>

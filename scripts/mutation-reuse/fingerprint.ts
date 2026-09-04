@@ -35,6 +35,16 @@ export const selectedFiles = (
 // Path and content both go in, so a renamed file moves the fingerprint even
 // when nothing was edited, and the paths are sorted so the order the caller
 // listed them in cannot change the answer.
+//
+// `acceptance/generator.ts` computes the same digest over the files it
+// generates, and the two are deliberately not one function. That one is the
+// `implementation_hash` the generator writes into a metadata document and
+// gherkin-mutator reads back: it is part of an agreement with a tool outside
+// this project, and changing it invalidates records the tool wrote. This one is
+// read only by the runner that wrote it, against a stamp in `.mutation/`, and
+// is free to widen whenever a stamp should cover more. Sharing the digest would
+// tie an external contract to an internal convenience, so that a change made
+// for one would silently move the other.
 export const fingerprint = (files: NamedContent[]): string => {
   const digest = createHash('sha256')
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {

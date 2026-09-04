@@ -10,6 +10,7 @@
 // side. `vitest.coverage.ts` reads the shells back out of here, so a module is
 // declared a shell once and both the boundary check and the CRAP gate follow.
 import type { Layer, LayerRules } from './layering.ts'
+import type { ShellDependencies } from './shells.ts'
 
 export type PackageRules = {
   directory: string
@@ -77,8 +78,9 @@ const architectureRules: LayerRules = {
   layers: {
     'layering.ts': 'core',
     'packages.ts': 'core',
+    'shells.ts': 'core',
   },
-  pureExternals: [],
+  pureExternals: ['node:path'],
 }
 
 export const PACKAGES: PackageRules[] = [
@@ -88,8 +90,33 @@ export const PACKAGES: PackageRules[] = [
   { directory: 'scripts/architecture', rules: architectureRules },
 ]
 
+// The command-line entry points, and the packages each one is allowed to reach.
+// They belong to no package - they are the wrappers PLAN.md section 4 puts
+// beside one - so the layer maps above say nothing about them, and without this
+// nothing at all governs what they import.
+//
+// `scripts/acceptance.ts` and `scripts/acceptance-mutation.ts` drive the APS
+// pipeline, so they depend on it. `scripts/mutation.ts` mutates the whole tree
+// and has nothing to do with acceptance: it borrowing one constant or one
+// `process.stdout.write` from that package would be a dependency between two
+// pieces of tooling that have no subject in common, so it is not granted one
+// and writes both for itself.
+export const CLI_SHELLS: ShellDependencies[] = [
+  { module: 'scripts/acceptance.ts', packages: ['acceptance'] },
+  { module: 'scripts/acceptance-mutation.ts', packages: ['acceptance', 'scripts/mutation-reuse'] },
+  { module: 'scripts/crap.mjs', packages: ['scripts/crap'] },
+  { module: 'scripts/mutation.ts', packages: ['scripts/mutation-reuse'] },
+]
+
 // Project-relative paths, for the callers that measure or skip a whole layer.
 export const modulesIn = (layer: Layer): string[] => PACKAGES.flatMap(({ directory, rules }) =>
   Object.entries(rules.layers)
     .filter(([, declared]) => declared === layer)
     .map(([module]) => `${directory}/${module}`))
+
+export const packageDirectories = (): string[] => PACKAGES.map(({ directory }) => directory)
+
+// Read the same way `modulesIn('shell')` is: a CLI shell is declared once, here,
+// and the CRAP gate skips it because it is declared, not because someone
+// remembered to exclude it.
+export const cliShells = (): string[] => CLI_SHELLS.map(({ module }) => module)

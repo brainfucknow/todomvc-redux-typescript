@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { projectRoot } from '../acceptance/project-files.ts'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { readFiles, readIfPresent } from './mutation-reuse/files.ts'
 import { fingerprint, selectedFiles } from './mutation-reuse/fingerprint.ts'
 import { MUTATION_TIER_STAMP } from './mutation-reuse/layout.ts'
@@ -17,6 +17,15 @@ import { mutationTierTests } from '../vitest.mutation.config.ts'
 // that has moved - the manifest stays differential without ever being trusted
 // across a change in the tests that judge the mutants. A change to a mutated
 // source is Stryker's own to notice, so only the tests are fingerprinted here.
+
+// Found from this file's own location, the way every shell outside the
+// acceptance package finds it. That package exports a `projectRoot` of its own,
+// but this runner mutates the whole tree and has no other business with the APS
+// pipeline: importing it would make the language-mutation tier depend on the
+// acceptance tier for one constant. `scripts/architecture/packages.ts` records
+// that as a dependency this shell is not granted, and `packages.spec.ts`
+// enforces it.
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const tierStamp = join(projectRoot, MUTATION_TIER_STAMP)
 
@@ -34,6 +43,11 @@ const entriesIn = (directory: string): string[] => {
 const tierFingerprint = (): string =>
   fingerprint(readFiles(projectRoot, [TIER_CONFIG, ...selectedFiles(mutationTierTests, entriesIn)]))
 
+// Spelled here rather than shared with `scripts/acceptance-mutation.ts`, which
+// takes its own from `acceptance/pipeline.ts`: the only module with one to
+// share belongs to the acceptance package, and a line on stdout is not
+// knowledge two unrelated pieces of tooling hold in common - it is a shell
+// doing its own output.
 const announce = (message: string): void => {
   process.stdout.write(`${message}\n`)
 }

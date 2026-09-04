@@ -12,11 +12,18 @@ export interface ApiActionMessage {
   json: boolean;
 }
 
+// Which actions this middleware acts on, published because it is the whole of
+// what a stand-in for this middleware has to agree with. `src/test-render.tsx`
+// installs one so a unit test never reaches `fetch`, and asks here rather than
+// deciding again what an API action looks like.
+export const isApiAction = (action: unknown): boolean =>
+  Boolean((action as { types?: unknown } | null | undefined)?.types);
+
 export const callAPIMiddleware: Middleware =
   (api: MiddlewareAPI) =>
   (next) =>
   (action: any) => {
-    if (!action.types) {
+    if (!isApiAction(action)) {
       // Normal action: pass it on
       return next(action);
     }
