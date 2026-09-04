@@ -1,5 +1,4 @@
 import React from 'react'
-import PropTypes from 'prop-types'
 import FilterLink from '../containers/FilterLink'
 import TodoFilters from '../constants/TodoFilters'
 const { SHOW_ALL, SHOW_COMPLETED, SHOW_ACTIVE } = TodoFilters
@@ -33,11 +32,6 @@ const Footer: React.FunctionComponent<FooterProps> = (props: FooterProps) => {
   )
 }
 
-Footer.propTypes = {
-  completedCount: PropTypes.number.isRequired,
-  activeCount: PropTypes.number.isRequired,
-  onClearCompleted: PropTypes.func.isRequired,
-}
 export interface FooterProps {
   completedCount: number
   activeCount: number

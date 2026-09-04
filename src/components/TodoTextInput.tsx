@@ -1,5 +1,4 @@
 import React, { PureComponent } from 'react'
-import PropTypes from 'prop-types'
 import classnames from 'classnames'
 export interface TodoTextInputProps {
   onSave(text: string): void
@@ -16,14 +15,6 @@ export default class TodoTextInput extends PureComponent<
   TodoTextInputProps,
   TodoTextInputState
 > {
-  static propTypes = {
-    onSave: PropTypes.func.isRequired,
-    text: PropTypes.string,
-    placeholder: PropTypes.string,
-    editing: PropTypes.bool,
-    newTodo: PropTypes.bool,
-  }
-
   state = {
     text: this.props.text || '',
   }

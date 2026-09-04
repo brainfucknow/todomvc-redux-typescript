@@ -65,4 +65,95 @@ alone.
 
 ### Coder
 
+**Changed**
+
+- `react` and `react-dom` 18.3.1 -> 19.2.8; `@types/react` -> 19.2.18, `@types/react-dom` -> 19.2.7.
+- `@testing-library/react` 14.3.1 -> 16.3.3. Version 16 takes `@testing-library/dom`
+  as a peer dependency rather than bundling it; the repository already had it as a
+  direct devDependency, so nothing else moved.
+- Deleted the three `propTypes` declarations and their `prop-types` imports
+  (`Footer`, `TodoItem`, `TodoTextInput`) and removed `prop-types` from
+  `dependencies`. It survives in the tree only under `eslint-plugin-react`, which
+  is ESLint's own dependency and not shipped to the browser: `npm ls prop-types`
+  shows that single path.
+
+Nothing else needed fixing. No removed React API was in use anywhere in `src/`
+or `qa/` (`defaultProps`, `findDOMNode`, `unmountComponentAtNode`,
+`ReactDOM.render`, `react-test-renderer` all absent), `src/index.tsx` was already
+on `createRoot`, and no spec asserted React 18 behavior: the 55 tests pass
+unedited. No test bodies, component structure, or idioms were touched.
+
+**Verified**
+
+| gate | result |
+| --- | --- |
+| `npm run lint` | exit 0 |
+| `npm run format:check` | exit 0 |
+| `npm run typecheck` | 0 errors, both projects |
+| `npm test` | 10 files / 55 tests |
+| `npm run build` | compiles, 222.37 kB (was 173.80 kB - React 19 is bigger) |
+| `npm run test:e2e` | 22 passed |
+| `npm run test:e2e:dev` | 21 passed, 1 skipped |
+| `npm run test:e2e:preview` | 21 passed, 1 skipped |
+
+Baselines were captured on the clean tree first, so each of those is a
+before-and-after comparison and not a reading of the number alone.
+
+**On the inherited class-field finding**
+
+I checked the built bundle rather than the source, as the finding asks. Both
+class bodies are emitted with native class-field syntax in the React 18 baseline
+build and in the React 19 build alike - `state={editing:!1};handleDoubleClick=()=>...` and the minified
+form of `state={text:this.props.text||''}` - so the lowering did not move. The
+*only* difference between the two emitted class bodies is that the leading
+`static propTypes={...}` field is gone. Field order and every initializer,
+including the one that reads `this.props`, are otherwise identical modulo
+minifier identifiers.
+
+The conditions QA established for `[[Set]]` and `[[Define]]` agreeing still hold
+after the deletion: every remaining field has an initializer, neither class
+redeclares `props`, and React 19's `Component.prototype` defines accessors for
+nothing but the deprecated `isMounted`/`replaceState` warnings in the dev build
+(`node_modules/react/cjs/react.development.js:15`) - no accessor for `state`,
+`props`, or `propTypes`, and none at all in the production build. Deleting the
+classes' only static field cannot break a condition none of these depend on.
+
+**Console**
+
+No new warnings, and in fact none at all. I drove a browser through add, toggle,
+edit, all three filters, clear-completed, and delete, collecting every console
+message and page error, in both dev (`npm run dev`, StrictMode double-render
+included) and against the production `dist/` served by the QA stub. Dev printed
+only Vite's connect chatter, React's "Download the React DevTools" info notice,
+and the app's own action logs; production printed only the action logs. Nothing
+of type `warning` or `error` in either. An empty warning set cannot contain a
+warning React 18 did not have, so the criterion holds without a React 18
+side-by-side - which is just as well, since reverting the tree to re-measure one
+was blocked by the sandbox.
+
+**Finding for QA: the compiler cannot police this deletion**
+
+`@types/react` 19 still declares `propTypes?: any` on `FunctionComponent` and
+`ComponentClass` (`node_modules/@types/react/index.d.ts:1066,1127`). I planted
+`Footer.propTypes = { activeCount: 0 }` on the React 19 tree and `npm run
+typecheck` reported zero errors; a genuine type error planted in the same file
+was caught immediately, so the gate is live - `propTypes` simply is not a typed
+construct. React 19 ignores the property at runtime and TypeScript ignores it at
+compile time, so a `propTypes` block that crept back would be silently dead code
+that no gate in this repository fails on. Grep is the only check that works
+here; `grep -rn "propTypes" src` is currently empty.
+
+**Left for QA**
+
+- Nothing outstanding. Scope was the version, not the idioms: `TodoItem` and
+  `TodoTextInput` are still classes for task 11, and no React 19 feature was
+  adopted.
+- Changes are in the working tree, uncommitted. Branch `claude/react-modernization-plan-u7dgen`
+  did not move under me.
+- Modified: `package.json`, `package-lock.json`, and the three components.
+
+**Open questions**
+
+None.
+
 ### QA
