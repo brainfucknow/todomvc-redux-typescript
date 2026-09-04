@@ -70,7 +70,9 @@ works on a staged copy of each feature under `build/acceptance-mutation/`, so
 ### `node scripts/crap.mjs [<path> ...]`
 
 Reports the CRAP score of every function, merging coverage from the tiers that
-measure it, and exits non-zero for anything above 10.
+measure it, and exits non-zero for anything above 10. The file itself only runs
+the tiers and writes the report; what it decides on the way is in `scripts/crap/`,
+which the unit tier covers like any other module.
 
 ## Acceptance pipeline layout
 

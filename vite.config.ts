@@ -13,7 +13,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.ts'],
-    include: ['src/**/*.spec.{ts,tsx}', 'acceptance/**/*.spec.ts'],
+    include: ['src/**/*.spec.{ts,tsx}', 'acceptance/**/*.spec.ts', 'scripts/**/*.spec.ts'],
     coverage: measuredCoverage,
   },
 })
