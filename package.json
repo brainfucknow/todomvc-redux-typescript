@@ -37,7 +37,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "node scripts/typecheck.mjs",
-    "test:e2e": "npm run build && playwright test --config qa/playwright.config.ts"
+    "test:e2e": "npm run build && playwright test --config qa/playwright.config.ts",
+    "test:e2e:dev": "npm run build && playwright test --config qa/playwright.dev.config.ts",
+    "test:e2e:preview": "npm run build && playwright test --config qa/playwright.preview.config.ts"
   },
   "resolutions": {
     "@types/react": "18.0.0"

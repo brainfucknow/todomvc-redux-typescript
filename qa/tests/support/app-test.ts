@@ -6,11 +6,28 @@ interface AppFixtures {
   stub: StubControl;
   screen: Screen;
   openApp: (fixture: FixtureName) => Promise<void>;
+  proxiedBackend: boolean;
 }
 
-export const test = base.extend<AppFixtures>({
-  stub: async ({ request }, use) => {
-    await use(new StubControl(request));
+/** Set by each suite config; see `qa/suite-config.ts`. */
+export interface AppOptions {
+  controlOrigin: string;
+}
+
+export const test = base.extend<AppFixtures & AppOptions>({
+  controlOrigin: ['', { option: true }],
+
+  stub: async ({ request, controlOrigin }, use) => {
+    await use(new StubControl(request, controlOrigin));
+  },
+
+  /**
+   * The control channel lives on the stub's own origin exactly when a Vite
+   * server is serving the app, which is also exactly when the browser's
+   * connection terminates at a proxy rather than at the stub.
+   */
+  proxiedBackend: async ({ controlOrigin }, use) => {
+    await use(controlOrigin !== '');
   },
 
   screen: async ({ page }, use) => {
