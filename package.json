@@ -9,7 +9,6 @@
     "@vitejs/plugin-react": "^6.1.1",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "jsdom": "^30.0.1",
-    "react-scripts": "5.0.1",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
   },
@@ -32,10 +31,12 @@
     "typescript": "^3.9.2"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
+    "dev": "vite",
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "vitest run",
-    "eject": "react-scripts eject",
+    "typecheck": "node scripts/typecheck.mjs",
     "test:e2e": "npm run build && playwright test --config qa/playwright.config.ts"
   },
   "resolutions": {
@@ -46,6 +47,5 @@
     "not dead",
     "not ie <= 11",
     "not op_mini all"
-  ],
-  "proxy": "http://localhost:4000"
+  ]
 }
