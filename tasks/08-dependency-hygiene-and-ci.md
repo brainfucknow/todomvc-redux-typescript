@@ -2,7 +2,7 @@
 
 **Track:** Tooling
 **Chain:** coder -> QA
-**Status:** pending
+**Status:** in progress
 
 ## Why this task is now the most load-bearing one left in the tooling track
 
@@ -35,7 +35,7 @@ Dependency debt still standing after tasks 02 through 07:
 
 ## Scope
 
-- Consider a guard against `propTypes` returning. Task 07 deleted all three blocks and dropped `prop-types`, but found that `@types/react` 19 still declares `propTypes?: any`, so a block that crept back would be dead code that React 19 ignores and **no gate catches**. It proved this by planting one: typecheck reported zero errors, while a real type error in the same file was caught immediately. The gate is live; `propTypes` simply is not a typed construct. A grep in CI is the only thing that works, and it is cheap. Decide whether it earns a step.
+- Consider a guard against `propTypes` returning. Task 07 deleted all three blocks and dropped `prop-types`, but found that `@types/react` 19 still declares `propTypes?: any`, so a block that crept back would be dead code that React 19 ignores and **no gate catches**. It proved this by planting one: typecheck reported zero errors, while a real type error in the same file was caught immediately. The gate is live; `propTypes` simply is not a typed construct. Task 07's QA refined this: a block written *with* its `prop-types` import does fail typecheck, but only incidentally, as TS7016, because `prop-types` is still resolvable through `eslint-plugin-react` and ships no types. It still builds, and it bundles prop-types back into the browser for about 0.8 kB. The dangerous shape is therefore the **bare assignment** with no import, which passes typecheck, lint, tests and build alike. Target that. A grep in CI is the only thing that works, and it is cheap. Decide whether it earns a step.
 - Remove every dependency nothing imports. Verify by search, not by assumption, and name what you checked in the handoff.
 - Rewrite the workflow: current `actions/checkout` and `actions/setup-node` majors, npm caching, and steps running install, lint, format check, typecheck, unit tests, production build, and the E2E regression suite against the built app.
 - The E2E command CI must run is `npm run test:e2e`. QA also added supplementary dev-server and preview-server suite configs in task 04; those are optional in CI, and procedure 20 is annotated as excluded there because a transport failure cannot be delivered through an HTTP proxy. If you do wire them in, confirm they are green first and say why you included them.

@@ -157,3 +157,161 @@ here; `grep -rn "propTypes" src` is currently empty.
 None.
 
 ### QA
+
+**Verdict: pass.** Every gate green, every one of the five things I was asked to
+scrutinize checked independently, nothing left for another role.
+
+**State of the branch**
+
+The coder's note says the changes are uncommitted; they are not. Branch tip is
+`896b186 Move to React 19 and delete the propTypes blocks`, which carries exactly
+the files the note lists plus the note itself. The branch did not move while I
+worked (`896b186` at start and finish) and the tree was clean before and after
+everything below. I committed nothing and reset nothing.
+
+**Gates, re-run from a clean tree**
+
+| gate | result |
+| --- | --- |
+| `npm run lint` | exit 0 |
+| `npm run format:check` | exit 0 |
+| `npm run typecheck` | 0 errors, both projects |
+| `npm test` | 10 files / 55 tests |
+| `npm run build` | compiles, 222.37 kB raw / 71.00 kB gzipped, byte-identical hash across two clean builds |
+| `npm run test:e2e` | 22 passed |
+| `npm run test:e2e:dev` | 21 passed, 1 skipped |
+| `npm run test:e2e:preview` | 21 passed, 1 skipped |
+
+No procedure in `qa/procedures/` changed and no test in `qa/tests/` changed: this
+task altered no observable behavior, so there was nothing to convert or re-word.
+The one skip is procedure 20 under a proxy, documented in the test itself.
+
+**1. The browser really is running React 19, and not a stale artifact**
+
+I did not take the suite's word for it. I installed a stub
+`__REACT_DEVTOOLS_GLOBAL_HOOK__` before page load and read back what react-dom
+injects into it:
+
+- stub-served built app: `{version: "19.2.8", pkg: "react-dom", bundleType: 0}` (0 = production)
+- dev server: `{version: "19.2.8", pkg: "react-dom", bundleType: 1}` (1 = development)
+
+The bundle the browser loaded was `index-BLn6sN3d.js`, the same hash a fresh
+`npm run build` produces, and every `test:e2e*` script builds first. The stub also
+refuses to start without `dist/index.html`. Staleness is ruled out three ways.
+
+**2. `propTypes` removal is invisible to the gates - confirmed, with one refinement**
+
+Reproduced the coder's experiment and two more, restoring the file each time:
+
+| planted in `Footer.tsx` | typecheck | lint | `npm test` | `npm run build` |
+| --- | --- | --- | --- | --- |
+| `Footer.propTypes = { activeCount: 0, nonsense: 'x' }` | 0 errors | exit 0 | 55 pass | compiles |
+| `const planted: number = Footer` | TS2322, exit 1 | - | - | - |
+| the same block *with* `import PropTypes from 'prop-types'` | TS7016, exit 1 | - | - | compiles |
+
+So the gates are live and `propTypes` alone is simply not a typed construct. The
+refinement for task 08: a regression that brings the *import* back is caught, but
+only incidentally - `prop-types` is still resolvable in the tree via
+`eslint-plugin-react` and ships no types, so it trips `noImplicitAny`; were it
+absent entirely it would trip TS2307 instead. A bare `X.propTypes = {...}`
+assignment, which is the shape a copy-paste regression actually takes, passes
+every gate. Note also that the third row *builds*: with the import back, Vite
+bundles `eslint-plugin-react`'s copy of `prop-types` into the browser bundle
+(+0.8 kB) without a word. A grep guard is worth its CI step; I would grep for
+both `propTypes` and `from 'prop-types'` in `src/`. `grep -rn "propTypes\|prop-types" src qa scripts` is empty today.
+
+**3. Class-field lowering - verified independently, and it is also covered by tests**
+
+Confirmed at the artifact, not the source. `npx tsc --showConfig` reports
+`useDefineForClassFields: true` (implied by `target: es2022`, still unpinned), and
+the emitted bundle carries native class-field syntax for both classes:
+`class extends v.PureComponent{state={editing:!1};handleDoubleClick=()=>{...}}` and
+`class extends v.PureComponent{state={text:this.props.text||""};...}` (the minifier writes the empty string as a backtick template literal). So the
+lowering did not move, and `[[Define]]` is what runs, as it did before this task.
+The conditions under which the two semantics agree still hold: I checked React 19
+itself, not just the source - `react.production.js` calls `Object.defineProperty`
+nowhere, and the dev build defines accessors on `Component.prototype` for exactly
+`isMounted` and `replaceState` (`react.development.js:660`), neither of which
+these classes touch.
+
+Better than an argument, the risky initializer has coverage. I mutated
+`state = { text: this.props.text || '' }` to `state = { text: '' }`, the exact
+failure a `[[Define]]`/`[[Set]]` divergence would produce, and 5 of the 55 unit
+tests failed. E2E procedures 05 and 06 would catch it too.
+
+**4. Console criterion - the empty set is real, and StrictMode was in it**
+
+I re-collected rather than trusting the coder's walkthrough, because that
+walkthrough was happy-path only and the app's noisiest console paths are the
+failure ones. My collector took `page.on('console')` for *every* message type plus
+`page.on('pageerror')`, drove add / toggle / edit-by-Enter / edit-by-blur /
+toggle-all both ways / all three filters / clear-completed / delete, and then armed
+a transport fault and drove the failing add, in both dev and production.
+
+React contributed nothing in either. Full inventory:
+
+- production: 6 `log` (the app's own `console.log('action', ...)` in `reducers/apis.ts`), and on the fault path `net::ERR_EMPTY_RESPONSE` plus `TypeError: Failed to fetch`.
+- dev: the same 6 `log`, 4 `debug` from Vite's HMR client, and on the fault path a 502, a JSON parse `SyntaxError`, and two RTK dev-middleware `console.error`s about the non-serializable `SyntaxError` sitting in the action and in `errorMessage`.
+
+Nothing of type `warning`, and no React message of any type. The RTK pair and the
+fetch failures are React-version-independent: they come from
+`@reduxjs/toolkit`'s serializable check and from `callapimiddleware.ts` reading a
+body that is not there. They are the console face of the "failures are silent on
+screen" behavior `PLAN.md` records.
+
+StrictMode's double render was genuinely included: dev issues 2
+`GET api/todos/` per load and production 1, which I measured directly. The
+suite-wide sample agrees - across the whole 21-procedure dev run, the only browser
+console output Vite forwards (`console.error`) was 15 lines, all five instances of
+those same three fault-path messages, none from React. Vite forwards only
+`console.error`, which is why my own collector, which takes `warn` too, is the one
+that closes the criterion.
+
+I did not build a React 18 side-by-side. With the React-19 warning set empty under
+a full workflow in both bundle types, and the collection method verified above,
+nothing a React 18 run produced could make a React 19 warning new.
+
+**5. Bundle growth - nothing unexpected came along**
+
+Built with a sourcemap into a scratch directory and read the module list back. 43
+sources: 24 app modules and exactly these packages, one copy each:
+
+`@reduxjs/toolkit`, `classnames`, `react`, `react-dom`, `react-redux`, `redux`,
+`redux-thunk`, `reselect`, `scheduler`, `use-sync-external-store`.
+
+The React files are `react/cjs/react.production.js`,
+`react-dom/cjs/react-dom.production.js`,
+`react-dom/cjs/react-dom-client.production.js`,
+`react/cjs/react-jsx-runtime.production.js` and
+`scheduler/cjs/scheduler.production.js` - production builds only, no duplicated
+copy, no dev-only package. `npm ls react react-dom` shows every consumer deduped
+onto the single 19.2.8, and `npm ls` exits 0 with no peer complaint.
+`prop-types` survives only under `eslint-plugin-react`, and the bundle contains
+the string only three times, all inside `hoist-non-react-statics`'s
+known-statics list, which `react-redux`'s `connect` has always pulled in.
+
+**CRAP and DRY on the changed files**
+
+`Footer.tsx`, `TodoItem.tsx`, `TodoTextInput.tsx`: the change is purely
+subtractive, no branch was added or removed, every method is complexity 1-3
+against 55 unit tests and 22 E2E procedures, so CRAP stays far under 10. DRY
+improved rather than regressed: the deleted blocks restated the TypeScript
+interfaces. No mixed-job hint applies to a deletion; no manifest exists to
+preserve.
+
+**Absences confirmed, not invented**
+
+No Gherkin, no `.feature` file, no APS tooling, no acceptance-pipeline runner and
+no property test anywhere in the repository. `gherkin-parser` and the APS pipeline
+are named only in the future structural tasks 09-13; task 09 is where the
+definitions first require one.
+
+**Left for the next role**
+
+- Nothing to fix. No role owns a follow-up from this task.
+- Task 08 should decide on the grep guard, with the refinement in section 2 above: catch the bare assignment, since the import already trips typecheck for an incidental reason.
+- `useDefineForClassFields` is still unpinned and still implied by `target`. It survived this task's deletion of the only static field, and task 11 will delete these classes outright, so pinning it is optional - but if anything ever adds a class field without an initializer, or a base class with an accessor, the finding stops being decorative.
+
+**Open questions**
+
+None.

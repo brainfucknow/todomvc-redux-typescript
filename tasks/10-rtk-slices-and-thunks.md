@@ -46,6 +46,21 @@ You are replacing that middleware with thunks. If the rewrite leaves promises
 whose rejection nobody observes, nothing in this project will tell you. Check by
 hand, and say what you found.
 
+## Inherited: the serializability warnings you are about to inherit
+
+Task 07's QA collected every console message on the failure paths and found
+that, on a faulted request, Redux Toolkit's development middleware emits two
+`console.error`s about a non-serializable value: the `SyntaxError` that
+`callAPIMiddleware` puts into the action under the `error` key.
+
+That is dev-only and it is pre-existing, so it is not yours to fix by accident.
+But you are rewriting exactly that code path into `createAsyncThunk`, whose
+`rejected` action carries a serialized error by default rather than the raw
+one. Two consequences worth stating in your handoff: whether the warnings go
+away as a side effect, and whether anything observable changes about what lands
+in state on a failure. The E2E procedures assert the *absence* of error UI, so a
+change in the stored error shape can pass the suite while still being a change.
+
 ## Out of scope
 
 - Changing what the user sees. Same todos, same filters, same counts, same moment of update.
