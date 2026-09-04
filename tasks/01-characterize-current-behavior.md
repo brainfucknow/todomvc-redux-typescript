@@ -49,4 +49,73 @@ Baseline commands verified green on this commit:
 
 ### Specifier
 
+**Changed.** Added `qa/procedures/`: a `README.md` and 21 numbered procedure
+files. Nothing else. `src/` is untouched.
+
+- `README.md` — how to read a procedure, environment assumptions, element
+  vocabulary, the backend fixture contract, the named fixtures, the fault kinds,
+  the rule for asserting that nothing happened, and the index.
+- `01-initial-load.md` — a successful load replaces the seed row with the backend's todos.
+- `02-empty-list-state.md` — no todos: no footer, no filters, no toggle-all; adding one brings them back.
+- `03-add-todo.md` — Enter appends a todo through a round trip.
+- `04-add-todo-text-rules.md` — Enter trims; blank input adds nothing but still clears the field; Escape does nothing.
+- `05-edit-todo.md` — double-click opens the edit field, Enter saves, Escape does not cancel.
+- `06-edit-todo-blur-commit.md` — clicking away saves, and saves untrimmed.
+- `07-edit-todo-to-empty-deletes.md` — committing an empty edit deletes the todo.
+- `08-delete-todo.md` — the destroy button, hidden until the row is hovered.
+- `09-toggle-todo.md` — one todo's checkbox, both directions, no optimistic flip.
+- `10-toggle-all.md` — marks all, unmarks all, and is lost on reload.
+- `11-clear-completed.md` — removes complete rows locally, and is lost on reload.
+- `12-filter-all.md`, `13-filter-active.md`, `14-filter-completed.md` — one per filter, including the empty-under-filter screen.
+- `15-item-count.md` — "2 items left", "1 item left", "No items left".
+- `16-load-failure.md` — a failed load leaves the hardcoded "Use Redux" row on screen, silently.
+- `17-add-failure.md` — the typed text is gone and no row appears.
+- `18-edit-failure.md` — edit mode closes and the text snaps back.
+- `19-toggle-failure.md` — the checkbox never moves.
+- `20-delete-failure.md` — the row stays.
+- `21-http-error-status-ignored.md` — a 500 is applied as success: a deleted-looking row that is still on the server, and a 500 body rendered as the todo list.
+
+**Verified.** By reading `src/` and `node_modules/todomvc-app-css/index.css` at
+`66d36ad`, not by running the app: there is no stub backend and no browser driver
+in the tree yet, so nothing was executable. Every expected result traces to code I
+read. Specifically confirmed there: the seed row survives a failed load; the client
+checks neither `response.ok` nor the status code, and never reads a delete
+response body at all; Enter trims and click-away does not; Escape has no handler;
+toggle-all, clear-completed and the filters dispatch no request; the count text is
+`activeCount || 'No'` with the noun singular only at 1; the destroy button is
+`display:none` until `li:hover`; the toggle-all chevron is the `label` next to the
+hidden checkbox, and the `h1` sits 140px above the app box so it is a safe
+click-away target that the chevron does not overlap.
+
+**Left for QA.**
+
+- The procedures assume two fault kinds, not one: `transport(method, path)`, the
+  only kind the client recognizes as failure, and `status(method, path, code,
+  body)`, needed for procedure 21. The stub also has to report how many matching
+  requests it has faulted, because the failure procedures assert absences and the
+  UI shows nothing to wait for; that report is synchronization only and must not
+  decide pass or fail.
+- Faults are armed per method-and-path and stay armed until reset, not "the next
+  request": under the dev server StrictMode mounts the list twice and the initial
+  `GET api/todos/` is issued twice.
+- `PATCH` must return the complete updated todo. The app replaces its row with the
+  response wholesale, so a partial response blanks the fields it omits.
+- The app must be served at the site root. The client fetches the relative URL
+  `api/todos/`, which resolves against the document URL.
+- Playwright is not installed. QA adds the driver, the stub, the tests, and the
+  suite command.
+- Procedures 16 to 21 characterize defects the task told me to record rather than
+  fix: the silent failures, the surviving seed row, the lost text on a failed add,
+  the ignored HTTP status, and toggle-all and clear-completed never reaching the
+  backend. If one of them cannot be made to pass, the procedure is wrong; fix the
+  procedure.
+
+**Open questions.** None that block QA. One judgment call to flag rather than
+ask: the task lists eleven workflows and I wrote 21 procedures, splitting the
+input rules of the new-todo field, the two ways an edit commits, and each
+failure mode into their own files so each maps to one test. If the project
+manager wants one file per listed workflow instead, the split is easy to fold
+back.
+
 ### QA
+
