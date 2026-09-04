@@ -1,6 +1,7 @@
 import { Locator, Page, expect } from '@playwright/test';
 
-export type FilterName = 'All' | 'Active' | 'Completed';
+export const FILTER_NAMES = ['All', 'Active', 'Completed'] as const;
+export type FilterName = (typeof FILTER_NAMES)[number];
 
 /**
  * The element vocabulary of `qa/procedures/README.md`. Selectors are the app's
@@ -82,8 +83,7 @@ export async function expectShownActive(screen: Screen, text: string): Promise<v
 
 export async function expectSelectedFilter(screen: Screen, name: FilterName): Promise<void> {
   await expect(screen.filterLink(name)).toHaveClass(/selected/);
-  const others = (['All', 'Active', 'Completed'] as FilterName[]).filter((other) => other !== name);
-  for (const other of others) {
+  for (const other of FILTER_NAMES.filter((candidate) => candidate !== name)) {
     await expect(screen.filterLink(other)).not.toHaveClass(/selected/);
   }
 }

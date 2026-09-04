@@ -2,6 +2,7 @@ import { APIRequestContext, APIResponse, expect } from '@playwright/test';
 
 export type FixtureName = 'EMPTY' | 'ONE_ACTIVE' | 'TWO_COMPLETED' | 'THREE_MIXED';
 export type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type FaultKind = 'transport' | 'status';
 
 /**
  * The stub backend's control channel: test scaffolding, not the app under test.
@@ -16,11 +17,11 @@ export class StubControl {
   }
 
   async armTransportFault(method: Method, path: string): Promise<void> {
-    await accepted(this.request.post('/__qa/faults', { data: { kind: 'transport', method, path } }));
+    await this.arm({ kind: 'transport', method, path });
   }
 
   async armStatusFault(method: Method, path: string, code: number, body: string): Promise<void> {
-    await accepted(this.request.post('/__qa/faults', { data: { kind: 'status', method, path, code, body } }));
+    await this.arm({ kind: 'status', method, path, code, body });
   }
 
   async clearFaults(): Promise<void> {
@@ -33,6 +34,18 @@ export class StubControl {
     const armed = faults.find((fault) => fault.method === method && fault.path === path);
     return armed ? armed.matched : 0;
   }
+
+  private async arm(fault: ArmRequest): Promise<void> {
+    await accepted(this.request.post('/__qa/faults', { data: fault }));
+  }
+}
+
+interface ArmRequest {
+  kind: FaultKind;
+  method: Method;
+  path: string;
+  code?: number;
+  body?: string;
 }
 
 interface ArmedFault {

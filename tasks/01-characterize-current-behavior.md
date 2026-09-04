@@ -224,6 +224,69 @@ Procedures and their tests:
   rewritten by the specifier first; that is a behaviour change, not a
   refactoring.
 
+**CRAP gate and DRY.** No CRAP tooling is wired into this repository and none of
+the planned tasks adds any, so I measured it rather than skipped it. Cyclomatic
+complexity per function came from the TypeScript compiler's own parser walking
+every changed and new source (ESLint `complexity` semantics: start at 1, one per
+decision point, nested functions counted separately). Coverage came from V8's
+own counters: `NODE_V8_COVERAGE` set on the stub process while the real suite ran
+against it, block ranges reduced to covered-bytes-over-total per function. CRAP
+is then `CC^2 * (1 - coverage)^3 + CC`. Both scripts live in my scratchpad, not
+in the repository; they read the sources and produce a table, they are not
+something the suite depends on.
+
+Result on `qa/stub/` — 57 functions, every one accounted for in the coverage data,
+worst first:
+
+| Function | CC | Coverage | CRAP |
+| --- | --- | --- | --- |
+| `faults.js:validate` | 4 | 40% | 7.52 |
+| `control-api.js:handleControl` | 4 | 50% | 5.95 |
+| `server.js:handleTodo` | 5 | 99% | 5.00 |
+| `todo-api.js:parseTodoRoute` | 5 | 100% | 5.00 |
+| `main.js:appDir` | 3 | 71% | 3.21 |
+| everything else | <= 3 | | <= 3.00 |
+
+Worst CRAP anywhere in the stub is **7.52**, inside the gate of 10. The two
+lowest-coverage functions are low-coverage for the same honest reason: their
+uncovered branches are the guards that reject a bad fixture name or a bad fault
+kind, and no procedure asks for one.
+
+`qa/tests/` and `qa/playwright.config.ts` — 51 functions, maximum CC **2**
+(`screen.ts:expectSelectedFilter`). CRAP at CC 2 is at most 6 even at zero
+coverage, so every function there is inside the gate without needing a coverage
+number at all. The config declares no functions.
+
+**Nothing in the gate needed fixing.** Every source named above is already
+inside it. Recording the two judgment calls rather than leaving them implicit:
+`faults.js:claim` both decides which fault applies and counts the match, and
+`server.js:handleTodo` applies a fault and then applies the route. Neither is
+over 10 and neither splits cleanly — the extract would be a helper taking a
+boolean the caller already knew, which the gate's own exception warns against.
+They stay.
+
+**Mutation scan.** Same AST walk, counting reassignments, compound assignments,
+`++`/`--`, and calls to methods that mutate their receiver, then read by hand to
+drop the false positives (`module.exports`, a Playwright locator's `fill`, an
+HTTP `delete`, constructor field initialisation). Real state mutation lives in
+exactly two sources: `todo-store.js` (4 sites, all on the todo collection) and
+`faults.js` (3 sites, all on the fault registry). `todo-api.js` has 2 and
+`http-io.js` 1, both building a local value rather than shared state; every other
+source has none. That is one job per source, and the two stateful ones are
+already separate, so there is nothing to split — and per the hint, a one-job
+source is not split to lower a count.
+
+**DRY findings, both fixed.** `stub-control.ts` posted the same
+`/__qa/faults` request from two arming methods; they now share a private `arm`
+that owns the fault payload. `screen.ts` spelled the filter names once as a type
+and again as an array inside `expectSelectedFilter`; there is now a single
+`FILTER_NAMES` and the type derives from it. Deliberately left alone:
+`expectShownComplete`/`expectShownActive` stay as two functions rather than one
+taking a `complete` boolean, and each spec restates its own precondition instead
+of sharing an opening helper, because a procedure's preconditions belong in the
+test that mirrors it. Neither edit touches a procedure or an assertion, and the
+suite is 22/22 green twice in a row after them.
+
 **Open questions.** None. On the specifier's flagged judgment call: the 21-file
 split is kept, one test per procedure. It maps cleanly and each failure names one
 workflow, so folding it back would cost information for no gain. If the project
