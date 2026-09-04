@@ -60,7 +60,7 @@ Serial. Each task assumes every earlier task is merged.
 | # | Task | Track | Chain | Status |
 | --- | --- | --- | --- | --- |
 | 01 | Characterize current behavior | Characterization | specifier -> QA | **done** |
-| 02 | Migrate component tests off react-shallow-renderer | Tooling | coder -> QA | pending |
+| 02 | Migrate component tests off react-shallow-renderer | Tooling | coder -> QA | **done** |
 | 03 | Migrate Jest to Vitest | Tooling | coder -> QA | **done** |
 | 04 | Replace react-scripts with Vite | Tooling | coder -> architect -> QA | in progress |
 | 05 | TypeScript 3.9 to 5.x and modern tsconfig | Tooling | coder -> QA | pending |
