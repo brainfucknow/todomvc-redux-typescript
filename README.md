@@ -59,6 +59,15 @@ Runs language mutation over the testable core the packages declare, with
 hardening tests together. Results are reused from the manifest in `.mutation/`
 when neither the mutated source nor the tests have moved.
 
+### `npm run test:e2e`
+
+Runs the E2E procedures in `qa/` with [Playwright](https://playwright.dev), from
+the specs in `e2e/`: one spec per procedure file, one test per procedure, one
+step per lettered row. They drive the project the way a person would - npm
+scripts, a dev or preview server, a browser - and stub only the network boundary.
+Chromium comes from the browsers `PLAYWRIGHT_BROWSERS_PATH` points at, so the
+Playwright version is pinned to the build installed there.
+
 ## Other checks
 
 Neither of these is an npm script; both are run directly.
@@ -89,4 +98,5 @@ which the unit tier covers like any other module.
 | `build/acceptance-mutation/` | Staged features, IR and entry points for a mutation run (gitignored) |
 | `hardening/` | Tests written against surviving mutants |
 | `.mutation/` | Mutation manifests, committed; never hand-edited |
-| `qa/` | E2E QA procedures, executed by hand through the UI |
+| `qa/` | E2E QA procedures, one Markdown file per behaviour area |
+| `e2e/` | Those procedures as Playwright specs, run by `npm run test:e2e` |

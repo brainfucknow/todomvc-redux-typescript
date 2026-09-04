@@ -59,7 +59,7 @@ Every role in every task works to these. They are project-manager decisions, not
 
 | # | Task | File | Status |
 | --- | --- | --- | --- |
-| 01 | Replace CRA with Vite and Vitest | `tasks/01-vite-vitest-toolchain.md` | pending |
+| 01 | Replace CRA with Vite and Vitest | `tasks/01-vite-vitest-toolchain.md` | in progress |
 | 02 | Replace shallow-renderer tests with Testing Library | `tasks/02-testing-library-suite.md` | pending |
 | 03 | Upgrade to React 19 | `tasks/03-react-19.md` | pending |
 | 04 | Replace connect() containers with hooks | `tasks/04-hooks-replace-connect.md` | pending |

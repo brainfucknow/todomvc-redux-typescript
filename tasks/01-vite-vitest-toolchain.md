@@ -2421,6 +2421,145 @@ are dead.
 
 ### QA
 
+Done. The E2E QA procedures are executable and every one of them passes, along with every other
+tier. Nothing committed; `features/` and `src/` are untouched.
+
+**Verdict: task 01 passes QA.** One finding is recorded below for a later task, and it fails no
+done criterion.
+
+**What I added**
+
+- `@playwright/test`, pinned `~1.56.1`, and `"test:e2e": "playwright test"`, under ruling 2 on the
+  second Specifier pass. The pin is not a preference: `/opt/pw-browsers` holds Chromium build
+  **1194**, which is what Playwright 1.56.x asks for. 1.57 wants 1200 and 1.55 wants 1193, so a
+  caret range would put the browser out of reach on the next minor and the only fix would be
+  `playwright install`, which the ruling forbids. Checked by reading `browsers.json` out of the
+  packed tarball of each candidate version, then launching the browser.
+- `README.md`: a `### npm run test:e2e` heading under `Available Scripts`, so E3's set equality
+  still holds at nine scripts, plus an `e2e/` row in the layout table and a corrected `qa/` row -
+  the old one said the procedures are executed by hand.
+- `playwright.config.ts`: `testDir: e2e`, one worker, not parallel. The procedures bind port 4000,
+  start dev and preview servers and edit a source file; none of that survives being run twice at
+  once.
+- `e2e/toolchain-commands.spec.ts` and `e2e/todo-app-regression.spec.ts`: **one test per procedure,
+  one `test.step` per lettered row, named after it**, so a failure names the row rather than a line
+  number. 11 tests, 58 seconds.
+- `e2e/harness.ts` (run a command, start `npm run dev`/`npm run preview` and read the URL it
+  prints, hold a backend on port 4000, see whether a port is still bound), `e2e/reports.ts` (pure
+  parsing of what those commands print) and `e2e/todo-api-stub.ts` (the stub contract, as route
+  interception).
+- `.gitignore`: `test-results/` and `playwright-report/`. Playwright writes `test-results/` on every
+  run, and E1 fails on generated output that is untracked but not ignored - the check working, and
+  I am the role that added the generator.
+- `tsconfig.json`: `e2e` and `playwright.config.ts` added to `include`. Every other directory of
+  TypeScript in this tree is compiled by D6; leaving the QA tier out would have made it the one
+  place where a type error is invisible. `npx tsc --noEmit` still exits 0.
+
+**Nothing imports a project module.** The QA tier parses `npm run` output and README headings
+itself rather than calling `acceptance/inspection.ts`, which does similar work. That is deliberate
+duplication, not a DRY miss: a procedure that asks the project whether the project is right about
+itself cannot fail when it is wrong.
+
+**Where a procedure had to change to become executable**
+
+Procedure and test moved together; the point of each row is unchanged, and no row got weaker.
+
+| Row | Change | Why |
+| --- | --- | --- |
+| A1, A2 | `rm -rf node_modules` and `npm ci` run in a scratch directory holding copies of the two manifests | Deleting this project's `node_modules` deletes the runner executing the procedure. A3-A5 still read the checkout. |
+| C2 | `ls dist` -> `ls -R dist` | Vite writes the JS and CSS to `dist/assets/`; `ls dist` shows a directory, and the row asks about the files in it. |
+| D2, D10 | note that a file list needs `-- --reporter=verbose` through a pipe | Vitest prints one line per file in a terminal and only the summary through a pipe, so the row was unreadable exactly where a QA run happens. |
+| D5 | says how to get the per-scenario breakdown: re-run the generated entry points with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose` | `npm run test:acceptance` forwards no reporter flag, so D3's own output carries the total but not the split D5 asks for. |
+| E1 | run `git status --porcelain --ignored` before A-D **and** after, and compare | The old wording asked a human to tell generated paths from hand-edited ones by eye, which a test cannot do and a human does badly. Comparing the tree against itself needs no list, which is the property the fourth Specifier pass gave E1 and which this keeps. |
+
+`qa/todo-app-regression.md` needed one line: the executable form serves the app with
+`npm run preview`, so F1 sees one initial `GET api/todos/`. The row still accepts one or two, per
+PM ruling 6.
+
+**That the procedures bite, checked by breaking things rather than by argument**
+
+Each change applied alone, the tier re-run, then reverted; `git status --short src features
+vite.config.ts README.md` is empty afterwards.
+
+| Break | Result |
+| --- | --- |
+| `TodoTextInput` stops trimming the new-todo text | **G3 red**, naming the POST body it got |
+| the toggle-all `<label>` loses its `onClick` | **H3 red** |
+| `Footer` always says `items` | **F5 red** |
+| `vite.config.ts` loses `server.proxy` | **B5 red**. B4 stays green, because the dev server answers 200 with the SPA index page for an unproxied path - which is why B5 compares the bytes the backend served and B4 alone is not enough |
+| a `###` heading in `Available Scripts` renamed | **E3 red** |
+| `dist/` removed from `.gitignore` | **E1 red** |
+
+**What I verified**
+
+Every command run directly, in the tree as it stands, after the changes above.
+
+| Command | Result | Covers |
+| --- | --- | --- |
+| `npm run test:e2e` | 11 passed (6 regression procedures, 5 toolchain procedures), 58s | done criterion 7 |
+| `npm test` | 22 files / 214 tests, 0 failing, 0 skipped | D1 |
+| `npx vitest run src` | 10 / 54 - the D2a floor, intact | D2a |
+| `npx vitest run acceptance` | 4 / 49 | D2b |
+| `npx vitest run scripts` | 8 / 111; 54 + 49 + 111 = 214 | D2c |
+| `npm run test:acceptance` | 5 features parse, 5 entry points generate, 24 scenario executions pass | D3, D5 |
+| `npx tsc --noEmit` / `--version` | exit 0, no output / `Version 5.9.3` | D6, D7 |
+| `npm run test:property` | 11 / 95 | D8 |
+| `npm run test:hardening` | 12 / 128 | D9 |
+| `npm ci` from the lockfile into an empty tree | exit 0, no `react-scripts` in the output | criterion 1 |
+
+The per-scenario D5 split was re-counted off the test names, not carried forward: 4 + 2 +
+(3+1+1) + (3+8) + (1+1) = 24. `npm run test:mutation` and `node scripts/acceptance-mutation.ts`
+were not run: procedure D excludes them by design and they are the Hardener's instruments.
+
+**CRAP gate and DRY**
+
+- `node scripts/crap.mjs e2e playwright.config.ts` reports **no measured files** and exits 2, which
+  is exactly what `node scripts/crap.mjs property` does. The coverage include reaches `src/`,
+  `acceptance/` and `scripts/`, so the QA tier sits where `property/` and `hardening/` sit. I did
+  not widen the include: what the gate measures is the Cleaner's call, and the ruling on the third
+  Cleaner pass already settled that test code is judged by whether it kills mutants of the code
+  under test, not by tests over the tests.
+- Because the gate cannot score it, I measured my own sources with the project's own
+  `complexityByFunction` instead: the highest cyclomatic complexity anywhere in `e2e/` is **5**
+  (`answer` in `todo-api-stub.ts`, a four-way dispatch on HTTP method - one job), and nothing else
+  exceeds 4. Even at zero coverage that is a shape the gate would pass on complexity alone.
+- Full tree for context: `node scripts/crap.mjs --reuse --all` is 40 files / 218 functions / **2
+  over the gate**, unchanged - `executing` at 13.0, where the CRAP exception applies (one `case`
+  answering one question) and which this task does not touch, and `callapimiddleware` at 30.0, IO
+  outside this task's scope. Both are already ruled on.
+- DRY: `plain()` is defined once in `reports.ts` and used by the harness; B3 and C5 share
+  `expectTodoPage`, so C5's "renders exactly as it did in B3" is literally the same assertions;
+  the regression spec's locators and its two call-count helpers are each defined once.
+
+**One finding, for a later task, failing nothing here**
+
+`npm run test:acceptance` leaves `dist/` holding a **development** React bundle, and the
+`production build` scenarios are what put it there. `acceptance/fixtures.ts` builds with Vite's
+JS API from inside Vitest, where `NODE_ENV` is `test`, so `react-dom` resolves to its development
+entry: the artifact is 372,861 bytes and contains `react-stack-bottom-frame` and the other dev-only
+strings, against 167 kB and none of them for `npm run build`. Nothing is red - those scenarios
+assert status codes and asset references, which hold either way - and done criterion 3 is met,
+because QA procedure C runs `npm run build` itself and checks that artifact. But a scenario named
+`production build` is not building the production bundle, and anyone who runs `npm run preview`
+after the acceptance tier is previewing a development one. **Owner: the Coder**, in whichever task
+next touches the pipeline; the fix is to pin the mode or build to an outDir of its own so the
+tier stops clobbering `dist/`. I did not fix it: nothing failed, and the fixture is not mine.
+
+**Left for the next role**
+
+- **Specifier, task 02:** `test:e2e` now exists in `package.json` and in `README.md`, and it wants
+  a row in `toolchain dependencies 2`. I did not add one - `features/` is yours, and per the ruling
+  on the fourth Specifier pass a row for a script that did not yet exist would have reddened the
+  tier. The scenario is at 8 rows and would go to 9, taking the feature total from 24 scenario
+  executions to 25; procedure D5 and D3's counts move with it.
+- Nothing else is routed. `qa/` now has an executable form beside it, and the two change together
+  from here on: a later task that changes a procedure changes its `test.step`, and a task that
+  changes app behaviour changes both.
+
+**Open questions**
+
+None.
+
 
 ### Project manager rulings on the second Coder pass
 
@@ -2609,4 +2748,46 @@ a procedure. The only QA count this pass moves is D9, `npm run test:hardening`, 
 12 / 128.
 
 **Next: the single Specifier pass to reconcile QA procedure D against the tree, then QA.**
+
+
+### Project manager rulings on the QA handoff
+
+QA's own verification is accepted and its work is good. It converted both procedure files into
+executable tests, pinned `@playwright/test` to `~1.56.1` after reading `browsers.json` out of each
+candidate tarball to find the one matching the Chromium build already on disk (a caret range would
+eventually demand `playwright install`, which is forbidden here), and it proved the procedures bite
+rather than assuming it: dropping `.trim()` reddens G3, removing the toggle-all `onClick` reddens H3,
+deleting `server.proxy` reddens B5, un-ignoring `dist/` reddens E1. Measuring its own sources with
+`complexityByFunction` when the coverage-based gate reports "no measured files" is the right
+substitute rather than skipping the check.
+
+**Task 01 does not close yet.** QA's finding is more serious than "failing nothing here", and I
+verified it directly: `npm run build` produces a 167,067-byte bundle, while `npm run test:acceptance`
+leaves a 372,861-byte one containing development-mode React warnings. QA named
+`react-stack-bottom-frame` as the marker and that string is absent, but the substance is confirmed by
+size and by seven occurrences of `Warning:` in the acceptance-built artifact.
+
+The reason this blocks is not the stale `dist/`. It is that **`production build 1/2/3` cannot fail
+for the reason it exists.** Every one of its assertions - a bundle is served, referenced assets
+return 200, the index does not reference `/src/index.tsx` - holds equally of a development bundle.
+The scenario is named for a distinction it cannot detect. That is the same defect class as
+`api proxy 1` asserting a value against itself, which this task already refused to suppress, and it
+would be inconsistent to accept it now because the tier happens to be green.
+
+**The chain resumes from the Specifier**, because both halves need fixing and they belong to
+different roles:
+
+- The Specifier strengthens `features/production-build.feature` so the scenario can tell a production
+  bundle from a development one, asserting something only the production build exhibits. It should
+  choose the observable itself; size ratio and the presence of development-mode warning text are both
+  available, and the numbers above are measurements it can re-take rather than values to copy.
+- The Coder then fixes `acceptance/fixtures.ts`, which drives Vite's JS API from inside Vitest where
+  `NODE_ENV=test`, so `react-dom` resolves to its development entry.
+
+Then Cleaner, Architect, Hardener and QA run again as fresh agents. The Hardener re-run matters
+here for the same reason it did last time: acceptance mutation is what will confirm the strengthened
+scenario actually kills a mutation of whatever new observable the Specifier picks.
+
+**Carried to the task-02 Specifier:** `test:e2e` now exists and wants a row in
+`toolchain dependencies 2`. QA correctly did not add it.
 

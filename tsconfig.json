@@ -27,10 +27,12 @@
   },
   "include": [
     "acceptance",
+    "e2e",
     "hardening",
     "property",
     "scripts",
     "src",
+    "playwright.config.ts",
     "vite.config.ts",
     "vitest.acceptance-mutation.config.ts",
     "vitest.acceptance.config.ts",

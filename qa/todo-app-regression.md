@@ -8,6 +8,10 @@ Drive the real UI. Do not import project modules, read Redux state, or call a
 project API. The only thing that is faked is the network boundary: intercept
 `**/api/todos/**` and answer from the stub contract below.
 
+Executable form: `e2e/todo-app-regression.spec.ts`, run by `npm run test:e2e`.
+One test per procedure, one `test.step` per lettered row, named after it. The
+procedure and the spec change together: neither is the copy.
+
 ## Stub contract
 
 The interceptor keeps an in-memory list seeded with `SEED`:
@@ -39,7 +43,8 @@ assertions below can name them.
 `src/index.tsx` wraps the app in `React.StrictMode`, so a development build
 mounts effects twice and the initial load fires `GET /api/todos/` twice. A
 production build fires it once. Both are correct. Every other assertion below
-counts requests exactly; only the initial load is exempt.
+counts requests exactly; only the initial load is exempt. The executable form
+serves the app with `npm run preview`, so it sees one; F1 accepts either.
 
 ## Procedure F: initial render
 

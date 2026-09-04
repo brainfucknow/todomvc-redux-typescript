@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@playwright/test": "~1.56.1",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/typescript-checker": "^10.0.0",
     "@testing-library/dom": "^10.4.1",
@@ -43,6 +44,7 @@
     "test:acceptance": "node scripts/acceptance.ts",
     "test:property": "vitest run --config vitest.property.config.ts",
     "test:hardening": "vitest run --config vitest.hardening.config.ts",
-    "test:mutation": "node scripts/mutation.ts"
+    "test:mutation": "node scripts/mutation.ts",
+    "test:e2e": "playwright test"
   }
 }
