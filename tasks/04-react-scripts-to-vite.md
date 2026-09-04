@@ -53,7 +53,7 @@ Things `react-scripts` does today that must keep working:
 - `npm run dev` serves the app and its proxy reaches a backend on port 4000.
 - `npm run typecheck` passes, gating on the project's own sources. Zero errors under `src/`. The `node_modules` parse errors are task 05's to clear.
 - `npm test` passes with the same test count as before.
-- The regression suite from `qa/procedures/` passes against the dev server and against the preview server.
+- The regression suite from `qa/procedures/` passes via `npm run test:e2e`, which is the supported path. See the third project manager note on why the dev and preview servers are supplementary rather than required.
 - No occurrence of `react-scripts` remains in the repository.
 - The architect's note lists any extraction candidates seen, for the project manager to plan as structural tasks.
 
@@ -509,6 +509,260 @@ strengthening does not quietly rot.
 
 ### QA
 
+**Branch state first, and it moved again.** I arrived to a clean tree at
+`11986cb`. The repairing coder's note says the final `scripts/typecheck.mjs` was
+an uncommitted working-tree modification; what I found is that same file
+committed as `34e8a57` ("Repair the typecheck false green by removing npx from
+the pipeline"), with `11986cb` on top of it touching only `tasks/`. I diffed
+`34e8a57`'s version against the coder's description and it is the final one, with
+the elaboration-line handling. I committed nothing and reset nothing.
+
+**Release checks**
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Unit tests | `npm test` | 10 files, 55 tests, pass. Baseline held. |
+| Typecheck | `npm run typecheck` | exit 0, `0 error(s) under src/, 313 in dependencies (task 05)` |
+| Production build | `npm run build` | pass, main chunk 57.33 kB gzipped, reproduces the coder's figure exactly |
+| Preview | `npm run preview` | serves `dist/`, proxies `/api` to 4000 |
+| Dev server | `npm run dev` | starts on 3000, proxies `/api` to 4000 |
+| E2E, stub-served build | `npm run test:e2e` | 22 passed, run four times |
+| E2E, dev server | `npm run test:e2e:dev` (new) | **21 passed, 1 failed** — see below |
+| E2E, preview server | `npm run test:e2e:preview` (new) | **21 passed, 1 failed** — same one |
+| Lint | — | **no command exists.** Arrives in task 06. Not skipped silently; there is nothing to run. |
+
+Confirmed absent rather than assumed absent: no Gherkin (`find . -name '*.feature'`
+outside `node_modules` returns nothing), no acceptance pipeline and no APS runner
+adapter, no property-test framework (`fast-check`, `jsverify` and friends appear
+nowhere in the lockfile), no mutation tooling and therefore no mutation manifests
+to preserve across my changes. `gherkin` and `fast-check` occur only as future
+plans in `tasks/09` through `tasks/13`, and once inside a generated Playwright
+report asset.
+
+**What I changed.** Everything is under `qa/`, plus two script lines in
+`package.json`. No file under `src/`, no `vite.config.mts`, no
+`scripts/typecheck.mjs`.
+
+- `qa/stub/main.js`: the app-directory search list is now `['dist']`, not
+  `['build', 'dist']`, and the startup line names the directory it is serving.
+- `qa/tests/support/stub-control.ts`: `StubControl` takes an origin for the
+  `/__qa/` control channel, defaulting to `''` (relative, unchanged); `accepted()`
+  now requires a JSON answer, not merely a `200`.
+- `qa/tests/support/app-test.ts`: a `controlOrigin` Playwright option feeds it.
+- `qa/suite-config.ts` (new): the shared suite definition, extracted from
+  `qa/playwright.config.ts` so the three run modes cannot drift apart.
+- `qa/playwright.config.ts`: same behavior, now six lines over that factory.
+- `qa/playwright.dev.config.ts`, `qa/playwright.preview.config.ts` (new).
+- `package.json`: `test:e2e:dev` and `test:e2e:preview`. `test:e2e` is untouched.
+
+**The bundler changed, so here is the behavioral claim rather than a build claim**
+
+Task 03's QA note (`788517a`) records `npm run test:e2e` at 22 passed against the
+`react-scripts` output in `build/`. The same 22 procedures pass today against the
+Vite output in `dist/`, through the same stub, with no procedure and no
+expectation edited. That is a procedure-by-procedure comparison of what the app
+does across the bundler swap, not an observation that a bundle appeared. It
+covers the CSS as well: procedures 08 and 09 assert a hidden-until-hover destroy
+button and a struck-through label, both of which are `todomvc-app-css` doing its
+job in the built stylesheet, so the lightningcss `::input-placeholder` warning is
+confirmed benign from the outside.
+
+The built shell also carries what the procedures depend on. `dist/index.html`
+holds `<title>Redux TodoMVC Example</title>` and `<div class="todoapp" id="root">`
+identical to `4ce63dd`'s `public/index.html`; the only differences are the
+injected module script and stylesheet, and the loss of the CRA template comment.
+
+**The typecheck repair, verified, plus one hole the coder did not name**
+
+I reproduced the original false green before checking the fix: with a poisoned
+`npx` first on `PATH` that prints npm's `could not determine executable to run`
+and exits 1, the pre-repair script (`git show 6843d50:scripts/typecheck.mjs`)
+printed `0 error(s) under src/, 1 in dependencies` and exited 0. The compiler
+never ran and the gate was green.
+
+All three claims hold, checked against the real script in the real repository:
+
+- *Poisoned `npx` has no effect.* Same `PATH`, `npm run typecheck` produces the
+  byte-identical healthy report and exit 0. The script contains no occurrence of
+  `npx` and never consults `PATH`.
+- *A file-less `error TSnnnn` is caught.* Run from a directory whose `tsconfig.json`
+  matches no inputs: `typecheck: tsc reported a project-level error, so no source
+  file was checked: error TS18003 ...`, exit 1. With no tsconfig at all it exits 1
+  on the version banner.
+- *It exits 1 on a planted error under `src/`.* A syntax error in `src/qa-canary.ts`
+  gives `2 error(s) under src/` and exit 1, both lines printed. A planted *type*
+  error (`const bad: number = 'x'`) still reports nothing and exits 0 — the
+  semantic blindness the coder documented and the project manager already
+  accepted, not a new defect.
+
+I then went looking for other holes, driving the real script against a stub
+`typescript` package I controlled. Everything below is measured.
+
+| Condition | Result |
+| --- | --- |
+| tsc exits 0 printing nothing | **green** — the hole the coder named |
+| tsc writes anything at all to stderr, exit 0 | exit 1, loud |
+| tsc killed by a signal | exit 1, loud |
+| ~2 MB of diagnostics, past `spawnSync`'s 1 MB `maxBuffer` | exit 1, loud (the truncated last line trips the "cannot read as a diagnostic" guard; the message misattributes the cause, but it never goes green) |
+| a real `src/` error reported with a path that is not repo-relative | **green** |
+
+That last row is a second silent false green, and it is reachable through an
+ordinary mistake rather than a lying compiler. The gate classifies a diagnostic
+by `file.startsWith('src/')`, and tsc writes paths relative to the *current
+working directory*. tsc searches ancestor directories for a `tsconfig.json`, so
+running the gate from anywhere below the repository root finds the right config
+and checks the right files while printing every path with the wrong prefix. Proof,
+with a real syntax error planted in `src/qa-canary.ts`:
+
+    $ node scripts/typecheck.mjs                 # from the repo root
+    src/qa-canary.ts(1,24): error TS1109: Expression expected.
+    src/qa-canary.ts(2,1): error TS1005: ')' expected.
+    2 error(s) under src/, 313 in dependencies (task 05)   -> exit 1
+
+    $ cd src && node ../scripts/typecheck.mjs
+    0 error(s) under src/, 315 in dependencies (task 05)   -> exit 1 expected, got exit 0
+
+`npm run typecheck` always runs from the package root, so the supported command is
+safe today and I am not calling the gate broken. But task 08 wires this into CI,
+where a `working-directory:` line or a `cd` in a job step is one keystroke, and the
+failure is exactly the silent kind this file was just repaired to eliminate. The
+narrowest fix is to make the gate state its own root instead of inferring it —
+spawn tsc with `cwd` set to the repository root, or compare against a resolved
+absolute `src/` path rather than a string prefix. That is a coder's edit to a
+shell script. Owner: whoever the project manager assigns, task 05 or task 08. I did
+not make it.
+
+Two smaller observations on the same file, neither a defect: the "anything on
+stderr" guard means a future Node or TypeScript that emits a deprecation or
+experimental warning turns the gate red rather than green, which is the safe
+direction but will look like a failure task 05 or 07 did not cause; and `qa/**`
+is outside the gate entirely, since `tsconfig.json` includes only `src`, so the
+Playwright configs and support files I changed are type-checked by nothing
+(pre-existing — `qa/playwright.config.ts` was already in that position).
+
+**`dist/` versus a stale `build/`: the trap was real, and it is closed**
+
+Reproduced first. With a hand-written `build/index.html` in the tree, the stub
+served it: `curl http://127.0.0.1:3199/` returned my fake page, and the whole
+suite would have run against it while reporting nothing unusual. Since
+`react-scripts` is gone, `build/` can now only ever be stale, so preferring it can
+only ever be wrong. `qa/stub/main.js` now looks in `dist/` alone, `QA_APP_DIR`
+still overrides, and every run says which directory it opened:
+
+    qa stub listening on http://127.0.0.1:3100, serving /home/user/todomvc-redux-typescript/dist
+
+Re-verified with a stale `build/` present: 22 passed, `dist` served, trap gone.
+
+**The dev and preview runs, inside the ruling rather than around it**
+
+I did not touch `vite.config.mts` and did not widen the app's proxy. The harness
+addresses the stub's own origin for `/__qa/` instead: `controlOrigin` is a
+Playwright option, set to `''` for the default suite (where the stub serves both
+the app and the control channel on one origin, so nothing changes) and to
+`http://127.0.0.1:4000` for the two proxied suites. Three commands, three
+topologies, one set of procedures and one set of tests.
+
+I also closed the silent failure the architect described, rather than merely
+routing around it. `accepted()` now requires `application/json` from the control
+channel, so a control call answered by a web server can no longer pass. Measured
+both shapes the architect predicted, against a live preview server:
+`GET /__qa/faults` returns `200 text/html` through Vite and `200 application/json`
+from the stub, and `POST /__qa/reset` returns `404` through Vite. With
+`controlOrigin` deliberately set back to `''`, the preview run now fails on the
+first control call with `stub control channel: http://localhost:4173/__qa/reset
+answered 404`, instead of resetting nothing and passing. Fault injection can no
+longer silently no-op anywhere.
+
+**What those runs found: one procedure that a proxy cannot deliver**
+
+21 of 22 pass against `npm run dev` and 21 of 22 against `npm run preview`.
+Identical failure in both, reproducible every run:
+`20-delete-failure.spec.ts` — "a delete that fails at the transport level keeps
+the row". The row is deleted.
+
+Root-caused, not guessed. Procedure 20 requires `transport(DELETE, api/todos/2)`,
+which the README defines as "matching requests get no valid HTTP response (the
+connection is closed)", and calls "the only fault the client recognizes as
+failure". Behind a proxy that fault cannot reach the browser. Measured directly
+with curl, stub on 4000 and preview on 4173:
+
+    DELETE http://127.0.0.1:4000/api/todos/2   -> curl: (52) Empty reply from server
+    DELETE http://localhost:4173/api/todos/2   -> HTTP/1.1 502 Bad Gateway, text/plain
+
+Vite converts the destroyed upstream connection into a well-formed `502`. The app
+never checks status (procedure 21), and `removeTodo` in `src/actions/api.ts` is the
+one creator with `json: false`, so `callAPIMiddleware` never reads the body and
+never gets the JSON parse rejection that makes procedures 16 to 19 still pass
+behind the proxy for the wrong reason. Nothing distinguishes the proxy's `502`
+from a successful delete, so `DELETE_TODO_SUCCESS` is dispatched and the row goes.
+
+This is not an app regression and not a harness bug. It is the app behaving exactly
+as procedure 21 already records, reached because a proxy turns a transport fault
+into a status fault. `npm run test:e2e` is unaffected: there the browser talks to
+the stub directly and procedure 20 passes. No fault the backend can produce fixes
+this — headers sent then socket destroyed would also be invisible to a `json: false`
+request — so **procedure 20 is not executable behind an HTTP proxy, by anything the
+stub can do**.
+
+I did not weaken, skip or rewrite the procedure or its test to make the two new
+commands green. Procedure text is the specifier's, and the shared definitions say
+QA stops and asks rather than changing what a procedure records.
+
+**CRAP gate and DRY on changed files**
+
+Every function I wrote or touched is cyclomatic 1, except `accepted()` at 3 (one
+`??` and a two-clause `if`, all answering the single question "did the control
+channel answer?") and `appDir()` at 3, whose shape I did not change. No source
+gained a second job: `qa/suite-config.ts` builds suite configs, `stub-control.ts`
+is the control-channel client, `main.js` boots the stub. Nothing was split to
+lower a count. DRY pass found and removed real duplication rather than adding
+some: extracting `defineSuite` kept the three configs from carrying three copies
+of the worker, retry and reporter policy, and `defineProxiedSuite` keeps dev and
+preview from carrying two copies of the two-server setup. Coverage instrumentation
+does not run over `qa/`, so the CRAP coverage term has no measurement to draw on;
+what I can say is that every line of the changed harness executes on every suite
+run, three times over.
+
+**Verdict against the done criteria**
+
+Met: production bundle with no `react-scripts`; `npm run preview` serves it and the
+app works in it; `npm run dev` serves and its proxy reaches port 4000;
+`npm run typecheck` passes with zero errors under `src/`, as weakly as the coder
+disclosed; `npm test` unchanged at 55; no `react-scripts` in any executable file;
+the architect's note lists extraction candidates.
+
+Not met: "The regression suite from `qa/procedures/` passes against the dev server
+and against the preview server." It is 21 of 22 in both, for the topology reason
+above, and closing it needs a decision I am not allowed to take alone.
+
+**Open questions for the project manager**
+
+1. **Procedure 20 behind a proxy.** Should the specifier record that a transport
+   fault is not establishable through a proxy, so the dev and preview runs are
+   21 of 22 by design and the two new commands exclude procedure 20? The
+   procedures README also says, under Environment assumptions, "The app may be
+   served from the dev server or from a production build; the procedures do not
+   depend on which" — which is now demonstrably false for procedure 20, and the
+   Faults section's "This is the only fault the client recognizes as failure"
+   deserves the proxy caveat beside it. Both are specifier-owned sentences and I
+   left them alone.
+2. **Until that is settled, `test:e2e:dev` and `test:e2e:preview` exit 1.** Task 08
+   must not wire them into CI as they stand. I judged a red command that names a
+   real fact better than deleting the coverage or quietly narrowing it, but say
+   the word and I will exclude procedure 20 from the two proxied configs in one
+   line.
+3. **The cwd-dependent false green in `scripts/typecheck.mjs`** (section above)
+   needs a coder. Task 05 and task 08 are both plausible homes; task 08 is the one
+   that puts the gate somewhere nobody reads its output.
+
+**Left for the next role**
+
+Nothing in the tree is half-finished. Working tree at handoff: modified
+`package.json`, `qa/playwright.config.ts`, `qa/stub/main.js`,
+`qa/tests/support/app-test.ts`, `qa/tests/support/stub-control.ts`; new
+`qa/suite-config.ts`, `qa/playwright.dev.config.ts`,
+`qa/playwright.preview.config.ts`. Uncommitted, as instructed. No stray servers
+left listening, and `dist/` holds a current build.
 
 ## Project manager notes
 
@@ -553,3 +807,43 @@ origin. It is only running the procedures against `npm run dev` or
 be answered by `index.html` with a 200 and a status-code-only check would pass
 while resetting nothing. The supported path for the procedures is the suite's own
 harness. If QA wants preview coverage beyond that, it belongs in QA-owned files.
+
+
+## Project manager notes, third round
+
+**Ruling on procedure 20 behind the dev and preview proxies.** QA is right that
+it cannot pass there, and right not to have weakened it. The criterion I wrote
+was over-specified, and I have corrected it above.
+
+The reason is worth stating, because it will come back. Procedure 20 needs a
+*transport* failure. An HTTP proxy cannot deliver one: Vite necessarily turns
+the stub's destroyed connection into a `502` response, which is an HTTP answer,
+not a transport failure. The app ignores status codes and `removeTodo` is the
+one action creator with `json: false`, so it never reads a body either. Nothing
+is left to distinguish that `502` from success.
+
+So this is not a defect in the app, the procedure, or the migration. It is a
+property of proxying, and the supported harness (the stub serving the build on
+one origin) delivers the real condition correctly, where all 22 pass.
+
+Note what it does confirm: if the client checked `response.ok`, procedure 20
+would pass behind a proxy too. The reason it cannot is downstream of the
+ignored-status defect recorded in `PLAN.md` and preserved deliberately by tasks
+09 and 10. Do not let that tempt anyone into fixing the defect early to make a
+test go green.
+
+QA is asked to keep the dev and preview configs, exclude procedure 20 there
+with the reason annotated in the test itself rather than silently, and confirm
+the rest still passes. Those two commands stay supplementary. Task 08 decides
+whether CI runs them; `npm run test:e2e` is the one that must.
+
+**On the cwd-relative false green QA found in `scripts/typecheck.mjs`.**
+Reproduced and confirmed: with a planted syntax error, the gate exits 1 from the
+repository root and exits 0 from a subdirectory, counting the same real `src/`
+error as a dependency error. `npm run typecheck` is safe today only because npm
+sets the working directory.
+
+Not routed back here, because this task's criterion is met as invoked and the
+defect only bites in CI. Folded into task 05, which already owes proof that the
+gate has teeth and will be editing this script to widen it, with task 08
+verifying under CI.
