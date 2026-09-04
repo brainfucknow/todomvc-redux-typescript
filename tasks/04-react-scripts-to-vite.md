@@ -34,6 +34,7 @@ Things `react-scripts` does today that must keep working:
 - Add `npm run typecheck` running `tsc --noEmit`, since Vite does not typecheck during build and `react-scripts` did.
 - Remove `react-scripts` and any dependency that only existed to serve it.
 - Update `.gitignore` for Vite's output directory if it differs from `build/`.
+- Confirm `npm run test:e2e` still runs. The E2E stub serves the built app from `build/`, falling back to `dist/`, and honours a `QA_APP_DIR` override, so the command is expected to survive the output-directory change. Confirm that; do not assume it. The stub and the tests belong to QA: if the command needs a change, QA makes it, not the coder.
 - Update `README.md` where it documents CRA commands and `npm run eject`.
 
 ## Out of scope

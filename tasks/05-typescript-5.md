@@ -29,6 +29,7 @@ Known type debt that the bump will surface:
 - Fix type errors the bump surfaces, with the narrowest change that keeps behavior identical.
 - Remove the ineffective `resolutions` field.
 - Remove `@types/react-redux` if react-redux's own types suffice. Remove `@types/node` if nothing needs it.
+- `qa/` sits outside `tsconfig.json`'s `include` because TypeScript 3.9 cannot parse Playwright's type definitions, and Playwright transpiles the specs without typechecking them. TypeScript 5 can. Bring `qa/tests/` under a typecheck, in its own project reference or its own config rather than by widening the app's `include`, so the app's compilation stays free of test types. Fix any type error this surfaces in the test sources. Do not change what any test asserts; if a type error can only be resolved by changing an assertion, stop and report it.
 
 ## Out of scope
 

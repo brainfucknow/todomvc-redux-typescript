@@ -59,7 +59,7 @@ Serial. Each task assumes every earlier task is merged.
 
 | # | Task | Track | Chain | Status |
 | --- | --- | --- | --- | --- |
-| 01 | Characterize current behavior | Characterization | specifier -> QA | pending |
+| 01 | Characterize current behavior | Characterization | specifier -> QA | **done** |
 | 02 | Migrate component tests off react-shallow-renderer | Tooling | coder -> QA | pending |
 | 03 | Migrate Jest to Vitest | Tooling | coder -> QA | pending |
 | 04 | Replace react-scripts with Vite | Tooling | coder -> architect -> QA | pending |
@@ -86,6 +86,22 @@ Within structural work, task 09 gives 10 a client to call, 10 settles the state 
 - Task 04 gets the architect: Vite requires `index.html` at the project root with a module script tag, replaces `react-app-env.d.ts` with `vite-env.d.ts`, and changes the env variable prefix. Those are file moves and import-path changes forced by the tooling.
 - Tasks 02, 03, 05, 06, 07, 08 do not get the architect: they change configuration, dependencies, and test bodies, not module boundaries.
 - Tasks 09 through 13 all get the hardener: each creates or changes a testable module. 09 creates the API client, 10 creates slice reducers, 11 creates the text-input rules module, 12 changes the selector input type, 13 changes the selectors themselves.
+
+## The regression bar
+
+Task 01 produced `qa/procedures/`: 21 procedures and 22 executable Playwright
+cases, green against the unmodified repository. `npm run test:e2e` builds the
+app, starts the stub backend, runs the suite, and stops the stub. No Docker, no
+manually started backend.
+
+Every task from 02 onward must leave that suite passing. A procedure and its
+test change together and only QA touches them.
+
+Two behaviors the suite records but cannot pin tighter, because the app renders
+nothing at the moment they happen: toggle-all and clear-completed issue no
+request at all, and a failed request produces no UI at all. If any task adds a
+loading or error indicator, that is a behavior change; the specifier rewrites
+procedures 16 to 20 first, and the task stops and asks before proceeding.
 
 ## Out of scope for the whole plan
 

@@ -38,7 +38,7 @@ Behavior that must survive, in detail:
 ## Out of scope
 
 - Changing what the user sees. Same todos, same filters, same counts, same moment of update.
-- Surfacing loading or error state in the UI.
+- Surfacing loading or error state in the UI. The E2E suite asserts the absence of any error UI, so adding one fails procedures 16 to 20 by design. That is a behavior change: stop and ask the project manager, who routes it to the specifier.
 - Changing components, containers, or selectors. They keep reading the same state paths. If a state path must move, stop and ask.
 - Adding optimistic updates, retries, caching, or RTK Query. Every one of those changes observable timing.
 
