@@ -1,42 +1,35 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import Link, { LinkProps } from './Link'
 
-const setup = (propOverrides?:Partial<LinkProps>) => {
-  const props:LinkProps= Object.assign({
+const renderLink = (propOverrides?: Partial<LinkProps>) => {
+  const props: LinkProps = {
     active: false,
     children: 'All',
-    setFilter: vi.fn()
-  }, propOverrides)
-
-  const renderer = createRenderer();
-  renderer.render(<Link {...props} />)
-  const output = renderer.getRenderOutput()
-
-  return {
-    props: props,
-    output: output,
+    setFilter: vi.fn(),
+    ...propOverrides,
   }
+  const user = userEvent.setup()
+  const rendered = render(<Link {...props} />)
+  return { props, user, anchor: rendered.container.firstElementChild as HTMLElement, ...rendered }
 }
 
-describe('component', () => {
-  describe('Link', () => {
-    it('should render correctly', () => {
-      const { output } = setup()
-      expect(output.type).toBe('a')
-      expect(output.props.style.cursor).toBe('pointer')
-      expect(output.props.children).toBe('All')
-    })
+describe('Link', () => {
+  it('C12 renders an anchor showing the label, with a pointer cursor', () => {
+    const { anchor } = renderLink()
+    expect(anchor.tagName).toBe('A')
+    expect(anchor.textContent).toBe('All')
+    expect(anchor.style.cursor).toBe('pointer')
+  })
 
-    it('should have class selected if active', () => {
-      const { output } = setup({ active: true })
-      expect(output.props.className).toBe('selected')
-    })
+  it('C13 carries class selected when it is the active filter', () => {
+    const { anchor } = renderLink({ active: true })
+    expect(anchor.className).toBe('selected')
+  })
 
-    it('should call setFilter on click', () => {
-      const { output, props } = setup()
-      output.props.onClick()
-      expect(props.setFilter).toBeCalled()
-    })
+  it('C14 calls setFilter when clicked', async () => {
+    const { props, user } = renderLink()
+    await user.click(screen.getByText('All'))
+    expect(props.setFilter).toHaveBeenCalledTimes(1)
   })
 })

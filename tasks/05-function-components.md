@@ -11,6 +11,11 @@ Every component in `src/components/` is a function component. `prop-types` is go
 - Convert `TodoItem` from `PureComponent` to a function component: its `editing` state becomes `useState`, its handlers become plain functions or `useCallback` where memoization is actually needed, and its `PureComponent` identity becomes `React.memo` only if a measured or reasoned need exists (say which in the handoff note).
 - Convert `TodoTextInput` the same way. Note that its `state = { text: this.props.text || '' }` initializes from props exactly once; the function version must preserve that behavior, including what happens when `text` changes after mount.
 - Remove the `static propTypes` blocks from `TodoItem`, `TodoTextInput`, and `Footer`, and remove `prop-types` from `package.json`.
+- Replace `TodoTextInput`'s `e.which === 13` check with `e.key === 'Enter'`. `which` is deprecated, and
+  task 02 found that `@testing-library/user-event` v14 never sets `keyCode`, so the component is
+  reachable from a modern test only through a hand-built event. The behavior is identical; make the
+  change while the file is already being rewritten, and delete the `pressEnter()` helper in
+  `src/test-utils.tsx` if nothing else needs it.
 - Keep the `autoFocus`, blur, and Enter-key behavior of `TodoTextInput` identical, including that blur saves only when `newTodo` is false and Enter clears the field only when `newTodo` is true.
 
 ## Out of scope

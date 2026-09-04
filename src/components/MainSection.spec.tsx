@@ -1,103 +1,84 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { screen } from '@testing-library/react'
 import MainSection, { MainSectionProps } from './MainSection'
-import Footer from './Footer'
-import VisibleTodoList from '../containers/VisibleTodoList'
+import type { Todo } from '../models/Todo'
+import { mockTodoActions, renderWithStore } from '../test-utils'
 
-const setup = (propOverrides?:Partial<MainSectionProps>) => {
-  const props = Object.assign({
+const storedTodos: Todo[] = [
+  { id: 0, text: 'Use Redux', completed: false },
+  { id: 1, text: 'Run the tests', completed: true },
+]
+
+const renderMainSection = (propOverrides?: Partial<MainSectionProps>, todos: Todo[] = storedTodos) => {
+  const props: MainSectionProps = {
     todosCount: 2,
     completedCount: 1,
-    actions: {
-      editTodo: vi.fn(),
-      deleteTodo: vi.fn(),
-      completeTodo: vi.fn(),
-      completeAllTodos: vi.fn(),
-      clearCompleted: vi.fn()
-    }
-  }, propOverrides)
-
-  const renderer = createRenderer()
-  renderer.render(<MainSection {...props} />)
-  const output = renderer.getRenderOutput()
-
-  return {
-    props: props,
-    output: output,
-    renderer: renderer
+    actions: mockTodoActions(),
+    ...propOverrides,
   }
+  const rendered = renderWithStore(<MainSection {...props} />, { todos })
+  return { props, section: rendered.container.firstElementChild as HTMLElement, ...rendered }
 }
 
-describe('components', () => {
-  describe('MainSection', () => {
-    it('should render container', () => {
-      const { output } = setup()
-      expect(output.type).toBe('section')
-      expect(output.props.className).toBe('main')
-    })
+const toggleAll = (section: HTMLElement) => section.querySelector<HTMLInputElement>('input.toggle-all')
+const todoList = (section: HTMLElement) => section.querySelector<HTMLElement>('ul.todo-list')
+const countText = (section: HTMLElement) => section.querySelector('.todo-count')?.textContent
+const clearControl = () => screen.getByRole('button', { name: 'Clear completed' })
 
-    describe('toggle all input', () => {
-      it('should render', () => {
-        const { output } = setup()
-        const [ toggle ] = output.props.children[0].props.children
-        expect(toggle.type).toBe('input')
-        expect(toggle.props.className).toBe('toggle-all')
-        expect(toggle.props.type).toBe('checkbox')
-        expect(toggle.props.checked).toBe(false)
-      })
+describe('MainSection', () => {
+  it('C15 renders the main section', () => {
+    const { section } = renderMainSection()
+    expect(section.tagName).toBe('SECTION')
+    expect(section.className).toBe('main')
+  })
 
-      it('should be checked if all todos completed', () => {
-        const { output } = setup({
-          completedCount: 2
-        })
-        const [ toggle ] = output.props.children[0].props.children
-        expect(toggle.props.checked).toBe(true)
-      })
+  it('C16 shows an unchecked toggle-all box while a todo is still active', () => {
+    const { section } = renderMainSection()
+    expect(toggleAll(section)?.type).toBe('checkbox')
+    expect(toggleAll(section)?.checked).toBe(false)
+  })
 
-      it('should call completeAllTodos on change', () => {
-        const { output, props } = setup()
-        const [ , label ] = output.props.children[0].props.children
-        label.props.onClick({})
-        expect(props.actions.completeAllTodos).toBeCalled()
-      })
-    })
+  it('C17 shows a checked toggle-all box once every todo is completed', () => {
+    const { section } = renderMainSection({ completedCount: 2 })
+    expect(toggleAll(section)?.checked).toBe(true)
+  })
 
-    describe('footer', () => {
-      it('should render', () => {
-        const { output } = setup()
-        const [ , , footer ] = output.props.children
-        expect(footer.type).toBe(Footer)
-        expect(footer.props.completedCount).toBe(1)
-        expect(footer.props.activeCount).toBe(1)
-      })
+  it('C18 completes every todo when the toggle-all control is clicked', async () => {
+    const { props, section, user } = renderMainSection()
+    // The control the user clicks is the empty label beside the box: it has no
+    // text and no `for`, so it is findable in the DOM and nowhere else.
+    await user.click(toggleAll(section)?.nextElementSibling as HTMLElement)
+    expect(props.actions.completeAllTodos).toHaveBeenCalledTimes(1)
+  })
 
-      it('onClearCompleted should call clearCompleted', () => {
-        const { output, props } = setup()
-        const [ , , footer ] = output.props.children
-        footer.props.onClearCompleted()
-        expect(props.actions.clearCompleted).toBeCalled()
-      })
-    })
+  it('C19 reads the active count and offers to clear the completed todos', () => {
+    const { section } = renderMainSection()
+    expect(countText(section)).toBe('1 item left')
+    expect(clearControl().className).toBe('clear-completed')
+  })
 
-    describe('visible todo list', () => {
-      it('should render', () => {
-        const { output } = setup()
-        const [ , visibleTodoList ] = output.props.children
-        expect(visibleTodoList.type).toBe(VisibleTodoList)
-      })
-    })
+  it('C20 clears the completed todos when the clear control is clicked', async () => {
+    const { props, user } = renderMainSection()
+    await user.click(clearControl())
+    expect(props.actions.clearCompleted).toHaveBeenCalledTimes(1)
+  })
 
-    describe('toggle all input and footer', () => {
-      it('should not render if there are no todos', () => {
-        const { output } = setup({
-          todosCount: 0,
-          completedCount: 0
-        })
-        const renderedChildren = output.props.children
-        .filter((item:boolean) => item !== false)
-        expect(renderedChildren.length).toBe(1)
-        expect(renderedChildren[0].type).toBe(VisibleTodoList)
-      })
-    })
+  it('C21 shows the visible todos between the toggle-all control and the footer', () => {
+    const { section } = renderMainSection()
+    const list = todoList(section) as HTMLElement
+    expect(Array.from(list.querySelectorAll('label')).map((label) => label.textContent))
+      .toEqual(['Use Redux', 'Run the tests'])
+    expect(list.previousElementSibling?.contains(toggleAll(section) as Node)).toBe(true)
+    expect((list.nextElementSibling as HTMLElement).className).toBe('footer')
+  })
+
+  it('C22 shows only the empty list when there are no todos', () => {
+    const { section } = renderMainSection({ todosCount: 0, completedCount: 0 }, [])
+    expect(toggleAll(section)).toBeNull()
+    expect(screen.queryByText(/items? left/)).toBeNull()
+    expect(screen.queryByText('All')).toBeNull()
+    expect(screen.queryByText('Clear completed')).toBeNull()
+    const list = todoList(section)
+    expect(list).not.toBeNull()
+    expect(list?.children).toHaveLength(0)
   })
 })

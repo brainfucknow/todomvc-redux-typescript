@@ -1,80 +1,73 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import TodoTextInput, { TodoTextInputProps } from './TodoTextInput'
+import { pressEnter } from '../test-utils'
 
-const setup = (propOverrides?:Partial<TodoTextInputProps>) => {
-  const props = Object.assign({
+const renderInput = (propOverrides?: Partial<TodoTextInputProps>) => {
+  const props: TodoTextInputProps = {
     onSave: vi.fn(),
     text: 'Use Redux',
     placeholder: 'What needs to be done?',
     editing: false,
-    newTodo: false
-  }, propOverrides)
-
-  const renderer = createRenderer()
-
-  renderer.render(
-    <TodoTextInput {...props} />
-  )
-
-  const output = renderer.getRenderOutput()
-
-  return {
-    props: props,
-    output: output,
-    renderer: renderer
+    newTodo: false,
+    ...propOverrides,
   }
+  const user = userEvent.setup()
+  return { props, user, ...render(<TodoTextInput {...props} />) }
 }
 
-describe('components', () => {
-  describe('TodoTextInput', () => {
-    it('should render correctly', () => {
-      const { output } = setup()
-      expect(output.props.placeholder).toEqual('What needs to be done?')
-      expect(output.props.value).toEqual('Use Redux')
-      expect(output.props.className).toEqual('')
-    })
+const textbox = () => screen.getByRole('textbox') as HTMLInputElement
 
-    it('should render correctly when editing=true', () => {
-      const { output } = setup({ editing: true })
-      expect(output.props.className).toEqual('edit')
-    })
+describe('TodoTextInput', () => {
+  it('C33 shows the placeholder and the given text, with no state class', () => {
+    renderInput()
+    expect(textbox().placeholder).toBe('What needs to be done?')
+    expect(textbox().value).toBe('Use Redux')
+    expect(textbox().className).toBe('')
+  })
 
-    it('should render correctly when newTodo=true', () => {
-      const { output } = setup({ newTodo: true })
-      expect(output.props.className).toEqual('new-todo')
-    })
+  it('C34 carries class edit when editing', () => {
+    renderInput({ editing: true })
+    expect(textbox().className).toBe('edit')
+  })
 
-    it('should update value on change', () => {
-      const { output, renderer } = setup()
-      output.props.onChange({ target: { value: 'Use Radox' } })
-      const updated = renderer.getRenderOutput()
-      expect(updated.props.value).toEqual('Use Radox')
-    })
+  it('C35 carries class new-todo when it is the new-todo field', () => {
+    renderInput({ newTodo: true })
+    expect(textbox().className).toBe('new-todo')
+  })
 
-    it('should call onSave on return key press', () => {
-      const { output, props } = setup()
-      output.props.onKeyDown({ which: 13, target: { value: 'Use Redux' } })
-      expect(props.onSave).toBeCalledWith('Use Redux')
-    })
+  it('C36 shows what was typed into it', async () => {
+    const { user } = renderInput()
+    await user.clear(textbox())
+    await user.type(textbox(), 'Use Radox')
+    expect(textbox().value).toBe('Use Radox')
+  })
 
-    it('should reset state on return key press if newTodo', () => {
-      const { output, renderer } = setup({ newTodo: true })
-      output.props.onKeyDown({ which: 13, target: { value: 'Use Redux' } })
-      const updated = renderer.getRenderOutput()
-      expect(updated.props.value).toEqual('')
-    })
+  it('C37 calls onSave with the field text when Enter is pressed', () => {
+    const { props } = renderInput()
+    pressEnter(textbox())
+    expect(props.onSave).toHaveBeenCalledTimes(1)
+    expect(props.onSave).toHaveBeenCalledWith('Use Redux')
+  })
 
-    it('should call onSave on blur', () => {
-      const { output, props } = setup()
-      output.props.onBlur({ target: { value: 'Use Redux' } })
-      expect(props.onSave).toBeCalledWith('Use Redux')
-    })
+  it('C38 empties the new-todo field when Enter is pressed', () => {
+    renderInput({ newTodo: true })
+    pressEnter(textbox())
+    expect(textbox().value).toBe('')
+  })
 
-    it('shouldnt call onSave on blur if newTodo', () => {
-      const { output, props } = setup({ newTodo: true })
-      output.props.onBlur({ target: { value: 'Use Redux' } })
-      expect(props.onSave).not.toBeCalled()
-    })
+  it('C39 calls onSave with the field text when focus moves away', async () => {
+    const { props, user } = renderInput()
+    await user.click(textbox())
+    await user.tab()
+    expect(props.onSave).toHaveBeenCalledTimes(1)
+    expect(props.onSave).toHaveBeenCalledWith('Use Redux')
+  })
+
+  it('C40 calls nothing when focus moves away from the new-todo field', async () => {
+    const { props, user } = renderInput({ newTodo: true })
+    await user.click(textbox())
+    await user.tab()
+    expect(props.onSave).not.toHaveBeenCalled()
   })
 })

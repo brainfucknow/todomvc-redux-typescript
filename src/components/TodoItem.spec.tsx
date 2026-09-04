@@ -1,119 +1,93 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
-import TodoItem from './TodoItem'
-import TodoTextInput from './TodoTextInput'
+import type { ReactNode } from 'react'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import TodoItem, { TodoItemProps } from './TodoItem'
+import { pressEnter } from '../test-utils'
 
-const setup = ( editing = false ) => {
-  const props = {
-    todo: {
-      id: 0,
-      text: 'Use Redux',
-      completed: false
-    },
+const list = ({ children }: { children: ReactNode }) => <ul>{children}</ul>
+
+const renderItem = (propOverrides?: Partial<TodoItemProps>) => {
+  const props: TodoItemProps = {
+    todo: { id: 0, text: 'Use Redux', completed: false },
     editTodo: vi.fn(),
     deleteTodo: vi.fn(),
-    completeTodo: vi.fn()
+    completeTodo: vi.fn(),
+    ...propOverrides,
   }
-
-  const renderer = createRenderer()
-
-  renderer.render(
-    <TodoItem {...props} />
-  )
-
-  let output = renderer.getRenderOutput()
-
-  if (editing) {
-    const label = output.props.children.props.children[1]
-    label.props.onDoubleClick({})
-    output = renderer.getRenderOutput()
-  }
-
-  return {
-    props: props,
-    output: output,
-    renderer: renderer
-  }
+  const user = userEvent.setup()
+  return { props, user, ...render(<TodoItem {...props} />, { wrapper: list }) }
 }
 
-describe('components', () => {
-  describe('TodoItem', () => {
-    it('initial render', () => {
-      const { output } = setup()
+const row = () => screen.getByRole('listitem')
+const destroyControl = () => screen.getByRole('button')
+const editField = () => screen.getByRole('textbox') as HTMLInputElement
 
-      expect(output.type).toBe('li')
-      expect(output.props.className).toBe('')
+const startEditing = (user: ReturnType<typeof userEvent.setup>) => user.dblClick(screen.getByText('Use Redux'))
 
-      const div = output.props.children
+describe('TodoItem', () => {
+  it('C23 shows an active todo as an unchecked box, its text and a destroy control', () => {
+    renderItem()
+    expect(row().className).toBe('')
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
+    expect(screen.getByText('Use Redux').tagName).toBe('LABEL')
+    expect(destroyControl().className).toBe('destroy')
+  })
 
-      expect(div.type).toBe('div')
-      expect(div.props.className).toBe('view')
+  it('C24 completes the todo when its box is checked', async () => {
+    const { props, user } = renderItem()
+    await user.click(screen.getByRole('checkbox'))
+    expect(props.completeTodo).toHaveBeenCalledTimes(1)
+    expect(props.completeTodo).toHaveBeenCalledWith(0, true)
+  })
 
-      const [ input, label, button ] = div.props.children
+  it('C25 deletes the todo when the destroy control is clicked', async () => {
+    const { props, user } = renderItem()
+    await user.click(destroyControl())
+    expect(props.deleteTodo).toHaveBeenCalledTimes(1)
+    expect(props.deleteTodo).toHaveBeenCalledWith(0)
+  })
 
-      expect(input.type).toBe('input')
-      expect(input.props.checked).toBe(false)
+  it('C26 enters edit mode when the text is double-clicked', async () => {
+    const { user } = renderItem()
+    await startEditing(user)
+    expect(row().className).toBe('editing')
+  })
 
-      expect(label.type).toBe('label')
-      expect(label.props.children).toBe('Use Redux')
+  it('C27 replaces the row with a field holding the todo text while editing', async () => {
+    const { user } = renderItem()
+    await startEditing(user)
+    expect(editField().value).toBe('Use Redux')
+    expect(editField().className).toBe('edit')
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByText('Use Redux')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
 
-      expect(button.type).toBe('button')
-      expect(button.props.className).toBe('destroy')
-    })
+  it('C28 edits the todo when non-empty text is submitted', async () => {
+    const { props, user } = renderItem()
+    await startEditing(user)
+    await user.clear(editField())
+    await user.type(editField(), 'Use Redux everywhere')
+    pressEnter(editField())
+    expect(props.editTodo).toHaveBeenCalledTimes(1)
+    expect(props.editTodo).toHaveBeenCalledWith(0, 'Use Redux everywhere')
+  })
 
-    it('input onChange should call completeTodo', () => {
-      const { output, props } = setup()
-      const input = output.props.children.props.children[0]
-      input.props.onChange({})
-      expect(props.completeTodo).toBeCalledWith(0,true)
-    })
+  it('C29 deletes the todo when the text is cleared and submitted', async () => {
+    const { props, user } = renderItem()
+    await startEditing(user)
+    await user.clear(editField())
+    pressEnter(editField())
+    expect(props.deleteTodo).toHaveBeenCalledTimes(1)
+    expect(props.deleteTodo).toHaveBeenCalledWith(0)
+    expect(props.editTodo).not.toHaveBeenCalled()
+  })
 
-    it('button onClick should call deleteTodo', () => {
-      const { output, props } = setup()
-      const button = output.props.children.props.children[2]
-      button.props.onClick({})
-      expect(props.deleteTodo).toBeCalledWith(0)
-    })
-
-    it('label onDoubleClick should put component in edit state', () => {
-      const { output, renderer } = setup()
-      const label = output.props.children.props.children[1]
-      label.props.onDoubleClick({})
-      const updated = renderer.getRenderOutput()
-      expect(updated.type).toBe('li')
-      expect(updated.props.className).toBe('editing')
-    })
-
-    it('edit state render', () => {
-      const { output } = setup(true)
-
-      expect(output.type).toBe('li')
-      expect(output.props.className).toBe('editing')
-
-      const input = output.props.children
-      expect(input.type).toBe(TodoTextInput)
-      expect(input.props.text).toBe('Use Redux')
-      expect(input.props.editing).toBe(true)
-    })
-
-    it('TodoTextInput onSave should call editTodo', () => {
-      const { output, props } = setup(true)
-      output.props.children.props.onSave('Use Redux')
-      expect(props.editTodo).toBeCalledWith(0, 'Use Redux')
-    })
-
-    it('TodoTextInput onSave should call deleteTodo if text is empty', () => {
-      const { output, props } = setup(true)
-      output.props.children.props.onSave('')
-      expect(props.deleteTodo).toBeCalledWith(0)
-    })
-
-    it('TodoTextInput onSave should exit component from edit state', () => {
-      const { output, renderer } = setup(true)
-      output.props.children.props.onSave('Use Redux')
-      const updated = renderer.getRenderOutput()
-      expect(updated.type).toBe('li')
-      expect(updated.props.className).toBe('')
-    })
+  it('C30 leaves edit mode once the text is submitted', async () => {
+    const { user } = renderItem()
+    await startEditing(user)
+    pressEnter(editField())
+    expect(screen.getByText('Use Redux').tagName).toBe('LABEL')
+    expect(row().className).toBe('')
   })
 })

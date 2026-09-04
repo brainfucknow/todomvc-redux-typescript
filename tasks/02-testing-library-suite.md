@@ -231,6 +231,184 @@ the Specifier writes the failing check, the Coder makes it pass.
 
 ### Coder
 
+Owned `src/`, `package.json` and `package-lock.json`; `features/` and `qa/` untouched.
+
+**What changed.** The eight component spec files are rewritten against
+`@testing-library/react` and `@testing-library/user-event`, querying by role,
+label, placeholder and text, driving behaviour through simulated interaction,
+and asserting on rendered DOM and on the callbacks the component was given. Each
+test name carries the inventory id it answers, as D2a1 requires. One new file,
+`src/test-utils.tsx`, holds the render helper the scope asked for and two things
+the specs would otherwise repeat.
+
+- `react-shallow-renderer` is uninstalled and `src/react-shallow-renderer.d.ts`
+  deleted. `grep -c` reports 0 in `package.json` and `package-lock.json`.
+- The dead `@testing-library/dom` pin is gone. `@testing-library/react` is no
+  longer a dead pin - it is imported - and I moved it from `^14.0.0` to
+  `^16.3.3`, the current major, which is also the one React 19 needs in task 03.
+  `@testing-library/dom` is RTL 16's peer, so npm installs it transitively; it
+  is in the lockfile and in nothing that A7 reads. `@testing-library/user-event`
+  `^14.6.7` is new and imported. A7's two sets are `{react, user-event}` both ways.
+- No component was changed. `git status` shows only spec files, the two
+  manifests, the deleted `.d.ts` and the new helper.
+
+**`src/test-utils.tsx`** holds three things, all of them setup the specs share:
+
+- `renderWithStore(ui, state?)` - the one provider setup, for `App`, `Footer` and
+  `MainSection`, which all hold containers. It returns the store, a `userEvent`
+  session and the render result.
+- `mockTodoActions()` - a full `typeof TodoActions` of mocks, `satisfies
+  Record<keyof typeof TodoActions, Mock>` so a new action cannot be forgotten.
+- `pressEnter(field)` - see the `which` finding below.
+
+It lives under `src/` deliberately: `scripts/architecture/packages.spec.ts`
+treats every non-spec source under `src/` as an application source and forbids
+it importing outside `src/`, which this satisfies, and the CRAP gate then
+measures it like anything else (its one function scores cc 3, cov 100%).
+
+**Two findings that changed how I implemented the spec.**
+
+1. **`userEvent.keyboard('{Enter}')` does not reach `TodoTextInput`'s submit
+   branch.** The ruling carried the Specifier's note that it would. The first half
+   is right - React's synthetic `which` on keydown is the native `keyCode` - but
+   user-event never sets `keyCode`: `grep -rn keyCode
+   node_modules/@testing-library/user-event/dist/cjs/` returns nothing, its key map
+   carries only `key` and `code`, and jsdom does not derive `keyCode` from `key`.
+   So `which` was 0 and C37 and C38 failed on the first run, exactly the
+   passing-for-the-wrong-reason hazard the note was warning about, one step
+   further along. A real browser does send `keyCode` 13, so the fix is to send
+   what a browser sends: `pressEnter` dispatches `fireEvent.keyDown(field, { key:
+   'Enter', code: 'Enter', keyCode: 13, which: 13 })`. It is used by C11, C28,
+   C29, C30, C37 and C38. Everything else - typing, clicking, double-clicking,
+   moving focus - goes through `userEvent`. The component was not touched.
+2. **The test store is seeded by dispatching, not by `preloadedState`.**
+   `configureStore` cannot infer the preloaded-state type from `combineReducers`'
+   reducer here - it settles on `undefined`, so any preloaded state is a type
+   error, and the failure cascades into the middleware tuple as well
+   (`npx tsc --noEmit` reproduces it). `createTestStore` therefore builds the
+   store and dispatches `LOAD_TODO_SUCCESS` with the wanted todos and
+   `setVisibilityFilter`. The todos always go in, because the todos reducer
+   starts from one of its own. This is better than the alternative anyway: the
+   app's own reducers decide the state shape, so no test can seed a state the
+   app could not hold.
+
+**Keeping unit tests off the network.** `renderWithStore`'s store carries a
+`withoutTheNetwork` middleware in place of `callAPIMiddleware`. It recognises an
+API action the same way the real one does - an action with a `types` array - and
+answers it with nothing. `TodoList`'s mount effect, reachable now that rendering
+is real, therefore dispatches into it and stops there. Nothing in the suite calls
+`fetch`.
+
+**Done criterion 4.** Every id in `qa/component-behaviour-inventory.md` is carried
+by a passing test; I checked all 41 (`C01`-`C40` plus `N01`) mechanically against
+the verbose run and none is missing. I implemented the nine substitutions the
+Specifier named and made none of my own. Where a test asserts more than the
+inventory's "required assertion" column - C10 also checks the `header.header`
+root, C03 also checks that the count, the filters and the clear control are
+inside the `footer`, C21 also checks the list sits between the toggle-all control
+and the footer - that is the old case's observable part kept, not a substitution.
+
+Two spots where a query by role or name was not available and I read the DOM
+instead, both of them flagged in the inventory:
+
+- C18's toggle-all label has no text and no `for`, so it has no accessible name;
+  the test clicks `input.toggle-all`'s `nextElementSibling`. Not changed, per the
+  out-of-scope rule.
+- The footer count renders as `<strong>1</strong> item left`, so its words are in
+  separate nodes and `getByText` (which reads direct text children only) cannot
+  see `1 item left` as one string. C05, C19 and C02 read `.todo-count`'s
+  `textContent`.
+
+**Verified.**
+
+- `npm test`: 23 files, 229 tests, 0 failing, 0 skipped.
+- Buckets: `npx vitest run src` 10 files / 55 tests, `acceptance` 5 / 63,
+  `scripts` 8 / 111. 10+5+8 = 23 and 55+63+111 = 229, so D2c's sum check holds.
+  No floor moved: D2b and D2c are where they were, and this task adds no test
+  under `acceptance/` or `scripts/`.
+- D2a1 checked directly: every `C..` and `N01` id appears in the name of at least
+  one passing test in `npx vitest run src --reporter=verbose`.
+- D2a3-D2a5 run in the failing direction, one at a time, each reverted before the
+  next: the `items` mutation in `Footer.tsx` fails C05 (and C03, C19, C02); the
+  `todo.id + 1` mutation in `TodoItem.tsx` fails C25 and nothing else; dropping
+  `selected` in `Link.tsx` fails C13 and nothing else. `git status --porcelain`
+  clean after each revert.
+- `npm run test:acceptance`: 5 files, 30 scenario executions, all passing. The
+  three `react-shallow-renderer` rows of `toolchain dependencies 1` that the
+  Specifier left red are green. Done criterion 1 and 3.
+- `npx tsc --noEmit` clean. `npm run build` succeeds. `npm run test:property`
+  14 / 141, `npm run test:hardening` 12 / 128.
+- `npm ci` from the edited lockfile, in a scratch directory, installs cleanly and
+  brings in no `react-scripts` and no `react-shallow-renderer` (A1-A5).
+- CRAP gate over `src`: every function in `src/components/` is at 100% coverage
+  and scores at or under 4. Two functions are over the gate,
+  `src/middlewares/callapimiddleware.ts:18` (cc 5, cov 0%, CRAP 30.0) and
+  `src/reducers/apis.ts:4` `executing` (cc 13, cov 100%, CRAP 13.0). Both are
+  pre-existing, in files this task does not touch, and neither is component code.
+
+**Left for the Cleaner.** The carried stamp-logic work in
+`scripts/acceptance-mutation.ts` and the language-mutation runner, which is what
+raises D2c's floor - the floor rule asks you to record the new counts. I found
+nothing under `src/` that needed cleaning: no component changed, and the spec
+files share their setup through `src/test-utils.tsx` rather than repeating it.
+`.mutation/test-tier.json` is untouched and stays valid - the mutation tier lists
+`acceptance`, `scripts`, `hardening` and `property`, and none of them changed.
+
+**Left for the Hardener.** The inventory's "Gaps in the baseline" section still
+stands in full; the rewrite covers none of those five and does not claim to.
+Worth knowing: `Footer`'s plural branch and `TodoItem`'s completed-todo row are
+now cheap to reach through the helpers in `src/test-utils.tsx`.
+
+**Left for QA.** The D2a totals to record are 10 files and 55 tests under `src`.
+D2a2's two out-of-scope files are unchanged at 6 and 8 with the inventory's
+names. `e2e/toolchain-commands.spec.ts` is still yours to move, as the Specifier
+said; A7's answer is now `@testing-library/react` and `@testing-library/user-event`
+in both directions.
+
+**Open questions.** None blocking. Two judgements I made rather than asked:
+bumping `@testing-library/react` to `^16.3.3` (the Specifier left the version to
+me), and using `fireEvent` for the Enter key, which is the only way to reach a
+branch that reads `which` without changing the component that reads it.
+
+### Project manager rulings on the Coder handoff
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 23 files / 229 tests;
+`npx vitest run src` 10 / 55; `npm run test:acceptance` green at 30 / 30, so the three rows the
+Specifier left red now pass; `react-shallow-renderer` appears nowhere in `package.json`, the
+lockfile or `src/`. I ran QA step D2a1 myself: all **41** inventory ids appear in passing test names,
+none missing. I also ran D2a3 myself: forcing `Footer`'s item word to `items` fails a test whose name
+carries `C05`, and reverting returns 55 passing. Accepted.
+
+**Finding 1 corrects my own ruling, and the correction is right.** I passed on the Specifier's note
+that React's synthetic `which` on keydown is the native `keyCode`. True as far as it goes, but
+`@testing-library/user-event` v14 never sets `keyCode` at all, and jsdom does not derive it, so
+`userEvent.keyboard('{Enter}')` yields `which === 0` and the Enter-key behaviours failed on the first
+run. The Coder found that by reading the library's own source rather than inferring it, and fixed it
+with a shared `pressEnter()` dispatching what a real browser sends.
+
+Reaching for `fireEvent` at that one point is a deviation from "drive behavior through simulated user
+interaction", and it is the correct deviation. `TodoTextInput` branches on `e.which`; the only way to
+keep `userEvent` throughout would be to change the component, which this task's Out of scope
+explicitly bars. Confining the deviation to one named helper, with everything else on `userEvent`,
+is the right shape.
+
+That said, `e.which` is deprecated, and a component readable only through a synthetic property that
+modern testing libraries no longer populate is a real defect rather than a quirk of the test.
+`tasks/05-function-components.md` is amended to replace it with `e.key` when that component is
+converted, which is a behavior-preserving change at the moment the file is already being rewritten.
+
+**Finding 2 is accepted as good judgment.** Seeding the test store by dispatching the app's own
+actions rather than fighting `configureStore`'s `preloadedState` inference means the app's reducers
+decide the state shape, so the helper cannot drift from the real store. Replacing `callAPIMiddleware`
+with a middleware that swallows API actions is the right way to keep `TodoList`'s now-reachable mount
+effect off `fetch`, and it keeps the network stub at the boundary the settled scope decision names.
+
+Putting `src/test-utils.tsx` under `src/` so the architecture rule and the CRAP gate both reach it is
+correct, and better than a top-level helper that no instrument would judge.
+
+No test count floor moved; nothing is routed back.
+
+
 ### Cleaner
 
 ### Architect

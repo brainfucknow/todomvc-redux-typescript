@@ -1,93 +1,76 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { screen, within } from '@testing-library/react'
 import Footer, { FooterProps } from './Footer'
-import FilterLink from '../containers/FilterLink'
 import TodoFilters from '../constants/TodoFilters'
-const {SHOW_ALL, SHOW_ACTIVE, SHOW_COMPLETED}=TodoFilters;
-const setup = (propOverrides?:Partial<FooterProps>) => {
-  const props:FooterProps = Object.assign({
+import { renderWithStore } from '../test-utils'
+
+const { SHOW_ALL, SHOW_ACTIVE, SHOW_COMPLETED } = TodoFilters
+
+const renderFooter = (propOverrides?: Partial<FooterProps>) => {
+  const props: FooterProps = {
     completedCount: 0,
     activeCount: 0,
     onClearCompleted: vi.fn(),
-  }, propOverrides)
-
-  const renderer = createRenderer()
-  renderer.render(<Footer {...props} />)
-  const output = renderer.getRenderOutput()
-
-  return {
-    props: props,
-    output: output
+    ...propOverrides,
   }
+  const rendered = renderWithStore(<Footer {...props} />)
+  return { props, footer: rendered.container.firstElementChild as HTMLElement, ...rendered }
 }
 
-const getTextContent = (elem:JSX.Element) => {
-  const children = Array.isArray(elem.props.children) ?
-    elem.props.children : [ elem.props.children ]
+// The count reads `<strong>1</strong> item left`, so its words live in
+// separate nodes and only the whole element says what the user sees.
+const countText = (footer: HTMLElement) => footer.querySelector('.todo-count')?.textContent
 
-  return children.reduce((out:string, child:JSX.Element) =>
-    // Concatenate the text
-    // Children are either elements or text strings
-    out + (child.props ? getTextContent(child) : child)
-  , '')
-}
+const clearControl = () => screen.getByRole('button', { name: 'Clear completed' })
 
-describe('components', () => {
-  describe('Footer', () => {
-    it('should render container', () => {
-      const { output } = setup()
-      expect(output.type).toBe('footer')
-      expect(output.props.className).toBe('footer')
-    })
+describe('Footer', () => {
+  it('C03 renders a footer holding the count, the filters and the clear control', () => {
+    const { footer } = renderFooter({ activeCount: 1, completedCount: 1 })
+    expect(footer.tagName).toBe('FOOTER')
+    expect(footer.className).toBe('footer')
+    expect(countText(footer)).toBe('1 item left')
+    expect(within(footer).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(footer).getByText('Clear completed')).toBe(clearControl())
+  })
 
-    it('should display active count when 0', () => {
-      const { output } = setup({ activeCount: 0 })
-      const [ count ] = output.props.children
-      expect(getTextContent(count)).toBe('No items left')
-    })
+  it('C04 reads "No items left" with nothing active', () => {
+    const { footer } = renderFooter({ activeCount: 0 })
+    expect(countText(footer)).toBe('No items left')
+  })
 
-    it('should display active count when above 0', () => {
-      const { output } = setup({ activeCount: 1 })
-      const [ count ] = output.props.children
-      expect(getTextContent(count)).toBe('1 item left')
-    })
+  it('C05 reads "1 item left" with one active todo', () => {
+    const { footer } = renderFooter({ activeCount: 1 })
+    expect(countText(footer)).toBe('1 item left')
+  })
 
-    it('should render filters', () => {
-      const todoFilters = [SHOW_ALL, SHOW_ACTIVE, SHOW_COMPLETED]
-      const filterTitles = ['All', 'Active', 'Completed']
-      const { output } = setup()
-      const [ , filters ] = output.props.children
-      expect(filters.type).toBe('ul')
-      expect(filters.props.className).toBe('filters')
-      expect(filters.props.children.length).toBe(3)
-      filters.props.children.forEach(function checkFilter(filter:JSX.Element, i:number) {
-        expect(filter.type).toBe('li')
-        const a = filter.props.children
-        expect(a.type).toBe(FilterLink)
-        expect(a.props.filter).toBe(todoFilters[i])        
-        expect(a.props.children).toBe(filterTitles[i])        
-      })
-    })
+  it('C06 offers the three filters in order, each setting the visibility filter it names', async () => {
+    const { store, user } = renderFooter()
+    const filters = within(screen.getByRole('list')).getAllByRole('listitem')
+    expect(filters.map((filter) => filter.textContent)).toEqual(['All', 'Active', 'Completed'])
 
-    it('shouldnt show clear button when no completed todos', () => {
-      const { output } = setup({ completedCount: 0 })
-      const [ , , clear ] = output.props.children
-      expect(clear).toBe(false)
-    })
+    await user.click(screen.getByText('Active'))
+    expect(store.getState().visibilityFilter).toBe(SHOW_ACTIVE)
 
-    it('should render clear button when completed todos', () => {
-      const { output } = setup({ completedCount: 1 })
-      const [ , , clear ] = output.props.children
-      expect(clear.type).toBe('button')
-      expect(clear.props.className).toBe('clear-completed')
-      expect(clear.props.children).toBe('Clear completed')
-    })
+    await user.click(screen.getByText('Completed'))
+    expect(store.getState().visibilityFilter).toBe(SHOW_COMPLETED)
 
-    it('should call onClearCompleted on clear button click', () => {
-      const { output, props } = setup({ completedCount: 1 })
-      const [ , , clear ] = output.props.children
-      clear.props.onClick({})
-      expect(props.onClearCompleted).toBeCalled()
-    })
+    await user.click(screen.getByText('All'))
+    expect(store.getState().visibilityFilter).toBe(SHOW_ALL)
+  })
+
+  it('C07 offers no clear control when nothing is completed', () => {
+    renderFooter({ completedCount: 0 })
+    expect(screen.queryByText('Clear completed')).toBeNull()
+  })
+
+  it('C08 offers a clear control when something is completed', () => {
+    renderFooter({ completedCount: 1 })
+    expect(clearControl().tagName).toBe('BUTTON')
+    expect(clearControl().className).toBe('clear-completed')
+  })
+
+  it('C09 clears the completed todos when the clear control is clicked', async () => {
+    const { props, user } = renderFooter({ completedCount: 1 })
+    await user.click(clearControl())
+    expect(props.onClearCompleted).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,46 +1,34 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import Header from './Header'
-import TodoTextInput from '../components/TodoTextInput'
+import { pressEnter } from '../test-utils'
 
-const setup = () => {
-  const props = {
-    addTodo: vi.fn()
-  }
-
-  const renderer = createRenderer();
-  renderer.render(<Header {...props} />)
-  const output = renderer.getRenderOutput()
-
-  return {
-    props: props,
-    output: output,
-    renderer: renderer
-  }
+const renderHeader = () => {
+  const addTodo = vi.fn()
+  const user = userEvent.setup()
+  return { addTodo, user, ...render(<Header addTodo={addTodo} />) }
 }
 
-describe('components', () => {
-  describe('Header', () => {
-    it('should render correctly', () => {
-      const { output } = setup()
-      expect(output.type).toBe('header')
-      expect(output.props.className).toBe('header')
+const newTodoField = () => screen.getByPlaceholderText('What needs to be done?')
 
-      const [ h1, input ] = output.props.children
-      expect(h1.type).toBe('h1')
-      expect(h1.props.children).toBe('todos')
-      expect(input.type).toBe(TodoTextInput)
-      expect(input.props.newTodo).toBe(true)
-      expect(input.props.placeholder).toBe('What needs to be done?')
-    })
+describe('Header', () => {
+  it('C10 shows the todos heading and the new-todo field', () => {
+    const { container } = renderHeader()
+    const header = container.firstElementChild as HTMLElement
+    expect(header.tagName).toBe('HEADER')
+    expect(header.className).toBe('header')
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('todos')
+    expect(newTodoField().className).toBe('new-todo')
+  })
 
-    it('should call addTodo if length of text is greater than 0', () => {
-      const { output, props } = setup()
-      const input = output.props.children[1]
-      input.props.onSave('')
-      expect(props.addTodo).not.toBeCalled()
-      input.props.onSave('Use Redux')
-      expect(props.addTodo).toBeCalled()
-    })
+  it('C11 adds a todo only once text has been typed', async () => {
+    const { addTodo, user } = renderHeader()
+    pressEnter(newTodoField())
+    expect(addTodo).not.toHaveBeenCalled()
+
+    await user.type(newTodoField(), 'Use Redux')
+    pressEnter(newTodoField())
+    expect(addTodo).toHaveBeenCalledTimes(1)
+    expect(addTodo).toHaveBeenCalledWith('Use Redux')
   })
 })

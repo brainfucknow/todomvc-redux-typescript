@@ -1,31 +1,24 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer'
+import { screen } from '@testing-library/react'
 import App from './App'
-import Header from '../containers/Header'
-import MainSection from '../containers/MainSection'
-import { HeaderProps } from './Header'
+import { renderWithStore } from '../test-utils'
 
-const setup = (_propOverrides?:Partial<HeaderProps>) => {
-  const renderer = createRenderer()
-  renderer.render(<App />)
-  const output = renderer.getRenderOutput()
-  return output
-}
-
-describe('components', () => {
-  describe('Header', () => {
-    it('should render', () => {
-      const output = setup()
-      const [header] = output.props.children
-      expect(header.type).toBe(Header)
-    })
+describe('App', () => {
+  it('C01 shows the heading and the new-todo field', () => {
+    renderWithStore(<App />)
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('todos')
+    expect(screen.getByPlaceholderText('What needs to be done?').className).toBe('new-todo')
   })
 
-  describe('Mainsection', () => {
-    it('should render', () => {
-      const output = setup()
-      const [, mainSection] = output.props.children
-      expect(mainSection.type).toBe(MainSection)
+  it('C02 shows the stored todos, the toggle-all control and the footer count', () => {
+    const { container } = renderWithStore(<App />, {
+      todos: [
+        { id: 0, text: 'Use Redux', completed: false },
+        { id: 1, text: 'Run the tests', completed: true },
+      ],
     })
+    expect(Array.from(container.querySelectorAll('ul.todo-list label')).map((label) => label.textContent))
+      .toEqual(['Use Redux', 'Run the tests'])
+    expect(container.querySelector('input.toggle-all')).not.toBeNull()
+    expect(container.querySelector('.todo-count')?.textContent).toBe('1 item left')
   })
 })

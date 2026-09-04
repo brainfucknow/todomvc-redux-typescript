@@ -1,58 +1,42 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, screen } from '@testing-library/react'
 import TodoList, { TodoListProps } from './TodoList'
-import TodoItem from './TodoItem'
+import { mockTodoActions } from '../test-utils'
 
-const setup = () => {
-  const props:TodoListProps = {
+const renderList = (propOverrides?: Partial<TodoListProps>) => {
+  const props: TodoListProps = {
     filteredTodos: [
-      {
-        text: 'Use Redux',
-        completed: false,
-        id: 0
-      }, {
-        text: 'Run the tests',
-        completed: true,
-        id: 1
-      }
+      { id: 0, text: 'Use Redux', completed: false },
+      { id: 1, text: 'Run the tests', completed: true },
     ],
-    actions: {
-      addTodo: vi.fn(),
-      editTodo: vi.fn(),
-      deleteTodo: vi.fn(),
-      completeTodo: vi.fn(),
-      completeAllTodos: vi.fn(),
-      clearCompleted: vi.fn(),
-      setVisibilityFilter: vi.fn()
-    }
+    actions: mockTodoActions(),
+    ...propOverrides,
   }
-
-  const renderer = createRenderer();
-  renderer.render(<TodoList {...props} />)
-  const output = renderer.getRenderOutput()
-
-  return {
-    props: props,
-    output: output
-  }
+  return { props, ...render(<TodoList {...props} />) }
 }
 
-describe('components', () => {
-  describe('TodoList', () => {
-    it('should render container', () => {
-      const { output } = setup()
-      expect(output.type).toBe('ul')
-      expect(output.props.className).toBe('todo-list')
-    })
+const rows = () => screen.getAllByRole('listitem')
 
-    it('should render todos', () => {
-      const { output, props } = setup()
-      expect(output.props.children.length).toBe(2)
-      output.props.children.forEach((todo:JSX.Element, i:number) => {
-        expect(todo.type).toBe(TodoItem)
-        expect(Number(todo.key)).toBe(props.filteredTodos[i].id)
-        expect(todo.props.todo).toBe(props.filteredTodos[i])
-      })
-    })
+describe('TodoList', () => {
+  it('C31 renders the todo list', () => {
+    const { container } = renderList()
+    const list = container.firstElementChild as HTMLElement
+    expect(list.tagName).toBe('UL')
+    expect(list.className).toBe('todo-list')
+  })
+
+  it('C32 shows one row per todo, in order, each with its own text and completed state', () => {
+    renderList()
+    expect(rows().map((todo) => todo.querySelector('label')?.textContent))
+      .toEqual(['Use Redux', 'Run the tests'])
+    expect(rows().map((todo) => todo.querySelector<HTMLInputElement>('input.toggle')?.checked))
+      .toEqual([false, true])
+  })
+
+  it('N01 loads the todos once on mount and not again on a re-render', () => {
+    const { props, rerender } = renderList()
+    expect(props.actions.loadTodos).toHaveBeenCalledTimes(1)
+
+    rerender(<TodoList {...props} />)
+    expect(props.actions.loadTodos).toHaveBeenCalledTimes(1)
   })
 })
