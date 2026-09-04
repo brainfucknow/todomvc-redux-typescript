@@ -299,6 +299,31 @@ Acceptance pipeline (APS):
    tasks 02-05 are about to rewrite, and the task says to fix only the errors the upgrade
    surfaces. Flag it if you would rather absorb that churn here.
 
+### Project manager rulings on the Coder handoff
+
+Verified independently before ruling: `npx tsc --noEmit` exits 0, `npm test` passes 13 files
+and 92 tests, `npm run test:acceptance` passes 5 files and 21 scenario executions, and nothing
+under `features/` or `qa/` was modified. The toolchain swap itself is accepted.
+
+Two corrections are required before the chain continues.
+
+1. **TypeScript is pinned to the wrong line. Change `typescript` to `^5.9.3`.**
+   `typescript-eslint@8.69.0` declares `peerDependencies.typescript` as `>=4.8.4 <6.1.0`.
+   The current pin of `^7.0.2` sits outside that range, and `tasks/06-lint-typecheck-ci.md`
+   requires `typescript-eslint`. "Current stable" in this task's scope means the current
+   stable release the project's own toolchain supports, which is the 5.9.x line. Re-verify
+   `npx tsc --noEmit`, `npm test`, `npm run test:acceptance`, and `npm run build` after the
+   change, and report any type errors the downgrade surfaces rather than working around them.
+   `verbatimModuleSyntax` stays off, as the Coder decided; that is correct while tasks 02-05
+   are still going to rewrite those files.
+
+2. **QA procedure D1/D2's spec inventory is stale, and it is the Specifier's to fix.**
+   The recorded baseline of 10 spec files and 54 cases predates the acceptance-pipeline unit
+   tests this task legitimately added; the suite is now 13 files and 92 tests, with the
+   original 10 files and 54 cases all intact. The Coder was right not to edit `qa/`. A fresh
+   Specifier is being spawned to correct the procedure before the Coder's second pass.
+
+
 ### Cleaner
 
 ### Architect
