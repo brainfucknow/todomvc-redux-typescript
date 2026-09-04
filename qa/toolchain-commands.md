@@ -1,7 +1,7 @@
 # E2E QA procedure: toolchain commands
 
-Covers task 01 done criteria 1-6. Executed through the command line and the
-browser only. Every command below is a public affordance of the project; no
+Covers task 01 done criteria 1-6 and task 02 done criteria 1-4. Executed
+through the command line and the browser only. Every command below is a public affordance of the project; no
 project API, module, or internal file is called directly.
 
 Executable form: `e2e/toolchain-commands.spec.ts`, run by `npm run test:e2e`.
@@ -20,17 +20,30 @@ procedure and the spec change together: neither is the copy.
 | --- | --- | --- |
 | A1 | In a scratch directory holding a copy of `package.json` and `package-lock.json`, `rm -rf node_modules` | Directory is gone. |
 | A2 | `npm ci` in that scratch directory | Exits 0, and installs a `node_modules`. No `react-scripts` install step appears in the output. |
-| A3 | `grep -c react-scripts package.json package-lock.json` | Both files report `0`. |
-| A4 | `npm ls react-scripts` | Reports that the package is not present in the tree. |
-| A5 | `grep -rn react-scripts src` | No matches. |
+| A3 | For each of `react-scripts` and `react-shallow-renderer`, `grep -c <name> package.json package-lock.json` | Both files report `0` for both names. |
+| A4 | For each of those two names, `npm ls <name>` | Each reports that the package is not present in the tree. |
+| A5 | For each of those two names, `grep -rn <name> src` | No matches from either. |
+| A6 | `ls src/react-shallow-renderer.d.ts` | No such file. The ambient declaration went with the package it declared. |
+| A7 | List the `@testing-library/*` packages `package.json` declares, then list the `@testing-library/*` packages imported anywhere in the checkout outside `node_modules`, `dist`, `build` and `coverage` | The two lists are the same set. A declared testing-library package that nothing imports is a dead pin and fails A7; an imported one that `package.json` does not declare fails it too. |
 
 A1 and A2 install from the lockfile into an empty tree, which is what they are
 for, but they do it beside the checkout rather than inside it: deleting this
-project's `node_modules` deletes the test runner executing the procedure. A3-A5
+project's `node_modules` deletes the test runner executing the procedure. A3-A7
 read the checkout itself.
 
-Fail A if any command in A1-A2 exits non-zero, or if any of A3-A5 finds
-`react-scripts`.
+`react-shallow-renderer` still appears, by name, in the checks that assert its
+absence - this file, `features/toolchain-dependencies.feature`,
+`e2e/toolchain-commands.spec.ts`, `qa/component-behaviour-inventory.md` - and in
+the plan and task documents. That is not a finding. A3-A6 read the manifests and
+`src`, which is where "gone from the tree" bites.
+
+A7 is the dead-pin check. `@testing-library/react` and `@testing-library/dom`
+were carried as installed-but-unused pins before task 02; a task that starts
+using one of them and leaves the other declared has swapped one dead pin for
+another, and A7 is what notices.
+
+Fail A if any command in A1-A2 exits non-zero, if any of A3-A6 finds either
+package name, or if A7's two sets differ in either direction.
 
 ## Procedure B: development server and API proxy
 
@@ -77,31 +90,54 @@ project ships, and that is a finding rather than a reason to re-run C1.
 
 | # | Action | Expected observable result |
 | --- | --- | --- |
-| D1 | `npm test` | Exits 0. Reports 23 test files and 228 passing tests, 0 failing, 0 skipped. |
-| D2 | Read the D1 file list (Vitest prints one line per file in a terminal; through a pipe, re-run as `npm test -- --reporter=verbose`) | It is exactly the 23 spec files present in the tree: the 10 matching `src/**/*.spec.{ts,tsx}`; `acceptance/assertions.spec.ts`, `acceptance/generator.spec.ts`, `acceptance/inspection.spec.ts`, `acceptance/layout.spec.ts` and `acceptance/runtime.spec.ts`; and `scripts/architecture/layering.spec.ts`, `scripts/architecture/packages.spec.ts` and `scripts/crap/{complexity,coverage,options,report,score,tiers}.spec.ts`. No file from `build/acceptance/generated/`, `property/`, or `hardening/` appears in it. |
-| D2a | `npx vitest run src` | Exits 0. Reports 10 test files and 54 passing tests. This is the pre-existing suite; task 01 converts its Jest globals but adds and removes no case. |
-| D2b | `npx vitest run acceptance` | Exits 0. Reports 5 test files and 63 passing tests. These are unit tests of the acceptance-pipeline code under `acceptance/`, not generated acceptance tests. |
-| D2c | `npx vitest run scripts` | Exits 0. Reports 8 test files and 111 passing tests. These are unit tests of the project's own tooling under `scripts/` - the CRAP gate and the architecture checker - not application code. |
+| D1 | `npm test` | Exits 0. 0 failing, 0 skipped. Record the file and case totals it reports; D2c checks them against the sum of the three buckets. |
+| D2 | Read the D1 file list (Vitest prints one line per file in a terminal; through a pipe, re-run as `npm test -- --reporter=verbose`), then list the files in the tree matching `src/**/*.spec.{ts,tsx}`, `acceptance/*.spec.ts` and `scripts/**/*.spec.ts` | The two sets are the same. Every spec file in those three places ran, and nothing else did: no file from `build/acceptance/generated/`, `property/`, or `hardening/` appears in the D1 list. The procedure names no file, so a task that splits or merges a spec file passes D2 only by leaving the tree and the run agreeing. |
+| D2a | `npx vitest run src` | Exits 0, 0 failing, 0 skipped. Record the file and case totals. The totals are recorded, not matched: task 02 rewrote these files against Testing Library, so a moved total is not by itself a finding. What must hold is D2a1. |
+| D2a1 | Re-run as `npx vitest run src --reporter=verbose`, then read the `C..` and `N..` tables in `qa/component-behaviour-inventory.md` | For every id in those tables, at least one passing test name printed by the run contains that id. No id is missing. Test names carrying no id are fine - extra coverage is not a defect. |
+| D2a2 | From the same verbose output, read the cases reported for `src/actions/index.spec.ts` and `src/reducers/todos.spec.ts` | 6 and 8 passing cases, with exactly the case names the inventory lists for those two files. They use no shallow renderer, they are outside task 02's scope, and they are frozen. |
+| D2a3 | In `src/components/Footer.tsx` make the item word always `items`, re-run `npx vitest run src`, then revert the edit | The re-run fails, and at least one failing test name carries `C05`. |
+| D2a4 | In `src/components/TodoItem.tsx` make the destroy control pass `todo.id + 1` to `deleteTodo`, re-run `npx vitest run src`, then revert the edit | The re-run fails, and at least one failing test name carries `C25`. |
+| D2a5 | In `src/components/Link.tsx` drop `selected` from the class the anchor computes, re-run `npx vitest run src`, then revert the edit | The re-run fails, and at least one failing test name carries `C13`. |
+| D2b | `npx vitest run acceptance` | Exits 0, 0 failing, 0 skipped. At least 5 test files and at least 63 passing tests. These are unit tests of the acceptance-pipeline code under `acceptance/`, not generated acceptance tests. |
+| D2c | `npx vitest run scripts` | Exits 0, 0 failing, 0 skipped. At least 8 test files and at least 111 passing tests - task 02 brings the mutation runners' stamp logic under test here, so the total rises. These are unit tests of the project's own tooling under `scripts/` - the CRAP gate, the architecture checker, the stamp logic - not application code. Also check the sum: the D2a, D2b and D2c totals add up to what D1 reported, in files and in cases. |
 | D3 | `npm run test:acceptance` | Exits 0. Output shows each `features/*.feature` file being parsed, entry points being generated, and every scenario passing. |
 | D4 | `ls build/acceptance` | Contains the JSON IR and the generated entry points produced by D3. |
-| D5 | Count the scenario executions reported by D3, per scenario (D3's runner takes no reporter flag; for the breakdown re-run the entry points it generated with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose`, where each test is named `<scenario>/example_<n>`) | 27 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 + 2 for `production build 1/2/3/4`, 3 + 9 for `toolchain dependencies 1/2`, 1 + 1 for `typescript compilation 1/2`. |
+| D5 | Count the scenario executions reported by D3, per scenario (D3's runner takes no reporter flag; for the breakdown re-run the entry points it generated with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose`, where each test is named `<scenario>/example_<n>`) | 30 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 + 2 for `production build 1/2/3/4`, 6 + 9 for `toolchain dependencies 1/2`, 1 + 1 for `typescript compilation 1/2`. |
 | D6 | `npx tsc --noEmit` | Exits 0 with no diagnostic output. |
 | D7 | `npx tsc --version` | Major version is 5 or higher. |
-| D8 | `npm run test:property` | Exits 0. Reports 14 test files and 141 passing tests, 0 failing, 0 skipped. |
-| D9 | `npm run test:hardening` | Exits 0. Reports 12 test files and 128 passing tests, 0 failing, 0 skipped. |
+| D8 | `npm run test:property` | Exits 0, 0 failing, 0 skipped. At least 14 test files and at least 141 passing tests. |
+| D9 | `npm run test:hardening` | Exits 0, 0 failing, 0 skipped. At least 12 test files and at least 128 passing tests. |
 | D10 | Compare the D8 and D9 file lists against the D1 list (same as D2: add `-- --reporter=verbose` to see them through a pipe) | They do not overlap. No `property/` or `hardening/` file appears in D1, and no `src/`, `acceptance/` or `scripts/` spec file appears in D8 or D9. Each tier is a separate command. |
 
 Fail D on any non-zero exit, any failing or skipped test, any missing spec file,
-or any scenario not reported.
+any scenario not reported, any behaviour id with no passing test, or any of
+D2a3-D2a5 staying green. The non-zero exit and the failures D2a3-D2a5 induce are
+the results those rows ask for, and are the one exception.
 
 D2a, D2b and D2c split the D1 total so a change is attributable. The three
-buckets are disjoint and exhaustive - 54 + 63 + 111 = 228 accounts for D1
-exactly - so check that sum as part of D2c; a case lost from one bucket cannot
-hide behind a case gained in another. A drop below 10 files or 54 cases in
-D2a is a regression in the pre-existing suite and fails D outright. A change in
-D2b's or D2c's counts is only acceptable if the task's handoff notes record it,
-in which case D1, D2 and the moved step are updated together. The same rule
-applies to D8 and D9.
+buckets are disjoint and exhaustive, so their totals sum to D1's exactly; check
+that sum as part of D2c, because a case lost from one bucket cannot hide behind
+a case gained in another.
+
+What guards the suite under `src` is D2a1, not a total. A raw count served while
+that suite was frozen; it stopped being a proxy for anything the moment a task
+rewrote those files, because a faithful rewrite may merge two assertions into
+one or split one into several and move the number in either direction without
+meaning anything. The behaviour ids in `qa/component-behaviour-inventory.md` do
+not move. A behaviour dropped on the way through is an id with no passing test,
+and D2a1 fails on it whatever the total says. An id that the inventory records
+and the suite cannot cover is a finding to report, not a row to delete.
+
+D2a3-D2a5 test that instrument in the failing direction, which this project
+requires of every check: they break one behaviour at a time and confirm the
+id-carrying test goes red. A green run there means D2a1 is measuring nothing.
+Revert each edit before making the next, and confirm `git status --porcelain`
+reports the file unmodified again - procedure E watches untracked paths only and
+will not catch a modification left behind here.
+
+The counts in D2b, D2c, D8 and D9 are floors. A tier may gain cases when the
+task's handoff notes record which tier gained them and why; a drop below a floor
+is a regression and fails D outright.
 
 `npm run test:mutation` and `node scripts/acceptance-mutation.ts` are quality
 instruments, not done criteria, and are deliberately not part of this procedure.

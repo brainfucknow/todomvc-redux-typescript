@@ -2,13 +2,16 @@ Feature: Toolchain dependencies
 
 # toolchain dependencies 1
   Scenario: toolchain dependencies 1
-    Then <location> contains no reference to react-scripts
+    Then <location> contains no reference to <package>
 
     Examples:
-      | location          |
-      | package.json      |
-      | package-lock.json |
-      | src               |
+      | location          | package                |
+      | package.json      | react-scripts          |
+      | package-lock.json | react-scripts          |
+      | src               | react-scripts          |
+      | package.json      | react-shallow-renderer |
+      | package-lock.json | react-shallow-renderer |
+      | src               | react-shallow-renderer |
 
 # toolchain dependencies 2
   Scenario: toolchain dependencies 2
