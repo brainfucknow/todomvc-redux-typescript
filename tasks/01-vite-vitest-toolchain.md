@@ -557,6 +557,142 @@ forced full run killed all of them.
 
 None. The deferred reconciliation is discharged.
 
+#### Sixth pass: `production build` can now tell a production bundle from a development one
+
+Done. Two files changed, both mine: `features/production-build.feature` and
+`qa/toolchain-commands.md`. Nothing committed. The implementation half - `acceptance/fixtures.ts`
+building in development mode - is untouched and is the Coder's.
+
+**The observable I picked, and why**
+
+The distinction at stake is which `react-dom` entry got bundled, and the only thing that
+distinguishes the two artifacts is the strings that entry carries. I measured both artifacts rather
+than reasoning about them: `npm run build` emits 167,067 bytes, and the same build driven the way
+`acceptance/fixtures.ts` drives it (Vite's JS API with `NODE_ENV=test`) emits 372,861 bytes. I then
+diffed the string literals of the two and chose from the set present in the production one and
+absent from the development one:
+
+| Marker | production bundle | development-mode bundle |
+| --- | --- | --- |
+| `Minified React error` | 1 | 0 |
+| `act(...) is not supported in production builds of React.` | 1 | 0 |
+
+Both are React's production entry talking about itself: the minified error path, and the guard that
+refuses `act` outside a development build. They are two different pieces of evidence rather than two
+halves of one sentence, and both survive the React 18 -> 19 move that `tasks/03-react-19.md` will
+make (React 19 keeps both texts; the error-decoder **URL** changes, which is why I did not use it).
+
+**I chose presence over absence deliberately, and the reason is mutation.** The obvious phrasing -
+"the bundle contains no development-mode warning text" - cannot be mutation tested here: the
+acceptance mutator rewrites one example cell at a time, and a dithered copy of an absent string is
+still absent, so every such row would survive as a matter of arithmetic. That is the defect class
+this task refused to accept in `api proxy 1`, arriving from the other direction. A production-only
+marker in a positive assertion dies when its cell is dithered. Size ratio was rejected for the same
+reason: dithering a threshold cell can move it to another value that is still true.
+
+**What the feature file now says**
+
+```
+# production build 4
+  Scenario: production build 4
+    Then the served JavaScript bundle contains <production_marker>
+
+    Examples:
+      | production_marker                                        |
+      | Minified React error                                     |
+      | act(...) is not supported in production builds of React. |
+```
+
+A new scenario rather than a strengthened `production build 1`: it is a different question about the
+artifact, and appending keeps `1/2/3` at their stable indices, so the stored mutation manifest still
+matches them and their recorded kills are still reusable. The Background is untouched for the same
+reason - its hash is what the manifest's soft level keys the reuse on.
+
+**Wording was chosen by the dry checker, not by taste.** My first draft was
+`When a client requests the JavaScript bundle referenced by the index page` /
+`Then the response body contains <production_marker>`, and `-include-exact` found two real problems
+with it: a `placeholder-variant` finding (identical to `production build 1`'s
+`the response body contains <content>` once placeholder names are erased) and a `possible-synonym`
+finding at 0.545 against `production build 2`'s
+`a client requests every script and stylesheet referenced by the index page`. Folding the retrieval
+into the assertion removes both, and it is the shape `toolchain dependencies 1` already uses
+(`Then <location> contains no reference to react-scripts` reads a file inside the Then).
+
+**What I verified**
+
+- All five feature files parse with `bin/gherkin-parser`, and
+  `bin/gherkin-ir-dry-checker -include-exact` reports **0 findings** on each - `production-build`
+  now at 9 step occurrences, 9 unique.
+- **The scenario can fail, and does.** `npm run test:acceptance` is now red:
+  `Tests 2 failed | 24 passed (26)`, both failures `production build 4/example_1` and
+  `example_2`. Today they fail on the missing step handler; once the handler exists they will fail
+  on the development bundle until `acceptance/fixtures.ts` is fixed. Either way the feature file no
+  longer passes over the distinction it is named for.
+- The markers hold against a real production build served the way the scenario serves it: `npm run
+  build`, `npm run preview`, `curl` the script the index page references - 167,067 bytes, both
+  markers present. And they are absent from the 372,861-byte artifact the current fixture produces.
+- QA steps C3a/C3b read true on a fresh `npm run build`: `1`, `1`, and `0`.
+- `git status --short` shows exactly `features/production-build.feature` and
+  `qa/toolchain-commands.md`. `src/`, `acceptance/` and every config are untouched.
+- I ran no verification or quality tooling beyond the parser, the dry checker, `npm run build`,
+  `npm run preview` and `npm run test:acceptance`. No Gherkin mutation.
+
+**QA procedure C gained the same check; procedure D's counts moved**
+
+| Step | Change |
+| --- | --- |
+| C3a | new: the emitted bundle carries both production markers (`1` each) |
+| C3b | new: it carries no development-mode warning text - `Invalid hook call` is `0` |
+| C fail clause | now also fails when C3a/C3b show React's development entry |
+| C, after the fail clause | new paragraph: read C3a/C3b before procedure D, because D3 builds for production itself and may replace `dist/`; re-run C1 if D has already run |
+| D5 | 24 -> **26** scenario executions, `production build 1/2/3/4` now `3 + 1 + 1 + 2` |
+
+D1, D2, D2a-D2c and D6-D10 are unchanged: no unit spec moved, and nothing I changed can move one.
+The existing step letters are unchanged, so every earlier citation still resolves. C3a and C3b are
+appended in the D2a style rather than renumbered in.
+
+`qa/todo-app-regression.md` needed nothing - it names no counts and no build artifact.
+
+**Left for the Coder**
+
+- **One new step handler**, and it is the only handler change: `the served JavaScript bundle
+  contains <production_marker>`. The vocabulary goes from 16 patterns / 18 texts to 17 / 19.
+  Everything it needs is already in the tree: `referencedAssets` in `acceptance/inspection.ts`
+  finds the script the index page references (the Background has already put the index response in
+  the world), `requestPath` fetches it, and the judgment is `bodyContains`'s. Keep the assertion in
+  `assertions.ts` where the other judgments live; the fetch belongs in the shell.
+- **Then the real fix: `acceptance/fixtures.ts` must build the way `npm run build` builds.** The
+  scenario will stay red until it does, which is the point. Whether you pin the mode or build to an
+  outDir of its own is yours to choose, but note that QA's C3a reads `dist/`, and the paragraph I
+  added to procedure C assumes D3 *may* still overwrite it. If you give the tier its own outDir,
+  that paragraph becomes needlessly cautious rather than wrong - say so in your note and the next
+  Specifier pass drops it.
+- Do not weaken the markers into a substring that a development bundle also contains. Both cells
+  were measured against both artifacts; if a future React makes one of them false, the fix is a new
+  measurement and a new cell, not a shorter one.
+
+**Left for the Hardener**
+
+- `production-build.feature` now presents **2** candidate mutations, not 0, and the feature total
+  across the five files goes from 24 to **26** (4 + 6 + 5 + 11). Both new candidates should be
+  killed; each is a production-only string in a positive assertion, so dithering either cell makes
+  the assertion false. If either survives, the scenario is not reading the bundle it thinks it is.
+- The stored manifest for this feature keys `production build 1` on an unchanged scenario hash and
+  an unchanged background hash, so its 3 recorded kills stay reusable; only the implementation hash
+  moves, which the Coder's handler will move anyway. I did not touch `.mutation/`.
+
+**Left for QA**
+
+- `e2e/toolchain-commands.spec.ts` needs to move with the procedure: **no `C3a`/`C3b` steps exist
+  yet**, and `24` is hardcoded in three places - `expect(testCases(...)).toBe('24 passed (24)')` in
+  the D3 step, and the summed total plus the same assertion in the D5 step. All three become 26, and
+  D5's per-scenario map gains `production build 4` at 2.
+- Procedures A, B, E and `qa/todo-app-regression.md` are unchanged.
+
+**Open questions**
+
+None.
+
 
 ### Project manager rulings on the Specifier handoff
 
@@ -2790,4 +2926,37 @@ scenario actually kills a mutation of whatever new observable the Specifier pick
 
 **Carried to the task-02 Specifier:** `test:e2e` now exists and wants a row in
 `toolchain dependencies 2`. QA correctly did not add it.
+
+
+### Project manager rulings on the sixth Specifier pass
+
+Verified independently: `features/production-build.feature` gains `production build 4` with two
+marker rows; `npm run test:acceptance` reports `2 failed | 24 passed (26)`, both failures the new
+rows; only `features/`, `qa/` and this task file changed. Accepted.
+
+Two things in this pass are worth recording as standing guidance.
+
+1. **Asserting presence rather than absence is the right call, and the reason generalizes.** The
+   Specifier's argument is that "contains no development warning text" cannot be mutation tested,
+   because the mutator rewrites one example cell at a time and a dithered copy of an absent string is
+   still absent, so every such row would survive by arithmetic. That is the `api proxy 1` defect
+   class seen from the other side, and the same objection kills size thresholds. Any later task
+   tempted to specify an absence should read this first.
+
+2. **Appending as scenario 4 rather than renumbering** keeps `1/2/3` on their stable indices and
+   leaves the stored mutation manifest's recorded kills reusable, with `Background` untouched so its
+   hash holds. That is the manifest-preservation rule applied correctly without hand-editing
+   anything.
+
+Letting the dry checker settle the wording, rather than defending a first draft that drew a real
+`placeholder-variant` and a 0.545 `possible-synonym`, is the tool being used as intended.
+
+**One requirement on the Coder, which the current red state does not yet satisfy.** The two failing
+rows currently fail with `unsupported step text`, not because the marker is absent. That proves the
+step is unimplemented; it does not yet prove the scenario detects a development bundle. The Coder
+must therefore demonstrate the intermediate state explicitly: after adding the step handler but
+before fixing `acceptance/fixtures.ts`, `production build 4` must fail *because the markers are
+missing from the artifact*, and only then does the fixture fix turn it green. That ordering is the
+evidence that the scenario discriminates rather than merely passing once the fixture changes. Record
+both observations in the handoff note.
 

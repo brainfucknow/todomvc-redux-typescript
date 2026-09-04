@@ -55,13 +55,20 @@ B7 requires a manual reload.
 | C1 | `rm -rf dist && npm run build` | Exits 0. Prints the emitted files. |
 | C2 | `ls -R dist` | Contains `index.html`, and at least one emitted JavaScript file and one emitted CSS file under it - Vite writes them to `dist/assets/`. |
 | C3 | `grep -c 'src/index.tsx' dist/index.html` | `0`. The built page references emitted bundles, not the TypeScript source. |
+| C3a | For the JavaScript file C2 listed, `grep -c -F 'Minified React error' dist/assets/*.js`, then `grep -c -F 'act(...) is not supported in production builds of React.' dist/assets/*.js` | Each reports `1`. Both strings belong to React's production entry and appear in no other build of it, so their presence is what tells a production bundle from a development one. |
+| C3b | `grep -c -F 'Invalid hook call' dist/assets/*.js` | `0`. No development-mode React warning text is in the bundle. |
 | C4 | `npm run preview` | Stays running and prints a local URL. Record it as `PREVIEW_URL`. |
 | C5 | Open `PREVIEW_URL` in a browser with the backend from B1 still running | The page renders exactly as it did in B3. |
 | C6 | In devtools Network, confirm every script and stylesheet request | All return 200; none return 404. |
 | C7 | Stop the preview server with Ctrl-C | The process exits. |
 
-Fail C if the build exits non-zero, if any asset 404s, or if the previewed page
-differs from the dev page.
+Fail C if the build exits non-zero, if any asset 404s, if the previewed page
+differs from the dev page, or if C3a/C3b show the bundle carrying React's
+development entry instead of its production one.
+
+C3a and C3b read the artifact C1 emitted. Read them before procedure D: D3
+builds for production itself, so it may replace `dist/` with a build C1 did not
+make. If D has already run, re-run C1 before C3a.
 
 ## Procedure D: test tiers
 
@@ -74,7 +81,7 @@ differs from the dev page.
 | D2c | `npx vitest run scripts` | Exits 0. Reports 8 test files and 111 passing tests. These are unit tests of the project's own tooling under `scripts/` - the CRAP gate and the architecture checker - not application code. |
 | D3 | `npm run test:acceptance` | Exits 0. Output shows each `features/*.feature` file being parsed, entry points being generated, and every scenario passing. |
 | D4 | `ls build/acceptance` | Contains the JSON IR and the generated entry points produced by D3. |
-| D5 | Count the scenario executions reported by D3, per scenario (D3's runner takes no reporter flag; for the breakdown re-run the entry points it generated with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose`, where each test is named `<scenario>/example_<n>`) | 24 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 for `production build 1/2/3`, 3 + 8 for `toolchain dependencies 1/2`, 1 + 1 for `typescript compilation 1/2`. |
+| D5 | Count the scenario executions reported by D3, per scenario (D3's runner takes no reporter flag; for the breakdown re-run the entry points it generated with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose`, where each test is named `<scenario>/example_<n>`) | 26 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 + 2 for `production build 1/2/3/4`, 3 + 8 for `toolchain dependencies 1/2`, 1 + 1 for `typescript compilation 1/2`. |
 | D6 | `npx tsc --noEmit` | Exits 0 with no diagnostic output. |
 | D7 | `npx tsc --version` | Major version is 5 or higher. |
 | D8 | `npm run test:property` | Exits 0. Reports 11 test files and 95 passing tests, 0 failing, 0 skipped. |

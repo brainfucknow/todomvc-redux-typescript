@@ -24,3 +24,12 @@ Feature: Production build
 # production build 3
   Scenario: production build 3
     Then the response body does not contain /src/index.tsx
+
+# production build 4
+  Scenario: production build 4
+    Then the served JavaScript bundle contains <production_marker>
+
+    Examples:
+      | production_marker                                        |
+      | Minified React error                                     |
+      | act(...) is not supported in production builds of React. |
