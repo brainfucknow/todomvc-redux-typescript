@@ -1,44 +1,31 @@
-import type { CommandResult } from './commands.ts'
+import type { World } from './assertions.ts'
+import {
+  assetsReferencedByResponse,
+  bodyContains,
+  bodyEquals,
+  bodyExcludes,
+  compilationSucceeded,
+  everyAssetRespondsWith,
+  majorVersionIsAtLeast,
+  nothingReferences,
+  scriptIsAvailable,
+  statusIs,
+} from './assertions.ts'
 import { runCommand, typescriptCompiler } from './commands.ts'
 import {
   backendRepliesTo,
   buildForProduction,
-  serverUrl,
+  requestPath,
+  requestPaths,
   startDevServer,
   startPreviewServer,
 } from './fixtures.ts'
-import { availableScripts, compilerMajorVersion, referencedAssets } from './inspection.ts'
+import { availableScripts, compilerMajorVersion } from './inspection.ts'
 import { filesReferencing, readProjectFile } from './project-files.ts'
 import type { StepHandler } from './runtime.ts'
 
+export { createWorld } from './assertions.ts'
 export { releaseFixtures } from './fixtures.ts'
-
-export type AssetResult = {
-  path: string
-  status: number
-}
-
-export type World = {
-  response?: { status: number; body: string }
-  assets?: AssetResult[]
-  compilation?: CommandResult
-}
-
-export const createWorld = (): World => ({})
-
-const get = async (path: string): Promise<{ status: number; body: string }> => {
-  const response = await fetch(new URL(path.replace(/^\/+/, ''), serverUrl()))
-  return { status: response.status, body: await response.text() }
-}
-
-const currentResponse = (world: World): { status: number; body: string } => {
-  if (!world.response) {
-    throw new Error('no response has been requested in this scenario')
-  }
-  return world.response
-}
-
-const excerpt = (body: string): string => (body.length > 400 ? `${body.slice(0, 400)}...` : body)
 
 export const stepHandlers: StepHandler<World>[] = [
   {
@@ -64,20 +51,13 @@ export const stepHandlers: StepHandler<World>[] = [
   {
     pattern: /^a client (?:requests|has requested) (\S+)$/,
     run: async (world, [path]) => {
-      world.response = await get(path)
+      world.response = await requestPath(path)
     },
   },
   {
     pattern: /^a client requests every script and stylesheet referenced by the index page$/,
     run: async (world) => {
-      const assets = referencedAssets(currentResponse(world).body)
-      if (assets.length === 0) {
-        throw new Error('the index page references no scripts or stylesheets')
-      }
-      world.assets = await Promise.all(assets.map(async (path) => ({
-        path,
-        status: (await get(path)).status,
-      })))
+      world.assets = await requestPaths(assetsReferencedByResponse(world))
     },
   },
   {
@@ -88,92 +68,43 @@ export const stepHandlers: StepHandler<World>[] = [
   },
   {
     pattern: /^the response status is (\d+)$/,
-    run: (world, [expected]) => {
-      const { status } = currentResponse(world)
-      if (status !== Number(expected)) {
-        throw new Error(`expected status ${expected} but got ${status}`)
-      }
-    },
+    run: (world, [expected]) => statusIs(world, expected),
   },
   {
     pattern: /^the response body contains (.+)$/,
-    run: (world, [content]) => {
-      const { body } = currentResponse(world)
-      if (!body.includes(content)) {
-        throw new Error(`response body does not contain "${content}":\n${excerpt(body)}`)
-      }
-    },
+    run: (world, [content]) => bodyContains(world, content),
   },
   {
     pattern: /^the response body does not contain (\S+)$/,
-    run: (world, [content]) => {
-      const { body } = currentResponse(world)
-      if (body.includes(content)) {
-        throw new Error(`response body unexpectedly contains "${content}":\n${excerpt(body)}`)
-      }
-    },
+    run: (world, [content]) => bodyExcludes(world, content),
   },
   {
     pattern: /^the response body equals (.+)$/,
-    run: (world, [expected]) => {
-      const { body } = currentResponse(world)
-      if (body !== expected) {
-        throw new Error(`expected response body\n${expected}\nbut got\n${excerpt(body)}`)
-      }
-    },
+    run: (world, [expected]) => bodyEquals(world, expected),
   },
   {
     pattern: /^every referenced asset responds with status (\d+)$/,
-    run: (world, [expected]) => {
-      const assets = world.assets ?? []
-      if (assets.length === 0) {
-        throw new Error('no referenced assets were requested in this scenario')
-      }
-      const failures = assets.filter((asset) => asset.status !== Number(expected))
-      if (failures.length > 0) {
-        throw new Error(`assets did not respond with ${expected}: ${failures
-          .map((asset) => `${asset.path} -> ${asset.status}`)
-          .join(', ')}`)
-      }
-    },
+    run: (world, [expected]) => everyAssetRespondsWith(world, expected),
   },
   {
     pattern: /^(\S+) contains no reference to (\S+)$/,
-    run: (_world, [location, reference]) => {
-      const offenders = filesReferencing(location, reference)
-      if (offenders.length > 0) {
-        throw new Error(`"${reference}" still appears in ${offenders.join(', ')}`)
-      }
-    },
+    run: (_world, [location, reference]) =>
+      nothingReferences(reference, filesReferencing(location, reference)),
   },
   {
     pattern: /^npm run (\S+) is an available command$/,
-    run: (_world, [script]) => {
-      const scripts = availableScripts(readProjectFile('package.json'))
-      if (!scripts.includes(script)) {
-        throw new Error(`package.json declares no "${script}" script; it has: ${scripts.join(', ')}`)
-      }
-    },
+    run: (_world, [script]) =>
+      scriptIsAvailable(script, availableScripts(readProjectFile('package.json'))),
   },
   {
     pattern: /^the compiler reports no errors$/,
-    run: (world) => {
-      if (!world.compilation) {
-        throw new Error('the TypeScript compiler has not been run in this scenario')
-      }
-      if (world.compilation.code !== 0) {
-        throw new Error(`tsc exited ${world.compilation.code}:\n${world.compilation.output}`)
-      }
-    },
+    run: (world) => compilationSucceeded(world),
   },
   {
     pattern: /^the TypeScript compiler major version is at least (\d+)$/,
     run: async (_world, [minimum]) => {
       const { output } = await runCommand(typescriptCompiler, ['--version'])
-      const major = compilerMajorVersion(output)
-      if (major < Number(minimum)) {
-        throw new Error(`TypeScript major version ${major} is below the required ${minimum}`)
-      }
+      majorVersionIsAtLeast(compilerMajorVersion(output), minimum)
     },
   },
 ]

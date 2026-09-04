@@ -1,5 +1,6 @@
 import { createServer as createHttpServer } from 'node:http'
 import type { Server } from 'node:http'
+import type { AssetResult, Response } from './assertions.ts'
 
 const BACKEND_PORT = 4000
 
@@ -97,11 +98,23 @@ export async function startPreviewServer(): Promise<string> {
   return addressed(fixtures.previewServer)
 }
 
-export function serverUrl(): string {
+const serverUrl = (): string => {
   if (!fixtures.currentBaseUrl) {
     throw new Error('no server has been started for this scenario')
   }
   return fixtures.currentBaseUrl
+}
+
+export async function requestPath(path: string): Promise<Response> {
+  const response = await fetch(new URL(path.replace(/^\/+/, ''), serverUrl()))
+  return { status: response.status, body: await response.text() }
+}
+
+export function requestPaths(paths: string[]): Promise<AssetResult[]> {
+  return Promise.all(paths.map(async (path) => ({
+    path,
+    status: (await requestPath(path)).status,
+  })))
 }
 
 export async function releaseFixtures(): Promise<void> {

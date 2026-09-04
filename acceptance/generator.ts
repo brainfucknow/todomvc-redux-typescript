@@ -33,7 +33,9 @@ const posixRelative = (fromDir: string, target: string): string =>
   relative(fromDir, target).split('\\').join('/')
 
 export function metadataFileName(featurePath: string): string {
-  const slug = featurePath.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  // Collapsing every run of non-alphanumerics leaves at most one hyphen at
+  // either end, so the trim has none to repeat.
+  const slug = featurePath.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
   return `${slug}.json`
 }
 

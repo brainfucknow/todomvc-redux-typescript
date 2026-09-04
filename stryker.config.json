@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Language mutation. The mutated set is the testable core of acceptance/: the modules that decide something and that a deterministic tier measures. The adapter shells (commands, fixtures, generate-entrypoints, project-files, steps) are translation only and are excluded from coverage for the same reason; mutating them would need the acceptance tier, which needs the bootstrapped Go binaries, a production build and live servers.",
+  "packageManager": "npm",
+  "testRunner": "command",
+  "reporters": [
+    "clear-text",
+    "progress"
+  ],
+  "clearTextReporter": {
+    "allowColor": false,
+    "maxTestsToLog": 0
+  },
+  "coverageAnalysis": "off",
+  "mutate": [
+    "acceptance/assertions.ts",
+    "acceptance/generator.ts",
+    "acceptance/inspection.ts",
+    "acceptance/layering.ts",
+    "acceptance/layout.ts",
+    "acceptance/mutation-jobs.ts",
+    "acceptance/runtime.ts"
+  ],
+  "incremental": true,
+  "incrementalFile": ".mutation/stryker-incremental.json",
+  "tempDirName": "build/stryker-tmp",
+  "cleanTempDir": true,
+  "thresholds": {
+    "high": 100,
+    "low": 100,
+    "break": 100
+  },
+  "commandRunner": {
+    "command": "npx vitest run --config vitest.mutation.config.ts"
+  },
+  "checkers": [
+    "typescript"
+  ],
+  "tsconfigFile": "tsconfig.json"
+}

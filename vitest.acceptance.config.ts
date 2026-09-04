@@ -1,13 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { generatedEntrypointGlob } from './acceptance/layout.ts'
+import { generatedTests } from './vitest.generated-tests.ts'
 
 export default defineConfig({
-  test: {
-    name: 'acceptance',
-    include: [generatedEntrypointGlob],
-    environment: 'node',
-    fileParallelism: false,
-    testTimeout: 120_000,
-    hookTimeout: 120_000,
-  },
+  test: generatedTests('acceptance', generatedEntrypointGlob),
 })

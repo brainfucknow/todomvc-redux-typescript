@@ -16,14 +16,18 @@ export type LayerRules = {
 // compute rather than perform.
 export const acceptanceRules: LayerRules = {
   layers: {
+    'assertions.ts': 'core',
     'generator.ts': 'core',
     'inspection.ts': 'core',
     'layering.ts': 'core',
     'layout.ts': 'core',
+    'mutation-jobs.ts': 'core',
     'runtime.ts': 'core',
     'commands.ts': 'shell',
     'fixtures.ts': 'shell',
     'generate-entrypoints.ts': 'shell',
+    'mutation-worker.ts': 'shell',
+    'pipeline.ts': 'shell',
     'project-files.ts': 'shell',
     'steps.ts': 'shell',
   },
@@ -85,6 +89,10 @@ export function layerViolations(modules: ModuleImports[], rules: LayerRules): st
 export function importCycles(modules: ModuleImports[]): string[] {
   const edges = new Map(modules.map((entry) => [
     entry.module,
+    // Stryker disable next-line ConditionalExpression: keeping the non-members
+    // in would put a specifier that is not a module into the walk, where it has
+    // no edges of its own and so can never close a cycle - the same answer, by
+    // a longer route. Dropping them is a type obligation, not a decision.
     entry.imports.map(packageMember).filter((member): member is string => member !== undefined),
   ]))
   const cycles: string[] = []
@@ -105,6 +113,9 @@ export function importCycles(modules: ModuleImports[]): string[] {
   }
 
   for (const entry of modules) {
+    // Stryker disable next-line ArrayDeclaration: a cycle is reported from the
+    // first repeated module onwards, so seeding the path with anything that is
+    // not a module name gives the same answer.
     walk(entry.module, [])
   }
   return cycles

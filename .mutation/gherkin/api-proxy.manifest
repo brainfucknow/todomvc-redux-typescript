@@ -1,0 +1,3 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T11:00:49Z","feature_name":"API proxy","feature_path":"build/acceptance-mutation/features/api-proxy.feature","background_hash":"ae556e7eb243576b90959232457af50f52f967b438cf120eac28d600515eda8c","implementation_hash":"sha256:45b07db097feb9bd22614204b8f04ea42f046f3b7d04299bd3bba69f6ffefb42","scenarios":[]}
+# acceptance-mutation-manifest-end

@@ -26,13 +26,18 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": [
-    "src",
     "acceptance",
+    "hardening",
     "property",
     "scripts",
+    "src",
     "vite.config.ts",
+    "vitest.acceptance-mutation.config.ts",
     "vitest.acceptance.config.ts",
     "vitest.coverage.ts",
+    "vitest.generated-tests.ts",
+    "vitest.hardening.config.ts",
+    "vitest.mutation.config.ts",
     "vitest.property.config.ts"
   ]
 }

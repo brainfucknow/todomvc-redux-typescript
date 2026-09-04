@@ -21,6 +21,8 @@ export const measuredCoverage: CoverageOptions = {
     'acceptance/commands.ts',
     'acceptance/fixtures.ts',
     'acceptance/generate-entrypoints.ts',
+    'acceptance/mutation-worker.ts',
+    'acceptance/pipeline.ts',
     'acceptance/project-files.ts',
     'acceptance/steps.ts',
   ],

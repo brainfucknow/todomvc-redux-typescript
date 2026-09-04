@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/typescript-checker": "^10.0.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^14.0.0",
     "@vitejs/plugin-react": "^6.1.1",
@@ -39,6 +41,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:acceptance": "node scripts/acceptance.ts",
-    "test:property": "vitest run --config vitest.property.config.ts"
+    "test:property": "vitest run --config vitest.property.config.ts",
+    "test:hardening": "vitest run --config vitest.hardening.config.ts",
+    "test:mutation": "node scripts/mutation.ts"
   }
 }

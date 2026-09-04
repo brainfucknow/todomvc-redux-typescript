@@ -988,4 +988,326 @@ The two open questions are settled as follows, both without a further Cleaner pa
 
 ### Hardener
 
+Done. Mutation hardening: Stryker for language mutation, a runner adapter for the APS
+`gherkin-mutator`, and the tests that took the survivors out. Nothing committed. `features/`,
+`qa/` and `src/` untouched.
+
+**Split before mutating (the mixed-job hint)**
+
+`acceptance/steps.ts` was the source the Cleaner and the Architect both routed to me: excluded
+from coverage as wiring, and the one place a wrong assertion would go unnoticed by anything but
+the acceptance tier. It was doing three jobs - map step text to an action, reach the
+environment, and judge what came back. Only the middle one is environmental.
+
+- `acceptance/assertions.ts` (new, core) owns the third job: the `World` a scenario accumulates
+  and every judgment a step makes about it - `statusIs`, `bodyContains`, `bodyExcludes`,
+  `bodyEquals`, `everyAssetRespondsWith`, `nothingReferences`, `scriptIsAvailable`,
+  `compilationSucceeded`, `majorVersionIsAtLeast`, plus the three "you have not observed that
+  yet" guards. No filesystem, no network, no runner.
+- The HTTP client moved into `acceptance/fixtures.ts` as `requestPath` / `requestPaths`, where
+  the servers it talks to already live; `serverUrl` stopped being exported because only they
+  need it.
+- `acceptance/steps.ts` is now the handler table and nothing else: 16 patterns, each one line
+  of fixture call and/or assertion call. Same 18 step texts, same behaviour, same messages.
+
+**Language mutation (`npm run test:mutation`)**
+
+- `@stryker-mutator/core@10` and `@stryker-mutator/typescript-checker@10` added;
+  `stryker.config.json`, `vitest.mutation.config.ts` and `scripts/mutation.ts` added.
+- The mutated set is the testable core of `acceptance/`: `assertions`, `generator`,
+  `inspection`, `layering`, `layout`, `mutation-jobs`, `runtime`. The adapter shells are the
+  same list `vitest.coverage.ts` excludes, for the same reason, and the reason is written in the
+  config.
+- The mutants are judged by the unit-tier acceptance specs, the property tier and the hardening
+  tier together, via `vitest.mutation.config.ts`. That config is not a new tier: it collects
+  tests the other commands already run.
+- The **typescript checker** is on. `'core' -> ""` in the layer map, or dropping the
+  `member !== undefined` filter, are mutants the project's own `tsc --noEmit` rejects; 118 of
+  437 mutants are in that class, and reporting them as survivors would have been noise.
+- `.mutation/stryker-incremental.json` is the manifest, `incremental: true`,
+  `thresholds.break: 100`. I mutated one file at a time, in sequence, differential against it.
+- **`scripts/mutation.ts` exists because the manifest cannot see a test change.** See finding 2.
+
+**Acceptance mutation (`node scripts/acceptance-mutation.ts`)**
+
+- `acceptance/mutation-worker.ts` (shell) is the persistent runner adapter the mutator spec
+  requires: newline-delimited JSON jobs on stdin, one response per line on stdout, diagnostics
+  on stderr. For each job it puts the mutated IR at the path the generated entry point's
+  metadata records and runs that entry point.
+- `acceptance/mutation-jobs.ts` (new, core) holds the adapter's judgments so they are not buried
+  in a shell: `jobTimeout`, `classify` (a run that never reached a verdict is
+  `infrastructure_error`, never `test_success` - reporting it as success would record a mutant as
+  survived on a test run that did not happen) and `responseLine`.
+- `scripts/acceptance-mutation.ts` runs `gherkin-mutator --level soft`, one feature at a time,
+  passing the implementation hash from the generated metadata.
+- **`features/` is never written to.** The mutator keeps its scenario manifest in a comment
+  block inside the feature file, and PLAN section 4 puts mutation manifests under `.mutation/`.
+  So each run stages a copy of the feature under `build/acceptance-mutation/features/` with the
+  stored manifest prepended, and lifts the manifest back out into
+  `.mutation/gherkin/<slug>.manifest` afterwards. The staged path is project-relative, so the
+  manifest the mutator writes matches on any checkout, not only the one that wrote it.
+- `acceptance/layout.ts` gained the mutation directories, so the path convention still has one
+  owner; `vitest.acceptance-mutation.config.ts` reads the glob from it.
+
+**Results**
+
+Language mutation, `npm run test:mutation`, from a forced full run:
+
+| | |
+| --- | --- |
+| mutants | 437 across 7 files |
+| killed | 310 |
+| survived | **0** |
+| timed out | 0 |
+| rejected by the compiler | 118 |
+| ignored, with a written reason | 9 |
+
+Acceptance mutation, `node scripts/acceptance-mutation.ts`, five features:
+
+| Feature | total | killed | survived |
+| --- | --- | --- | --- |
+| `api-proxy` | 4 | 2 | **2** |
+| `development-server` | 4 | 4 | 0 |
+| `production-build` | 3 | 3 | 0 |
+| `toolchain-dependencies` | 8 | 8 | 0 |
+| `typescript-compilation` | 0 | 0 | 0 |
+
+The two survivors are finding 3. **This stage is not green, and I could not make it green
+without editing `features/`.**
+
+**The nine ignored mutants, and why**
+
+Each carries a `// Stryker disable next-line <mutator>: <reason>` comment in the source, so the
+waiver is reviewable where the code is - the shape the PM's ruling on CRAP waivers asked for.
+
+- `acceptance/inspection.ts` `VERSION_BANNER` (6). The banner's patch digits are matched but
+  never read, so `\.\d+` -> `\.\d` cannot change an answer. A line-scoped disable is the only
+  granularity Stryker has, so five killable regex mutants on that line are ignored with it; they
+  were killed before I added the comment, and the tests that killed them are still there.
+- `acceptance/layering.ts` `importCycles` (3). Seeding the walk path with a non-module name and
+  keeping non-members in the edge list both take a longer route to the same answer: a cycle is
+  reported from the first repeated module, and a specifier that is not a module has no edges of
+  its own. The second costs one real kill for the same line-granularity reason.
+
+**Hardening tests: a separate tier, and QA procedure D does not move**
+
+`hardening/` holds 7 files and 92 tests, run by `npm run test:hardening`
+(`vitest.hardening.config.ts`), and added to `TIERS` in `scripts/crap.mjs` so the gate sees
+their coverage - the wiring the Cleaner's note described. Nothing went into `src/` or into
+`acceptance/*.spec.ts`, so:
+
+| Command | Files | Tests | vs. the Architect's handoff |
+| --- | --- | --- | --- |
+| `npm test` | 15 | 119 | unchanged |
+| `npx vitest run src` | 10 | 54 | unchanged - D2a floor intact |
+| `npx vitest run acceptance` | 5 | 65 | unchanged |
+| `npm run test:property` | 6 | 60 | unchanged |
+| `npm run test:hardening` | 7 | 92 | new tier, outside `npm test` |
+| `npm run test:acceptance` | 5 features | 21 scenario executions | unchanged |
+
+**D1, D2, D2a and D2b all still read true.** The Specifier pass scheduled between me and QA
+needs nothing from my test counts. What it may want is the script surface: `toolchain
+dependencies 2` and QA step E3 list five commands, and there are now eight - `test:property`
+(the Architect's), `test:hardening` and `test:mutation`. `toolchain dependencies 2` stays green
+either way, because it only asserts that the scripts it lists exist.
+
+**Scripts and dependencies**
+
+- Added `test:hardening` and `test:mutation`. PLAN section 4 names `npm run test:mutation` for
+  language mutation; `test:hardening` is the separate command my brief requires for hardening
+  tests, and the CRAP gate needs it to be a tier it can run.
+- `node scripts/acceptance-mutation.ts` deliberately has **no** npm script, following the
+  `scripts/crap.mjs` precedent the Cleaner set: PLAN section 4 names no command for acceptance
+  mutation, and the task's script surface is not mine to widen further.
+- devDependencies: `@stryker-mutator/core`, `@stryker-mutator/typescript-checker`. I installed
+  `@stryker-mutator/vitest-runner` first and removed it again when it turned out not to work
+  (finding 1); reinstalling it is the first step if anyone revisits that.
+
+**DRY pass**
+
+- `vitest.generated-tests.ts` (new) owns how a run of generated entry points is executed - node
+  environment, one file at a time, 120s timeouts. `vitest.acceptance.config.ts` and
+  `vitest.acceptance-mutation.config.ts` were otherwise the same file twice.
+- `acceptance/pipeline.ts` (new, shell) owns driving the APS tools over this project:
+  `bootstrapTools`, `featureFiles`, `parseFeature`, `generateEntrypoints`, `emptyDirectories`,
+  `runTool`, `announce`. `scripts/acceptance.ts` had all of it and
+  `scripts/acceptance-mutation.ts` was about to have a second copy; both are now the part that
+  differs. `scripts/acceptance.ts` is 27 lines, down from 45, and its behaviour is unchanged -
+  same clean-tree run, same printed lines.
+- `acceptance/layout.ts`: `generatedEntrypointGlob` and `mutationEntrypointGlob` come from one
+  `entrypointGlob(directory)`.
+- `vitest.mutation.config.ts` names the tier's test directories and suffixes once;
+  `scripts/mutation.ts` reads the same list rather than restating the globs.
+
+**One production simplification**
+
+`acceptance/generator.ts` `metadataFileName` trimmed with `/^-+|-+$/g`. The preceding replace
+collapses every run of non-alphanumerics, so a doubled hyphen cannot reach the trim and both
+quantifiers were dead - which showed up as two unkillable mutants. It is `/^-|-$/g` now, with a
+comment saying why. Same output for every input: the generated entry points and metadata are
+byte-identical, implementation hashes included.
+
+**What I verified**
+
+- `npx tsc --noEmit` exits 0 with no output, after `rm -rf node_modules && npm ci` (exit 0).
+- All six test commands at the counts tabulated above, 0 failing, 0 skipped.
+- `npm run test:acceptance` from `rm -rf bin build`: bootstrap builds the three Go binaries, 5
+  features parse, 5 entry points generate, **21 scenario executions pass**.
+- The generated entry points and metadata are byte-identical to the Architect's and Cleaner's
+  output, implementation hashes included, so the `layout.ts` and `generator.ts` changes moved no
+  artifact.
+- `npm run build` exits 0 and emits the same content hashes every role since the Cleaner has
+  recorded: `index-BPxiUVWS.js`, `index-xAQXB6NR.css`. The third-party lightningcss warning is
+  unchanged.
+- `react-scripts` count is 0 in `package.json` and `package-lock.json`.
+- **CRAP.** `node scripts/crap.mjs acceptance` (the package this pass changed): 7 files, 71
+  functions, **0 over the gate**; every measured function is at 100% statement coverage and the
+  worst is `classify` at 5.0. Whole project, `node scripts/crap.mjs`: 33 files, 165 functions, 2
+  over the gate - `src/reducers/apis.ts` `executing` at 13.0 and
+  `src/middlewares/callapimiddleware.ts` at 30.0. Both are pre-existing `src/` code this task's
+  Out of scope bars me from, both are already dispositioned (the first is the CRAP exception
+  verbatim - one `switch` answering one question, fully covered; the second is IO), and neither
+  is a file this task changes. **I am applying the exception to `executing` and recording that I
+  did, as the PM's ruling requires.**
+- The mutation instruments bite, checked rather than assumed. Weakening one hardening assertion
+  (`expect(IR_DIR).toBe('build/acceptance/ir')` -> `expect(typeof IR_DIR).toBe('string')`) turns
+  that mutant from Killed to Survived and `npm run test:mutation` exits 1; restoring the
+  assertion turns it back. Removing `server.proxy` from `vite.config.ts` still turns both
+  `api proxy 1` rows red.
+- **That negative check found a defect in `scripts/mutation.ts` and it is fixed.** Stryker
+  rewrites the manifest whether mutants survived or not, so stamping only successful runs left a
+  failed run's results recorded under the previous tier's stamp, and the next run reused them as
+  if the tests had never changed. The stamp is now written whenever Stryker reached a verdict,
+  and the wrapper exits with Stryker's own status instead of throwing. Re-verified: the stamp and
+  the manifest move together, and a stale pair cannot form.
+- Differential reuse works in both directions: a second `npm run test:mutation` reuses 428 of
+  437 recorded results, and a second `node scripts/acceptance-mutation.ts` skips every clean
+  scenario (`skipped_scenarios=1/1/2/2`, `skipped_mutations=4/3/8/0`) and re-runs only
+  `api-proxy`, which has survivors.
+- `git status --short features/ qa/ src/` is empty. `git status --porcelain --ignored` shows
+  `bin/`, `build/`, `coverage/`, `dist/`, `node_modules/` ignored and nothing
+  untracked-but-unignored. `.mutation/` is untracked and is meant to be committed (1.5 MB, most
+  of it Stryker's per-mutant records).
+
+**Findings**
+
+1. **Stryker's Vitest runner does not work on Vitest 5, and silently reports false survivors.**
+   With `testRunner: "vitest"`, mutants Stryker activates at runtime - every function body -
+   never run a single test and come back `Survived`; only statically activated mutants (module
+   level, activated through `__STRYKER_ACTIVE_MUTANT__` in the environment) are really tested.
+   `acceptance/runtime.ts` scored 3.64% that way with 53 "survivors", every one of which dies
+   when the same mutation is applied by hand and the same tests are run. I confirmed injection
+   itself is fine (`mode`, `activeMutant` and per-test coverage all arrive) and that no test
+   executes for those mutants, so it is the filtered mutant run, not the instrumentation. The
+   configuration ships with `testRunner: "command"` running the mutation-tier vitest command,
+   which is correct and version-independent at the cost of running the whole tier per mutant
+   (437 mutants in about 7 minutes). **Do not switch back to the vitest runner without checking
+   that a function-body mutant actually dies.**
+2. **The command runner makes the manifest blind to test changes**, because it reports one
+   anonymous test, so Stryker records `testFiles: {"": {"tests": 1}}` and would reuse a stale
+   `Survived` after a test that kills it was added. `scripts/mutation.ts` closes that: it hashes
+   the mutation tier's test files into `.mutation/test-tier.json` and passes `--force` when the
+   hash has moved, writing the new stamp whenever Stryker reached a verdict. Only the tests are
+   hashed;
+   a source change is Stryker's own to notice. `--force` keeps the other files' recorded results,
+   which I checked before relying on it.
+3. **`api proxy 1`'s `body` column drives both the stub and the assertion, so mutating it cannot
+   fail.** `Given the todo backend on port 4000 replies to <path> with <body>` and `Then the
+   response body equals <body>` read the same cell; the mutator rewrites it once and both sides
+   move together, so the scenario still passes and still tells the truth. These are equivalent
+   mutations in the APS sense, and the spec puts equivalent-mutation filters in the mutator,
+   which the Go fallback does not expose - so they cannot be filtered from the adapter side. The
+   fix is in `features/api-proxy.feature`, which I must not edit. See open question 1.
+4. **`scripts/crap.mjs` is not mutated and has no tests.** It is outside the coverage `include`
+   (the Cleaner's open question 3, never ruled on) and Stryker cannot judge mutants no tier
+   exercises. It is the instrument the gate depends on, and its complexity computation is real
+   logic. I left it alone rather than widen my own pass into the tool the previous role owns.
+5. **The adapter shells are not mutated:** `commands`, `fixtures`, `generate-entrypoints`,
+   `mutation-worker`, `pipeline`, `project-files`, `steps`. Mutating them needs the acceptance
+   tier - the bootstrapped Go binaries, a production build and live servers - inside Stryker,
+   per mutant. After the `steps.ts` split every judgment they used to make lives in a mutated
+   core module, so what is left is translation. This is the same boundary `vitest.coverage.ts`
+   draws and the PM accepted.
+
+**Left for the next role**
+
+- **The Specifier pass:** my test counts need no reconciliation (table above). Two things do
+  want a decision: the three added script rows for `toolchain dependencies 2` / QA step E3, and
+  finding 3.
+- **QA:** `node scripts/acceptance-mutation.ts` exits 1 today, on finding 3 alone. Everything
+  else is green. It is not one of the task's done criteria and no QA procedure names it.
+- `hardening/` is a tier of its own on purpose: `npm test` does not run it, and `scripts/crap.mjs`
+  does. If a later task adds a tier that measures the same sources, add it to `TIERS` too.
+- Everything earlier roles left standing still stands: the Vitest isolation hint, the
+  third-party lightningcss warning, CI wiring for `test:acceptance`, `test:property`,
+  `test:hardening` and `test:mutation` (task 06), the missing Playwright driver for
+  `qa/todo-app-regression.md`, and the `console.log` in `src/reducers/apis.ts` (task 06 by PM
+  ruling).
+
+**Open questions**
+
+1. **Who fixes `api proxy 1`, and how?** The scenario is "what the backend replies with comes
+   back through the proxy unchanged", and expressing it with one example column is why the
+   mutation survives. Two ways out, both the Specifier's: give the step pair separate columns
+   holding the same value, so a mutation to either breaks the equality; or accept the two
+   survivors as equivalent mutations and record that, in which case `scripts/acceptance-mutation.ts`
+   needs a project-side skip list naming those two cells and a reason - which is a filter the
+   APS spec locates in the mutator, so I did not invent one on my own initiative.
+2. **Is `.mutation/stryker-incremental.json` at 1.5 MB acceptable to commit?** PLAN section 4
+   says mutation manifests are committed and never hand-edited, and it will grow as later tasks
+   mutate `src/`. It is Stryker's own format, so trimming it would be hand-editing.
+3. **Should `scripts/crap.mjs` be tested and mutated (finding 4)?** It gates every later task,
+   and it is the one piece of project logic with no tier over it. Covering it means widening the
+   coverage `include` to `scripts/**`, which changes what the gate measures - the Cleaner's
+   decision, not mine, on the precedent of the CRAP-tool rulings.
+
+### Project manager rulings on the Hardener handoff
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 119, `npx vitest run src` 54
+(the D2a floor, intact), `npx vitest run acceptance` 65, `npm run test:property` 60,
+`npm run test:hardening` 92, `npm run test:acceptance` 21 scenario executions; CRAP on the
+changed files 7 files / 71 functions / 0 over the gate; `features/`, `qa/` and `src/` all
+untouched. `node scripts/acceptance-mutation.ts` does exit 1 on `api-proxy.feature`, exactly as
+reported. Accepted.
+
+Shipping Stryker with `testRunner: "command"` is accepted. A mutation runner that reports 53
+phantom survivors on a file whose mutants never execute is worse than no runner, and the note
+records both the symptom and how to re-test the assumption before switching back. That is the
+right way to leave a workaround behind.
+
+The three open questions are settled as follows.
+
+1. **`api proxy 1` gets separate stub and assertion columns. The skip list is refused.**
+   Of the Hardener's two options, the first is correct: give the step pair its own columns holding
+   the same value, so mutating either side breaks the equality and the mutant dies. That is not a
+   redundant column in the sense the Specifier brief prunes: the brief prunes columns constant
+   across all rows, and both of these vary by row. The two columns are what makes the scenario
+   actually assert pass-through rather than assert a value against itself.
+
+   The skip list is refused on principle. The survivor is not an equivalent mutant; it is acceptance
+   mutation correctly reporting that the scenario cannot fail. Suppressing it would convert a true
+   finding into a permanent blind spot and would teach every later task that a survivor is something
+   to be filtered. No project-side skip list is to be added to `scripts/acceptance-mutation.ts`.
+
+2. **Yes, commit `.mutation/stryker-incremental.json`, and never trim it.** `PLAN.md` section 4
+   says mutation manifests are committed and never hand-edited, and the Hardener is right that
+   trimming Stryker's own format would be hand-editing. 1.5 MB growing over six tasks is a cost
+   worth paying for differential mutation, which the brief requires. If it ever stops being worth
+   paying, the remedy is a plan-level decision to stop committing the manifest and accept full
+   runs, made explicitly. It is never a silent trim.
+
+3. **Yes, `scripts/crap.mjs` should be tested and mutated, and the Cleaner decides how.** The
+   Hardener's reasoning is right: it is the one piece of project logic with no tier over it, and it
+   gates every later task. Widening the coverage `include` to `scripts/**` changes what the gate
+   measures, which is the Cleaner's call. This is assigned to the Cleaner pass in the resumed chain
+   below.
+
+**The chain resumes from the Specifier.** Fixing `api proxy 1` changes the Gherkin, which changes
+the step vocabulary the handlers implement, so this is not a `qa/`-only edit that a single Specifier
+pass can close out. Every downstream role runs again as a fresh agent: Specifier (fix the scenario,
+and reconcile procedure D's counts against the tree, which now also carries the `hardening/` tier),
+then Coder, Cleaner, Architect, Hardener, QA. The Hardener re-run is what proves the two survivors
+are dead.
+
+
 ### QA

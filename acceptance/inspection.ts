@@ -2,6 +2,11 @@ const SCRIPT_SRC = /<script\b[^>]*\bsrc\s*=\s*("[^"]*"|'[^']*')[^>]*>/gi
 const LINK_TAG = /<link\b[^>]*>/gi
 const HREF_ATTRIBUTE = /\bhref\s*=\s*("[^"]*"|'[^']*')/i
 const STYLESHEET_REL = /\brel\s*=\s*("stylesheet"|'stylesheet'|stylesheet\b)/i
+// The patch digits are matched but never read, so shortening the final
+// quantifier cannot change an answer this module gives. That makes Stryker's
+// `\d+` -> `\d` mutant on this line equivalent, and equivalent mutants cannot
+// be killed, only ignored - with the rest of the line's regex mutants.
+// Stryker disable next-line Regex
 const VERSION_BANNER = /\b(\d+)\.\d+\.\d+/
 
 const unquoted = (attribute: string): string => attribute.slice(1, -1)

@@ -43,6 +43,35 @@ APS `gherkin-parser`, generates test entry points under `build/acceptance/`, and
 executes them. The first run builds the APS Go binaries into `bin/` via
 `scripts/bootstrap-aps.sh`, which needs a Go toolchain and network access.
 
+### `npm run test:hardening`
+
+Runs the tests in `hardening/`, written to pin behaviour that mutation testing
+found nothing else was pinning.
+
+### `npm run test:mutation`
+
+Runs language mutation over the acceptance package's testable core with
+[Stryker](https://stryker-mutator.io), judged by the unit, property and
+hardening tests together. Results are reused from the manifest in `.mutation/`
+when neither the mutated source nor the tests have moved.
+
+## Other checks
+
+Neither of these is an npm script; both are run directly.
+
+### `node scripts/acceptance-mutation.ts`
+
+Acceptance mutation: the APS `gherkin-mutator` rewrites one Gherkin example
+value at a time and runs the generated tests against it, at `--level soft`. It
+works on a staged copy of each feature under `build/acceptance-mutation/`, so
+`features/` is never written to; the per-feature manifests live in
+`.mutation/gherkin/`.
+
+### `node scripts/crap.mjs [<path> ...]`
+
+Reports the CRAP score of every function, merging coverage from the tiers that
+measure it, and exits non-zero for anything above 10.
+
 ## Acceptance pipeline layout
 
 | Path | Contents |
@@ -50,4 +79,7 @@ executes them. The first run builds the APS Go binaries into `bin/` via
 | `features/` | Gherkin feature files (the [APS](https://github.com/unclebob/Acceptance-Pipeline-Specification) subset) |
 | `acceptance/` | Entrypoint generator, runtime, step handlers, fixtures |
 | `build/acceptance/` | Parser IR and generated entry points (gitignored) |
+| `build/acceptance-mutation/` | Staged features, IR and entry points for a mutation run (gitignored) |
+| `hardening/` | Tests written against surviving mutants |
+| `.mutation/` | Mutation manifests, committed; never hand-edited |
 | `qa/` | E2E QA procedures, executed by hand through the UI |

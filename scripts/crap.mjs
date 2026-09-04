@@ -28,6 +28,7 @@ const vitest = join(projectRoot, 'node_modules', 'vitest', 'vitest.mjs')
 const TIERS = [
   { name: 'unit', config: 'vite.config.ts' },
   { name: 'property', config: 'vitest.property.config.ts' },
+  { name: 'hardening', config: 'vitest.hardening.config.ts' },
 ]
 
 const reportDirectory = (tier) => join(projectRoot, 'coverage', tier.name)
