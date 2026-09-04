@@ -153,6 +153,65 @@ Then  the TypeScript compiler major version is at least 5
    would rather assert one exact count, it has to pick one serving mode for that procedure.
 
 
+#### Second pass: correction under Coder-handoff ruling 2
+
+Done. `qa/toolchain-commands.md` procedure D is corrected. `features/` is unchanged.
+
+**What I changed**
+
+Only `qa/toolchain-commands.md`, procedure D:
+
+- **D1** now expects 13 test files and 92 passing tests, 0 failing, 0 skipped.
+- **D2** now names the 13: the 10 matching `src/**/*.spec.{ts,tsx}` plus
+  `acceptance/generator.spec.ts`, `acceptance/inspection.spec.ts` and
+  `acceptance/runtime.spec.ts`. Its real point is unchanged and now stated against the
+  actual path: no file from `build/acceptance/generated/` appears in the unit run.
+- **D2a** and **D2b** are new. They split the D1 total so a future change is attributable
+  rather than merely visible: `npx vitest run src` must report 10 files / 54 tests,
+  `npx vitest run acceptance` must report 3 files / 38 tests.
+- A paragraph after procedure D's fail clause states the asymmetry between the halves. A
+  drop below 10 files or 54 cases fails D outright, because that half is the pre-existing
+  suite this task must not shrink. A change to the acceptance-pipeline half is acceptable
+  only when a handoff note records it, and then D1, D2 and D2b move together.
+
+The split is the point of the correction. The stale numbers were not merely wrong; a single
+total lets a lost `src` case hide behind a gained `acceptance` one. D2a is now the guard the
+Coder's conversion has to survive.
+
+**What I verified**
+
+Counted from the tree, not taken from the Coder's note:
+
+- `npm test`: 13 files, 92 passing, 0 failing, 0 skipped.
+- `npx vitest run src`: 10 files, 54 passing. `npx vitest run acceptance`: 3 files, 38
+  passing. 54 + 38 = 92, so the split is exhaustive and the halves do not overlap.
+- `it(` occurrences per file sum to 54 across the ten `src` specs and 38 across the three
+  `acceptance` specs, matching the runner's counts.
+- No `.skip`, `.only` or `.each` anywhere in either half, so the reported count is the
+  executed count.
+- The ten `src` spec files are the same ten the first pass inventoried; none was added,
+  renamed or removed.
+
+I ran no other verification or quality tooling, and I did not re-run the parser or the dry
+checker: no feature file changed.
+
+**Ruling 1 needs nothing from me.** The pending TypeScript move to `^5.9.3` leaves both
+version assertions true — `typescript compilation 2` says "at least 5" and QA D7 says "major
+version is 5 or higher". Neither pins a minor and neither should; 5.9.3 satisfies both. No
+feature or QA edit is required for that correction, before or after the Coder makes it.
+
+**Left for the Coder**
+
+- D2a is now a hard floor: 10 files, 54 cases in `src`. If the second pass changes either
+  number, it fails QA. The `^5.9.3` downgrade should not touch them; if it does, that is a
+  finding to report, not a number to adjust.
+- `npx vitest run src` and `npx vitest run acceptance` are QA's commands and depend on the
+  unit-tier `include` covering both directories. Do not narrow it.
+
+**Open questions**
+
+None. Ruling 2 is discharged.
+
 ### Project manager rulings on the Specifier handoff
 
 The Specifier handoff is accepted. Its assumptions and open questions are settled as follows.
