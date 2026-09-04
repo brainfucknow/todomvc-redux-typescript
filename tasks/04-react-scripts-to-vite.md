@@ -61,6 +61,64 @@ Things `react-scripts` does today that must keep working:
 
 ### Coder
 
+**Changed**
+
+- `public/index.html` -> `index.html` at the project root, with `<script type="module" src="/src/index.tsx"></script>`. Title and `<div class="todoapp" id="root">` are byte-identical; the CRA template comment is gone. `public/` held nothing else and was removed, so Vite has no `publicDir`.
+- `src/react-app-env.d.ts` -> `src/vite-env.d.ts`, now `/// <reference types="vite/client" />`.
+- `vite.config.ts` -> `vite.config.mts`, extended with `server.port: 3000` and a `/api` proxy to `http://localhost:4000`. The Vitest block is unchanged. `preview` gets the same proxy so the built bundle can talk to the same backend.
+- `package.json`: `dev`, `start` (alias), `build`, `preview`, `typecheck` added; `eject` and the `proxy` field removed; `react-scripts` dropped from devDependencies. `npm install` pruned 1413 packages from the lockfile.
+- `scripts/typecheck.mjs` added (see below).
+- `.gitignore`: `build/` replaced by `dist/`.
+- `README.md` rewritten: no Create React App, no `react-scripts`, no `eject`, and every command it now documents exists.
+- No file under `src/` changed other than the ambient declaration rename. `todomvc-app-css` imports from `src/index.tsx` unchanged and it resolves.
+
+**`"type": "module"`: decided no**
+
+Setting it breaks QA-owned code, not just the config. `qa/stub/*.js` are eight CommonJS files; with `"type": "module"` in the root package.json, `node qa/stub/main.js` dies with `require is not defined in ES module scope`. Verified, then reverted. Rather than force a change QA would have to make, I renamed the config to `vite.config.mts`, which is the other remedy Vite's own warning names. The `configLoader: 'native'` deprecation warning is gone from every command. `qa/playwright.config.ts` was not touched and still loads.
+
+**How `npm run typecheck` is scoped, and a caveat worth reading**
+
+`scripts/typecheck.mjs` runs `tsc --noEmit --pretty false`, prints only diagnostics whose path starts with `src/`, and exits non-zero if there are any. Today it reports: `0 error(s) under src/, 313 in dependencies (task 05)`. The dependency count fell from roughly 1800 to 313 simply because `react-scripts`' tree is gone.
+
+The caveat: while those 313 parse errors stand, tsc withholds *semantic* diagnostics for the whole program. I probed it both ways. A syntax error planted in `src/` is reported and the gate fails. A type error planted in `src/` (`const bad: number = "x"`) produces no diagnostic at all, and the gate passes. So the script gates on syntax in the project's sources, not on types, and it will keep doing so until task 05 bumps the compiler. No change to the script is needed then; it widens to a full type check on its own once the dependency parse errors clear. I could not do better inside this task's scope, which forbids changing the TypeScript version. QA and the project manager should read the done criterion "zero errors under `src/`" as satisfied but weaker than it sounds until task 05 lands.
+
+**Output directory: `dist/`, and a trap in stale trees**
+
+Vite's default is kept. `qa/stub/main.js` looks for `build/` *before* `dist/`, so a working tree that still holds the old `react-scripts` output would silently E2E-test the CRA bundle. I deleted the stale `build/` here. Anyone carrying one from before this task must delete it too. Nothing under `qa/` was edited and `npm run test:e2e` was not changed.
+
+**Verified**
+
+- `npm run build`: succeeds with no `react-scripts` in the tree. Main chunk 57.33 kB gzipped, against 56.9 kB under CRA.
+- `npm run dev`: starts on port 3000. The pre-existing `options.allowedHosts[0] should be a non-empty string` failure is gone, as the task expected.
+- Proxy: `curl http://localhost:3000/api/todos/` reaches a backend on 4000 with the path forwarded verbatim. I used QA's own stub as the backend (`QA_STUB_PORT=4000 QA_APP_DIR=dist node qa/stub/main.js`), read-only.
+- Browser smoke against dev and against `npm run preview` (Chromium from `/opt/pw-browsers`): the app renders, a todo typed into `.new-todo` round-trips through the proxy to the backend and appears in the list, and the console is clean.
+- `npm test`: 10 files, 55 tests, unchanged.
+- `npm run test:e2e`: 22 passed, twice, with `qa/` untouched. The stub's `dist/` fallback carries it.
+- `grep` for `react-scripts` outside `tasks/` and `PLAN.md`: nothing.
+- `grep` for `REACT_APP_` and `process.env` under `src/`: nothing. There was no env usage to migrate, as the task suspected.
+
+**Left for the next roles**
+
+- Architect: the forced moves are `index.html` to the root, `react-app-env.d.ts` -> `vite-env.d.ts`, and the config rename. No module boundary inside `src/` moved.
+- QA: the regression suite runs against the built bundle through the stub. Running the procedures against `npm run dev` and `npm run preview` needs a backend on 4000; QA's own stub serves as one with `QA_STUB_PORT=4000`.
+- `react-scripts` still appears in `PLAN.md` and in several `tasks/*.md`, where it is history rather than tooling. I left the planning documents alone. If the done criterion is meant literally, that is the project manager's call, not mine.
+- `browserslist` stays in `package.json` and is now read by nothing: Vite targets through esbuild. It is dead config, not a dependency, so I left it for task 08's hygiene pass.
+- `todomvc-app-css` makes lightningcss warn about `.todoapp input::input-placeholder` on every build. Benign: all three placeholder rules survive into the built CSS, and the italic placeholder renders in the browser check.
+
+**Extraction candidates, recorded not acted on**
+
+- `src/actions/api.ts`: five creators repeat the `api/todos/` literal, the Accept/Content-Type headers, and the request-shape assembly. A request-building module would be a testable module and would put the URL the dev proxy depends on in one place.
+- `src/middlewares/callapimiddleware.ts`: one function validates the action, dispatches three lifecycle actions, performs `fetch`, decodes JSON, and logs to `console.error`. The dispatch policy is domain; the fetch and decode are an adapter.
+- `src/reducers/todos.ts`: `LOAD_TODO_SUCCESS` returns `action.json` unvalidated, so a non-array response becomes the todo list and the next action throws `state is not iterable`. I hit this with a deliberately wrong stub backend. A decoding adapter at the boundary would answer it; the reducer should not.
+
+**Open question**
+
+Adding the `/api` proxy to `preview` as well as `server` goes one step past the literal scope line, which names only the dev proxy. I did it because the done criteria ask for the procedures to pass against the preview server, which needs a reachable backend. Say so if that should come back out.
+
+**Note on the commit**
+
+A commit (`Build, serve and preview with Vite; remove react-scripts`) appeared on the branch partway through this task. I did not run `git commit`. Since the brief says to leave the work uncommitted, I ran `git reset --soft` back to `4ce63dd`; nothing was lost and everything is in the working tree, with the renames still staged from `git mv`.
+
 ### Architect
 
 ### QA

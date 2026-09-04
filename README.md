@@ -1,39 +1,36 @@
 # Redux TodoMVC Example
 
-This project template was built with [Create React App](https://github.com/facebookincubator/create-react-app), which provides a simple way to start React projects with no build configuration needed.
-
-Projects built with Create-React-App include support for ES6 syntax, as well as several unofficial / not-yet-final forms of Javascript syntax such as Class Properties and JSX. See the list of [language features and polyfills supported by Create-React-App](https://github.com/facebookincubator/create-react-app/blob/master/packages/react-scripts/template/README.md#supported-language-features-and-polyfills) for more information.
+A TodoMVC client written in TypeScript with React and Redux, built and served by [Vite](https://vite.dev/).
 
 ## Backend
 
-Start [Todo Backend Express](https://github.com/wallymathieu/todo-backend-express) with docker compose.
+Start [Todo Backend Express](https://github.com/wallymathieu/todo-backend-express) with docker compose. The dev and preview servers proxy `/api` to `http://localhost:4000`.
 
 ## Available Scripts
 
 In the project directory, you can run:
 
-### `npm start`
+### `npm run dev`
 
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.<br>
-You will also see any lint errors in the console.
+Runs the app in development mode on [http://localhost:3000](http://localhost:3000), with hot module replacement.<br>
+`npm start` is an alias for it.
 
 ### `npm run build`
 
-Builds the app for production to the `build` folder.<br>
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Builds the app for production into the `dist` folder, minified and with hashed filenames.
 
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
+### `npm run preview`
 
-### `npm run eject`
+Serves the contents of `dist` locally, so the production build can be checked before it ships. Run `npm run build` first.
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+### `npm test`
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Runs the unit tests once with [Vitest](https://vitest.dev/).
 
-Instead, it will copy all the configuration files and the transitive dependencies (Webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+### `npm run typecheck`
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+Type-checks the sources under `src/` with the TypeScript compiler. Vite itself does not type-check while building.
+
+### `npm run test:e2e`
+
+Builds the app and runs the end-to-end procedures in `qa/` against it with Playwright.
