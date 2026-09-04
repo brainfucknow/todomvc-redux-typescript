@@ -107,3 +107,118 @@ Test count went 54 -> 55: the old `Footer` "should render filters" checked both 
 No open questions.
 
 ### QA
+**Verified**
+
+- `CI=true npx react-scripts test --watchAll=false` -> 10 suites, 55 tests, 0 failures. The 54 -> 55
+  delta is the Footer split described below, and nothing else.
+- `npx react-scripts build` -> compiles. `build/static/js/main.1875e386.js`, 56.9 kB gzipped: the
+  same chunk hash as the Task 01 baseline, so the shipped bundle is unchanged.
+- `npm run test:e2e` -> 22 passed, matching Task 01. `qa/procedures/` holds 21 procedures plus a
+  README, `qa/tests/` holds 21 spec files carrying 22 cases (`21-http-error-status-ignored` has
+  two). No procedure changed: no observable behavior changed, so there was nothing to convert or
+  re-word.
+- Diff against `2a0194e`: only the eight `*.spec.tsx`, the deleted `src/react-shallow-renderer.d.ts`,
+  `package.json`, `package-lock.json`, and this file. No component or application source differs.
+- `react-shallow-renderer` is absent from `package.json`, from both the `packages` and the legacy
+  `dependencies` maps in `package-lock.json`, from `node_modules`, and from every file under `src/`.
+  The surviving hits are prose in `PLAN.md`, this file and `tasks/07-react-19.md`, as the coder said.
+  `npm ci --dry-run` exits 0 against the trimmed lock, so CI's `npm ci` still resolves.
+
+**Old-vs-new assertion audit**
+
+Read each old suite out of `git show 2a0194e:src/components/<name>.spec.tsx` against its replacement.
+The coder's mapping table holds; every old assertion has a counterpart asserting the same observable
+behavior, with the one dropped assertion below.
+
+I did not take the mapping on trust. Eight mutations to component sources, each aimed at an
+assertion whose *shape* changed in the rewrite, run against the rewritten suites and then reverted:
+
+| Mutation | Result |
+| --- | --- |
+| `App`: drop `<Header />` | killed, `App.spec` |
+| `App`: drop `<MainSection />` | killed, `App.spec` |
+| `Footer`: every `FilterLink` gets `filter={SHOW_ALL}`, titles untouched | killed, `Footer.spec` selected-link test |
+| `Header`: drop the `newTodo` prop | killed, `Header.spec` |
+| `MainSection`: pass `activeCount={todosCount}` to `Footer` | killed, `MainSection.spec` |
+| `TodoList`: render rows in reverse order | killed, `TodoList.spec` |
+| `TodoList`: strip each row's `completed` flag | killed, `TodoList.spec` |
+| `TodoItem`: seed the edit input with the wrong text | killed, `TodoItem.spec` |
+
+The tree is byte-identical after the run; no `.bak` files remain.
+
+Judgment on the two items the coder flagged:
+
+- **Dropped `TodoList` key assertion: accepted.** A React key is not observable in the DOM, so it
+  falls under "only inspected internals". Worth recording that the old assertion was weaker than it
+  looked: the fixture's ids are `0` and `1`, equal to their array indices, so
+  `expect(Number(todo.key)).toBe(filteredTodos[i].id)` would also have passed a `key={index}`
+  regression. Nothing it actually discriminated has been lost, and the order and per-row-data
+  mutations above confirm the replacement covers what it protected. Residual, for the record: no
+  unit test now pins reconciliation identity, whose failure mode is stale edit state when rows
+  reorder. This app never reorders rows and the old suite did not cover that either.
+- **Footer test split: accepted.** The old "should render filters" asserted both the link titles and
+  each child's `filter` prop. The prop's only observable consequence is which link carries
+  `selected`, and that needs a store, so it cannot share the propless render. Splitting is the honest
+  shape. The mutation above shows the new test discriminates on exactly that prop.
+
+Two places where the rewrite asserts slightly more than the original, both inside the same behavior
+and neither adding new coverage of its own: `Header` now checks `addTodo` is called *with* the text
+and drives it through `TodoTextInput` rather than invoking `onSave` by hand, and `TodoItem` now
+checks the row checkbox's `type`. Recorded, not objected to.
+
+One structural loosening, not a defect: `MainSection`'s toggle-all is now found by class anywhere in
+the container rather than positionally as the span's first child. The `completeAllTodos` test still
+pins `section.main > span > label`, so the wrapper is not unasserted.
+
+**Absences confirmed rather than invented**
+
+- No Gherkin, no `.feature` files, no APS wiring anywhere in the repository. The only mentions are
+  forward-looking prose in `tasks/09` through `tasks/13`. This is a Tooling task with no acceptance
+  pipeline to run, so nothing was skipped.
+- No property tests and no property-testing library in the dependency tree.
+- Release checks with no command in this repository yet: there is no `lint` script, no `typecheck`
+  script and no `preview` script. Those arrive in tasks 04, 05 and 06. They were not run because
+  they do not exist, not because they were skipped. `.github/workflows/nodejs.yml` runs `npm ci`,
+  `npm run build` and `npm test` and nothing else; all three pass here.
+
+**CRAP gate and DRY**
+
+- CRAP on the eight changed files: every function is a test body or a setup helper. Highest
+  cyclomatic complexity is 3 (`TodoItem.spec`'s `setup` with its `if (editing)`, and `Footer.spec`'s
+  two `forEach` callbacks). Each runs on every suite execution, so coverage is 1 and CRAP equals
+  complexity. Maximum 3, gate is 10. No `cond`/`case` construct anywhere, so the exception clause
+  does not arise.
+- Mixed-job scan: each spec exercises one component and each helper does one job. Nothing to split.
+  `TodoItem.spec`'s `setup(editing)` takes a boolean the caller already knows, which is a mild flag
+  smell; it is inherited verbatim from the old suite and keeping it makes the old/new comparison
+  legible, so I left it.
+- DRY findings, recorded and deliberately not fixed: the `configureStore` block wiring the root
+  reducer to `callAPIMiddleware` is duplicated across `App.spec`, `Footer.spec` and
+  `MainSection.spec`; `pressReturn` is
+  duplicated across `Header.spec`, `TodoItem.spec` and `TodoTextInput.spec`; the never-settling
+  `fetch` stub is duplicated across `App.spec` and `MainSection.spec`. Removing any of these needs a
+  shared helper module under `src/`, and this task's done criteria say no file under `src/` other
+  than `*.spec.tsx` may differ from the previous commit. A `.spec.tsx` cannot host the helper either,
+  since importing one spec from another would run its suite twice. I judged roughly fifteen lines of
+  test-setup duplication as below the bar for breaking an explicit done criterion. Task 03 rewrites
+  these same imports for Vitest and is the natural place to fold them together.
+
+**Process note**
+
+While this review was in progress the coder's working-tree changes were committed as `464387c`
+("Assert on rendered DOM instead of shallow element trees"). I did not create that commit. Its
+contents are exactly the tree I audited (same file list, same diffstat), so the verification stands;
+all history comparisons above are against `2a0194e`, the commit before it. My own only change is
+this note, left uncommitted as instructed. `**Status:** pending` at the top of this file and the
+task 02 row in `PLAN.md` are untouched: flipping them is the project manager's call, as it was for
+task 01.
+
+**Result**
+
+All verification passes. No fix is owed by any role.
+
+**Open question for the project manager**
+
+Should the test-setup duplication listed above be fixed inside this task by adding a shared helper
+under `src/` (which contradicts the "no file under `src/` other than `*.spec.tsx` differs" done
+criterion), or deferred to task 03? Deferred by default.
