@@ -368,6 +368,79 @@ new E4 covers the README's `Other checks` section (`node scripts/acceptance-muta
 
 None.
 
+#### Fourth pass: QA step E3 de-hardcoded under the second-Coder-pass ruling
+
+Done. One file changed, mine: `qa/toolchain-commands.md`, procedure E. `features/` is unchanged,
+and no count in procedure D moved. Nothing committed.
+
+**E3 is now a set equality read off the tree**
+
+It was: read the `Available Scripts` section, then `npm run`, and expect "exactly the eight scripts
+`package.json` declares, and no others", with all eight named in the step. It is now: list the script
+names the section documents, one per `###` heading; list the script names `npm run` prints; the two
+lists must be the same set. Neither side is written into the procedure, so the check keeps both of
+its teeth - the README neither omits a script nor invents one - while a task that adds, renames or
+removes a command passes E3 by updating both sides rather than by editing E3.
+
+I added one parenthetical about npm's output shape, not about this project's scripts: `npm run`
+prints lifecycle scripts in a block above the rest, so `test` is easy to miss and QA would report a
+documented script as undeclared. That is the same false-failure class the ruling is about.
+
+The fail clause now names the direction the old wording left out. It said only that the README must
+not document commands that no longer exist; a declared script the README never documents was a
+silent pass. Both directions now fail E.
+
+**The neighbouring step with the same brittleness was E1, and I fixed it the same way**
+
+E1 named four directories - `dist/`, `build/`, `bin/`, `node_modules/` - and asked for no untracked
+entries among them. That list was already stale: the Cleaner's coverage run adds `coverage/`, which
+E1 never mentioned, so a `coverage/` directory left untracked-but-unignored would have passed E1.
+Its failure mode is the mirror of E3's - a silent false pass instead of a false failure - but the
+cause is identical, a literal snapshot of the tree frozen into a verification step.
+
+E1 now runs `git status --porcelain --ignored` and asks that every path procedures A-D generated be
+listed as ignored (`!!`) rather than untracked (`??`), with the generated paths read off that same
+listing. It names no directory, so `coverage/` is covered today and whatever a later task generates
+is covered without an edit. The step letter is unchanged, so earlier citations of E1 still resolve.
+
+E2 and E4 do not carry it. E2's three literals - `react-scripts`, `npm start`, `npm run eject` - are
+a negative check on names this task removed for good; they cannot come back, so the list cannot go
+stale. E4 already derives its list from the README's `Other checks` section and asserts only that
+each documented command names a present script file, which is the direction that does not
+false-fail when a task adds a script file.
+
+**What I verified**
+
+Read off the tree, by running what E1, E3 and E4 tell QA to run:
+
+- E3 holds today. `Available Scripts` documents `dev`, `build`, `preview`, `test`, `test:property`,
+  `test:acceptance`, `test:hardening`, `test:mutation`; `npm run` prints `test` as a lifecycle
+  script and the other seven below. Same set, eight each, no extras on either side.
+- E1 holds today. `git status --porcelain --ignored` reports `bin/`, `build/`, `coverage/`, `dist/`
+  and `node_modules/` all as `!!`, and nothing as `??`.
+- E4 holds today. `Other checks` documents `node scripts/acceptance-mutation.ts` and
+  `node scripts/crap.mjs`; both files are in `scripts/`.
+- `git status --short` shows exactly `qa/toolchain-commands.md` modified.
+
+I ran no test tier, no parser and no dry checker: no feature file changed, no procedure-D count
+changed, and rewording a Markdown procedure cannot move any of them. `qa/todo-app-regression.md`
+needed nothing - it names no scripts.
+
+**Left for QA**
+
+- E3 no longer blocks the `test:e2e` script that ruling 2 on my second pass authorises you to add.
+  Add it to `package.json` and give it a `###` entry under `Available Scripts`, and E3 stays green;
+  add it to only one of the two and E3 fails, which is the check working.
+- Do **not** add a `test:e2e` row to `toolchain dependencies 2` yourself - `features/` is mine, and
+  a row for a script that does not exist yet turns the acceptance tier red. Record the script in
+  your handoff note; the row is a Specifier edit in whatever pass follows.
+- Procedure D is unchanged. D1-D10 and their counts read as the Coder's third pass left them.
+
+**Open questions**
+
+None. The ruling on the second Coder pass is discharged.
+
+
 ### Project manager rulings on the Specifier handoff
 
 The Specifier handoff is accepted. Its assumptions and open questions are settled as follows.
@@ -1633,4 +1706,34 @@ columns changes the parsed IR and therefore the step vocabulary the handlers imp
 Markdown verification procedure changes no feature file, no IR, and no code, so there is nothing a
 fresh Coder could reach a different conclusion about, and its immediately preceding pass already
 verified every tier against the current tree.
+
+
+### Project manager rulings on the fourth Specifier pass
+
+Verified independently: only `qa/` and this task file changed; the `Available Scripts` section
+documents exactly the eight scripts `package.json` declares, so E3 holds; `git status --porcelain
+--ignored` lists `bin/ build/ coverage/ dist/ node_modules/` as ignored with nothing untracked, so
+E1 holds. Accepted.
+
+The pass did more than the ruling asked, correctly. It was spawned for E3's false-failure trap and
+found that **E1 carried the mirror defect**: it named a frozen list of generated directories that
+had already gone stale, so a `coverage/` directory left untracked-but-unignored would have passed
+E1 silently. A verification step that cannot fail is worse than one that fails wrongly, because
+nothing surfaces it. Deriving the paths from `git status --porcelain --ignored` fixes the cause both
+steps shared, which is a snapshot of the tree frozen into a procedure. Its reasoning for leaving E2
+and E4 alone is also right: E2's literals are a negative check on names this task removed for good,
+and E4 already asserts only documented-implies-present, the direction that does not false-fail.
+
+Procedure E's fail clause now fails in both directions, which closes the same hole: a declared
+script the README never documents used to be a silent pass.
+
+One item is carried forward rather than fixed here. When QA adds `test:e2e`, it must add the script
+to `package.json` and a heading under `Available Scripts`, and must **not** add a row to
+`toolchain dependencies 2`, because `features/` is the Specifier's. Nothing fails as a result:
+`toolchain dependencies 2` only asserts that the scripts it lists exist, so an unlisted ninth script
+reddens nothing. It is a coverage gap, not a defect. QA records the script in its handoff note and
+the Specifier pass at the start of task 02 adds the row.
+
+**The chain continues from the Cleaner.** The Coder is not re-run, for the reason already recorded:
+this pass changed no feature file, no IR and no code.
 

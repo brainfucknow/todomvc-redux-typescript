@@ -88,10 +88,12 @@ The hardener runs them and reports their results in the task's handoff notes.
 
 | # | Action | Expected observable result |
 | --- | --- | --- |
-| E1 | After running procedures A-D, run `git status --porcelain` | No untracked entries for `dist/`, `build/`, `bin/`, or `node_modules/`. |
+| E1 | After running procedures A-D, run `git status --porcelain --ignored` | Every path that procedures A-D generated is listed as ignored (`!!`), not untracked (`??`). The only non-ignored entries are files you edited by hand. Read the generated paths off this listing; the procedure names none, so output a later task adds is covered without an edit. |
 | E2 | `grep -n react-scripts README.md`, then `grep -n 'npm start' README.md`, then `grep -n 'npm run eject' README.md` | No matches from any of the three. |
-| E3 | Read the `Available Scripts` section of `README.md`, then `npm run` with no arguments | The section documents exactly the eight scripts `package.json` declares, and no others: `dev`, `build`, `preview`, `test`, `test:acceptance`, `test:property`, `test:hardening`, `test:mutation`. |
+| E3 | List the script names the `Available Scripts` section of `README.md` documents, one per `###` heading, then run `npm run` with no arguments and list the script names it prints (npm prints lifecycle scripts in a block of their own, above the rest; count both blocks) | The two lists are the same set. Every script `package.json` declares is documented, and every script the section documents is declared. The procedure fixes neither list: compare whatever the tree holds when you run this, so a task that adds or renames a script passes E3 only by updating both sides. |
 | E4 | Read the `Other checks` section of `README.md`, then `ls scripts` | Every command that section documents names a script file that is present. Do not run them; they are instruments, not done criteria. |
 
-Fail E if build output is untracked-but-not-ignored, or if `README.md` still
-documents commands that no longer exist.
+Fail E if generated output is untracked-but-not-ignored, if `README.md` still
+documents commands that no longer exist, or if the two sets in E3 differ in
+either direction - a documented script that `package.json` does not declare, or
+a declared script the README does not document.
