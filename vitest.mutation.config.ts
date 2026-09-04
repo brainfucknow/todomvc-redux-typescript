@@ -7,6 +7,7 @@ import { defineConfig } from 'vitest/config'
 // mutation results still stand, so the tiers are named once, here.
 export const mutationTierTests = [
   { directory: 'acceptance', suffix: '.spec.ts' },
+  { directory: 'scripts', suffix: '.spec.ts' },
   { directory: 'hardening', suffix: '.hardening.ts' },
   { directory: 'property', suffix: '.property.ts' },
 ]
