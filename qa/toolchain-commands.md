@@ -58,27 +58,31 @@ differs from the dev page.
 
 | # | Action | Expected observable result |
 | --- | --- | --- |
-| D1 | `npm test` | Exits 0. Reports 15 test files and 119 passing tests, 0 failing, 0 skipped. |
-| D2 | Read the D1 file list | It is exactly the 15 spec files present in the tree: the 10 matching `src/**/*.spec.{ts,tsx}`, plus `acceptance/generator.spec.ts`, `acceptance/inspection.spec.ts`, `acceptance/layering.spec.ts`, `acceptance/layout.spec.ts` and `acceptance/runtime.spec.ts`. No file from `build/acceptance/generated/`, `property/`, or `hardening/` appears in it. |
+| D1 | `npm test` | Exits 0. Reports 22 test files and 214 passing tests, 0 failing, 0 skipped. |
+| D2 | Read the D1 file list | It is exactly the 22 spec files present in the tree: the 10 matching `src/**/*.spec.{ts,tsx}`; `acceptance/generator.spec.ts`, `acceptance/inspection.spec.ts`, `acceptance/layout.spec.ts` and `acceptance/runtime.spec.ts`; and `scripts/architecture/layering.spec.ts`, `scripts/architecture/packages.spec.ts` and `scripts/crap/{complexity,coverage,options,report,score,tiers}.spec.ts`. No file from `build/acceptance/generated/`, `property/`, or `hardening/` appears in it. |
 | D2a | `npx vitest run src` | Exits 0. Reports 10 test files and 54 passing tests. This is the pre-existing suite; task 01 converts its Jest globals but adds and removes no case. |
-| D2b | `npx vitest run acceptance` | Exits 0. Reports 5 test files and 65 passing tests. These are unit tests of the acceptance-pipeline code under `acceptance/`, not generated acceptance tests. |
+| D2b | `npx vitest run acceptance` | Exits 0. Reports 4 test files and 49 passing tests. These are unit tests of the acceptance-pipeline code under `acceptance/`, not generated acceptance tests. |
+| D2c | `npx vitest run scripts` | Exits 0. Reports 8 test files and 111 passing tests. These are unit tests of the project's own tooling under `scripts/` - the CRAP gate and the architecture checker - not application code. |
 | D3 | `npm run test:acceptance` | Exits 0. Output shows each `features/*.feature` file being parsed, entry points being generated, and every scenario passing. |
 | D4 | `ls build/acceptance` | Contains the JSON IR and the generated entry points produced by D3. |
 | D5 | Count the scenario executions reported by D3 | 24 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 for `production build 1/2/3`, 3 + 8 for `toolchain dependencies 1/2`, 1 + 1 for `typescript compilation 1/2`. |
 | D6 | `npx tsc --noEmit` | Exits 0 with no diagnostic output. |
 | D7 | `npx tsc --version` | Major version is 5 or higher. |
-| D8 | `npm run test:property` | Exits 0. Reports 6 test files and 60 passing tests, 0 failing, 0 skipped. |
-| D9 | `npm run test:hardening` | Exits 0. Reports 7 test files and 92 passing tests, 0 failing, 0 skipped. |
-| D10 | Compare the D8 and D9 file lists against the D1 list | They do not overlap. No `property/` or `hardening/` file appears in D1, and no `src/` or `acceptance/` spec file appears in D8 or D9. Each tier is a separate command. |
+| D8 | `npm run test:property` | Exits 0. Reports 11 test files and 95 passing tests, 0 failing, 0 skipped. |
+| D9 | `npm run test:hardening` | Exits 0. Reports 12 test files and 128 passing tests, 0 failing, 0 skipped. |
+| D10 | Compare the D8 and D9 file lists against the D1 list | They do not overlap. No `property/` or `hardening/` file appears in D1, and no `src/`, `acceptance/` or `scripts/` spec file appears in D8 or D9. Each tier is a separate command. |
 
 Fail D on any non-zero exit, any failing or skipped test, any missing spec file,
 or any scenario not reported.
 
-D2a and D2b split the D1 total so a change is attributable. A drop below 10
-files or 54 cases in D2a is a regression in the pre-existing suite and fails D
-outright. A change in D2b's counts is only acceptable if the task's handoff
-notes record it, in which case D1, D2 and D2b are updated together. The same
-rule applies to D8 and D9.
+D2a, D2b and D2c split the D1 total so a change is attributable. The three
+buckets are disjoint and exhaustive - 54 + 49 + 111 = 214 accounts for D1
+exactly - so check that sum as part of D2c; a case lost from one bucket cannot
+hide behind a case gained in another. A drop below 10 files or 54 cases in
+D2a is a regression in the pre-existing suite and fails D outright. A change in
+D2b's or D2c's counts is only acceptable if the task's handoff notes record it,
+in which case D1, D2 and the moved step are updated together. The same rule
+applies to D8 and D9.
 
 `npm run test:mutation` and `node scripts/acceptance-mutation.ts` are quality
 instruments, not done criteria, and are deliberately not part of this procedure.

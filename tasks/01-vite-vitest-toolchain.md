@@ -441,6 +441,123 @@ needed nothing - it names no scripts.
 None. The ruling on the second Coder pass is discharged.
 
 
+
+#### Fifth pass: the single reconciliation of procedure D against the tree, before QA
+
+Done. One file changed, mine: `qa/toolchain-commands.md`, procedure D. `features/` is unchanged
+and `qa/todo-app-regression.md` needed nothing. Nothing committed.
+
+**Every number below was read off a command I ran, not off a handoff note.** Three roles have moved
+test counts since the last reconciliation and each recorded the move; I used those records only to
+know where to look.
+
+| Step | As the last reconciliation left it | Now |
+| --- | --- | --- |
+| D1 `npm test` | 15 files / 119 | **22 files / 214** |
+| D2 file list | 10 `src` + 5 `acceptance` | 10 `src` + **4** `acceptance` + **8** `scripts` |
+| D2a `npx vitest run src` | 10 / 54 | **10 / 54 - the floor, intact through every role in this task** |
+| D2b `npx vitest run acceptance` | 5 / 65 | **4 / 49** |
+| D2c `npx vitest run scripts` | - | **new: 8 / 111** |
+| D5 scenario executions | 24 | **24, unchanged** |
+| D8 `npm run test:property` | 6 / 60 | **11 / 95** |
+| D9 `npm run test:hardening` | 7 / 92 | **12 / 128** |
+| D10 tier separation | src, acceptance | now also names `scripts/` |
+
+Step letters D1-D10 are untouched, so every earlier citation still resolves. D2c is appended
+between D2b and D3 rather than renumbered in, the same way D8-D10 were appended.
+
+**D2c exists because the ruling on the third Cleaner pass asked for it, and because the split has to
+stay exhaustive.** 54 + 49 + 111 = 214 accounts for D1 exactly, with no overlap. Without a `scripts`
+bucket the 111 tests of the project's own tooling would sit inside D1's total unattributed, and a
+case lost from `src` could hide behind one gained in `scripts` - the precise failure D2a and D2b were
+introduced to prevent. The paragraph after D's fail clause now states the arithmetic and tells QA to
+check the sum as part of D2c, so exhaustiveness is a step QA performs rather than a property the
+procedure asserts about itself.
+
+**D2b's drop from 65 to 49 is a move, not a loss,** and D2's file list is what records it:
+`acceptance/layering.spec.ts` left `acceptance/` for `scripts/architecture/`, where it is now
+`layering.spec.ts` plus `packages.spec.ts`. D2 names the four `acceptance/` files and the eight
+`scripts/` files explicitly for that reason - a file that moves between buckets has to be visible as
+a move, and only the names make it so. The ten `src` specs stay described by their glob, as they
+always were; naming them would restate what D2a already guards.
+
+**What I did not de-hardcode, deliberately.** My previous pass replaced the frozen lists in E1 and E3
+with checks derived from the tree, and the PM ruling endorsed that. Procedure D is the opposite case
+and the literal counts stay. A count that derives itself from the tree it is checking cannot fail:
+D's whole job is to hold the tree to a number a handoff note had to justify, and D's fail clause
+already carries the update protocol. The distinction is that E1 and E3 assert a *relation* between
+two things in the tree, which stays true as the tree grows, whereas D asserts a *fact about a
+baseline*, which is only worth asserting if it is written down.
+
+**What I verified**
+
+Each command run directly, in the tree as it stands:
+
+| Command | Result | Step |
+| --- | --- | --- |
+| `npm test` | 22 files / 214 tests, 0 failing, 0 skipped | D1 |
+| `npx vitest run src` | 10 files / 54 | D2a |
+| `npx vitest run acceptance` | 4 files / 49 | D2b |
+| `npx vitest run scripts` | 8 files / 111 | D2c |
+| `npm run test:acceptance` | 5 features parse, 5 entry points generate, 24 scenario executions pass | D3, D5 |
+| `ls build/acceptance` | `ir/` (5 JSON) and `generated/` (5 entry points + `metadata/`) | D4 |
+| `npx tsc --noEmit` / `--version` | exit 0, no output / `Version 5.9.3` | D6, D7 |
+| `npm run test:property` | 11 files / 95 | D8 |
+| `npm run test:hardening` | 12 files / 128 | D9 |
+
+- The 22 spec files D2 names are the 22 the tree holds, listed from `find` and from a verbose
+  `vitest run`; the two agree and neither holds a file D2 omits.
+- D5's per-feature breakdown was re-derived from a verbose run of the generated tests, not carried
+  forward: 4 + 2 + (3+1+1) + (3+8) + (1+1) = 24, matching the step row by row.
+- D10 holds in both directions: no `property/` or `hardening/` file appears in the `npm test` list,
+  and no `src/`, `acceptance/` or `scripts/` spec appears in the property or hardening runs. The
+  tiers are `*.property.ts` and `*.hardening.ts` under their own directories, so the file sets
+  cannot intersect by construction.
+- A3-A5 and C1-C3 still read true (`react-scripts` count 0 in `package.json`, `package-lock.json`
+  and `src`; `npm ls react-scripts` empty; `npm run build` exits 0 and emits `index.html` plus
+  `index-BPxiUVWS.js` and `index-xAQXB6NR.css`; `grep -c 'src/index.tsx' dist/index.html` is 0).
+- E1-E4 still read true. `git status --porcelain --ignored` lists `bin/ build/ coverage/ dist/
+  node_modules/` as `!!` and nothing as `??`; `README.md`'s `Available Scripts` documents eight
+  scripts under `###` headings and `package.json` declares the same eight, so E3's set equality
+  holds; `Other checks` names `scripts/acceptance-mutation.ts` and `scripts/crap.mjs`, both present.
+- `git status --short` shows exactly `qa/toolchain-commands.md` modified.
+
+I ran no verification or quality tooling beyond the test tiers above and `tsc`. No mutation of any
+kind, no parser or dry-checker run - no feature file changed, so nothing they check moved.
+
+**`features/` needed nothing, checked rather than assumed.** `toolchain dependencies 2` lists the
+eight scripts `package.json` declares, and no role since my third pass added or renamed one. The
+`test:e2e` row still waits on QA actually creating the script, per the ruling on my fourth pass; it
+is a task-02 Specifier edit. `toolchain dependencies 1` and the other four features assert nothing
+that any of the intervening passes moved.
+
+**The Hardener's `28` -> `24` correction needs no edit.** I grepped `features/` and `qa/` for the
+number and it appears nowhere; the only `28` in `qa/` is the `128` of D9's new count. The 28 lived in
+my own third-pass handoff note as an estimate. Recording it here so the measured figure is what a
+later reader finds: the acceptance-mutation tier presents **24** candidates, and the Hardener's
+forced full run killed all of them.
+
+**Left for QA**
+
+- Procedure D now has eleven steps. D2c is the only new letter; D1, D2, D2b, D8 and D9 carry new
+  numbers, and D2a, D3-D7 and D10 read as they did.
+- When you add `@playwright/test` and the `test:e2e` script under ruling 2 on my second pass, E3
+  stays green only if you add both the `package.json` entry and an `Available Scripts` heading. Do
+  not add a `toolchain dependencies 2` row - `features/` is the Specifier's, and a row for a script
+  that does not yet exist reddens the acceptance tier. Record the script in your note.
+- Adding `test:e2e` moves nothing in procedure D. It is a new command, not a new unit spec, so
+  D1/D2a/D2b/D2c and their sum are unaffected. If your Playwright specs land somewhere the unit
+  include matches, that *would* move D1, and the fix is a handoff note plus a Specifier edit, not a
+  quiet renumber.
+- `qa/todo-app-regression.md` is unchanged and still needs that driver. Its one dependency on the
+  tree - `src/index.tsx` wrapping the app in `React.StrictMode`, which is why F1 accepts one or two
+  initial `GET api/todos/` calls - is still true; `src/` has not been touched since the Coder.
+
+**Open questions**
+
+None. The deferred reconciliation is discharged.
+
+
 ### Project manager rulings on the Specifier handoff
 
 The Specifier handoff is accepted. Its assumptions and open questions are settled as follows.
