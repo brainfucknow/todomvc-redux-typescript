@@ -1,0 +1,17 @@
+# Build output and tool artifacts.
+dist/
+coverage/
+qa/.artifacts/
+
+# npm owns this file's formatting.
+package-lock.json
+
+# The E2E suite belongs to QA: procedures, specs, and the stub backend change
+# together and only QA touches them. Formatting them is QA's call to make, not
+# this task's. `npm run lint` still covers them - it reads without rewriting.
+qa/
+
+# Prose documents owned by other roles (the plan, the task files, the QA
+# procedures, the READMEs). Prettier reflows Markdown tables and lists, which
+# would rewrite documents this task has no business editing.
+*.md

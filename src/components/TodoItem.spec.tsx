@@ -2,24 +2,23 @@ import { render, fireEvent } from '@testing-library/react'
 import TodoItem from './TodoItem'
 import { pressReturn } from '../test-support/keyboard'
 
-const setup = ( editing = false ) => {
+const setup = (editing = false) => {
   const props = {
     todo: {
       id: 0,
       text: 'Use Redux',
-      completed: false
+      completed: false,
     },
     editTodo: vi.fn(),
     deleteTodo: vi.fn(),
-    completeTodo: vi.fn()
+    completeTodo: vi.fn(),
   }
 
-  const { container } = render(
-    <TodoItem {...props} />
-  )
+  const { container } = render(<TodoItem {...props} />)
 
   const item = () => container.querySelector('li') as HTMLElement
-  const editInput = () => container.querySelector('input.edit') as HTMLInputElement
+  const editInput = () =>
+    container.querySelector('input.edit') as HTMLInputElement
 
   if (editing) {
     fireEvent.doubleClick(container.querySelector('label') as HTMLElement)
@@ -29,7 +28,7 @@ const setup = ( editing = false ) => {
     props: props,
     container: container,
     item: item,
-    editInput: editInput
+    editInput: editInput,
   }
 }
 
@@ -60,13 +59,17 @@ describe('components', () => {
 
     it('input onChange should call completeTodo', () => {
       const { container, props } = setup()
-      fireEvent.click(container.querySelector('input.toggle') as HTMLInputElement)
-      expect(props.completeTodo).toBeCalledWith(0,true)
+      fireEvent.click(
+        container.querySelector('input.toggle') as HTMLInputElement,
+      )
+      expect(props.completeTodo).toBeCalledWith(0, true)
     })
 
     it('button onClick should call deleteTodo', () => {
       const { container, props } = setup()
-      fireEvent.click(container.querySelector('button.destroy') as HTMLButtonElement)
+      fireEvent.click(
+        container.querySelector('button.destroy') as HTMLButtonElement,
+      )
       expect(props.deleteTodo).toBeCalledWith(0)
     })
 

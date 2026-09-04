@@ -7,14 +7,14 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    proxy: apiProxy
+    proxy: apiProxy,
   },
   preview: {
-    proxy: apiProxy
+    proxy: apiProxy,
   },
   test: {
     environment: 'jsdom',
     globals: true,
-    include: ['src/**/*.spec.{ts,tsx}']
-  }
+    include: ['src/**/*.spec.{ts,tsx}'],
+  },
 })

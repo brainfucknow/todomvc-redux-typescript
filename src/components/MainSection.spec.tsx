@@ -5,24 +5,27 @@ import { stubPendingFetch } from '../test-support/fetch'
 
 beforeEach(stubPendingFetch)
 
-const setup = (propOverrides?:Partial<MainSectionProps>) => {
-  const props = Object.assign({
-    todosCount: 2,
-    completedCount: 1,
-    actions: {
-      editTodo: vi.fn(),
-      deleteTodo: vi.fn(),
-      completeTodo: vi.fn(),
-      completeAllTodos: vi.fn(),
-      clearCompleted: vi.fn()
-    }
-  }, propOverrides)
+const setup = (propOverrides?: Partial<MainSectionProps>) => {
+  const props = Object.assign(
+    {
+      todosCount: 2,
+      completedCount: 1,
+      actions: {
+        editTodo: vi.fn(),
+        deleteTodo: vi.fn(),
+        completeTodo: vi.fn(),
+        completeAllTodos: vi.fn(),
+        clearCompleted: vi.fn(),
+      },
+    },
+    propOverrides,
+  )
 
   const { container } = renderWithStore(<MainSection {...props} />)
 
   return {
     props: props,
-    container: container
+    container: container,
   }
 }
 
@@ -38,7 +41,9 @@ describe('components', () => {
     describe('toggle all input', () => {
       it('should render', () => {
         const { container } = setup()
-        const toggle = container.querySelector('input.toggle-all') as HTMLInputElement
+        const toggle = container.querySelector(
+          'input.toggle-all',
+        ) as HTMLInputElement
         expect(toggle).not.toBeNull()
         expect(toggle.type).toBe('checkbox')
         expect(toggle.checked).toBe(false)
@@ -46,15 +51,19 @@ describe('components', () => {
 
       it('should be checked if all todos completed', () => {
         const { container } = setup({
-          completedCount: 2
+          completedCount: 2,
         })
-        const toggle = container.querySelector('input.toggle-all') as HTMLInputElement
+        const toggle = container.querySelector(
+          'input.toggle-all',
+        ) as HTMLInputElement
         expect(toggle.checked).toBe(true)
       })
 
       it('should call completeAllTodos on change', () => {
         const { container, props } = setup()
-        const label = container.querySelector('section.main > span > label') as HTMLElement
+        const label = container.querySelector(
+          'section.main > span > label',
+        ) as HTMLElement
         fireEvent.click(label)
         expect(props.actions.completeAllTodos).toBeCalled()
       })
@@ -72,7 +81,11 @@ describe('components', () => {
 
       it('onClearCompleted should call clearCompleted', () => {
         const { container, props } = setup()
-        fireEvent.click(container.querySelector('button.clear-completed') as HTMLButtonElement)
+        fireEvent.click(
+          container.querySelector(
+            'button.clear-completed',
+          ) as HTMLButtonElement,
+        )
         expect(props.actions.clearCompleted).toBeCalled()
       })
     })
@@ -88,7 +101,7 @@ describe('components', () => {
       it('should not render if there are no todos', () => {
         const { container } = setup({
           todosCount: 0,
-          completedCount: 0
+          completedCount: 0,
         })
         const section = container.querySelector('section.main') as HTMLElement
         expect(section.querySelector('input.toggle-all')).toBeNull()

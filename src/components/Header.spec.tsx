@@ -4,7 +4,7 @@ import { pressReturn } from '../test-support/keyboard'
 
 const setup = () => {
   const props = {
-    addTodo: vi.fn()
+    addTodo: vi.fn(),
   }
 
   const { container } = render(<Header {...props} />)
@@ -12,7 +12,7 @@ const setup = () => {
   return {
     props: props,
     container: container,
-    input: container.querySelector('input') as HTMLInputElement
+    input: container.querySelector('input') as HTMLInputElement,
   }
 }
 

@@ -1,7 +1,7 @@
-import TodoFilters from "../constants/TodoFilters";
-import { Todo } from "../models/Todo";
+import TodoFilters from '../constants/TodoFilters'
+import { Todo } from '../models/Todo'
 
-export interface RootState{
-  todos: Todo[];
-  visibilityFilter: TodoFilters;
+export interface RootState {
+  todos: Todo[]
+  visibilityFilter: TodoFilters
 }

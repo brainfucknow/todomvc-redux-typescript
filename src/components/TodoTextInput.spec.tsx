@@ -2,21 +2,24 @@ import { render, fireEvent } from '@testing-library/react'
 import TodoTextInput, { TodoTextInputProps } from './TodoTextInput'
 import { pressReturn } from '../test-support/keyboard'
 
-const setup = (propOverrides?:Partial<TodoTextInputProps>) => {
-  const props:TodoTextInputProps = Object.assign({
-    onSave: vi.fn(),
-    text: 'Use Redux',
-    placeholder: 'What needs to be done?',
-    editing: false,
-    newTodo: false
-  }, propOverrides)
+const setup = (propOverrides?: Partial<TodoTextInputProps>) => {
+  const props: TodoTextInputProps = Object.assign(
+    {
+      onSave: vi.fn(),
+      text: 'Use Redux',
+      placeholder: 'What needs to be done?',
+      editing: false,
+      newTodo: false,
+    },
+    propOverrides,
+  )
 
   const { container } = render(<TodoTextInput {...props} />)
   const input = container.querySelector('input') as HTMLInputElement
 
   return {
     props: props,
-    input: input
+    input: input,
   }
 }
 

@@ -2,17 +2,18 @@ import { render } from '@testing-library/react'
 import TodoList, { TodoListProps } from './TodoList'
 
 const setup = () => {
-  const props:TodoListProps = {
+  const props: TodoListProps = {
     filteredTodos: [
       {
         text: 'Use Redux',
         completed: false,
-        id: 0
-      }, {
+        id: 0,
+      },
+      {
         text: 'Run the tests',
         completed: true,
-        id: 1
-      }
+        id: 1,
+      },
     ],
     actions: {
       addTodo: vi.fn(),
@@ -22,15 +23,15 @@ const setup = () => {
       completeAllTodos: vi.fn(),
       clearCompleted: vi.fn(),
       setVisibilityFilter: vi.fn(),
-      loadTodos: vi.fn()
-    }
+      loadTodos: vi.fn(),
+    },
   }
 
   const { container } = render(<TodoList {...props} />)
 
   return {
     props: props,
-    container: container
+    container: container,
   }
 }
 
@@ -47,7 +48,7 @@ describe('components', () => {
       const { container, props } = setup()
       const items = container.querySelectorAll('ul.todo-list > li')
       expect(items.length).toBe(2)
-      items.forEach((item:Element, i:number) => {
+      items.forEach((item: Element, i: number) => {
         const todo = props.filteredTodos[i]
         const label = item.querySelector('label') as HTMLElement
         expect(label.textContent).toBe(todo.text)

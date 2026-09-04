@@ -1,13 +1,13 @@
 import { combineReducers } from 'redux'
 import todos from './todos'
 import visibilityFilter from './visibilityFilter'
-import {errorMessage, executing} from './apis'
+import { errorMessage, executing } from './apis'
 
 const rootReducer = combineReducers({
   todos,
   visibilityFilter,
   errorMessage,
-  exec:executing 
+  exec: executing,
 })
 
 export default rootReducer

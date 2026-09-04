@@ -9,4 +9,3 @@ export const completeTodo = api.completeTodo
 export const completeAllTodos = local.completeAllTodos
 export const clearCompleted = local.clearCompleted
 export const setVisibilityFilter = local.setVisibilityFilter
-

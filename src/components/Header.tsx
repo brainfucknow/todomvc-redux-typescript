@@ -1,7 +1,9 @@
 import React from 'react'
 import TodoTextInput from './TodoTextInput'
 
-const Header:React.FunctionComponent<HeaderProps> = ({ addTodo }:HeaderProps) => (
+const Header: React.FunctionComponent<HeaderProps> = ({
+  addTodo,
+}: HeaderProps) => (
   <header className="header">
     <h1>todos</h1>
     <TodoTextInput
@@ -16,7 +18,7 @@ const Header:React.FunctionComponent<HeaderProps> = ({ addTodo }:HeaderProps) =>
   </header>
 )
 
-export interface HeaderProps{
-  addTodo(text:string):void
+export interface HeaderProps {
+  addTodo(text: string): void
 }
 export default Header

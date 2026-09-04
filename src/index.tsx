@@ -9,12 +9,13 @@ import { callAPIMiddleware } from './middlewares/callapimiddleware'
 
 const store = configureStore({
   reducer,
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(callAPIMiddleware),
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(callAPIMiddleware),
 })
 
 const container = document.getElementById('root')
 if (!container) {
-  throw new Error('Root element not found');
+  throw new Error('Root element not found')
 }
 const root = createRoot(container)
 root.render(
@@ -22,5 +23,5 @@ root.render(
     <Provider store={store}>
       <App />
     </Provider>
-  </React.StrictMode>
+  </React.StrictMode>,
 )

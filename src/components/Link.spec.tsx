@@ -1,12 +1,15 @@
 import { render, fireEvent } from '@testing-library/react'
 import Link, { LinkProps } from './Link'
 
-const setup = (propOverrides?:Partial<LinkProps>) => {
-  const props:LinkProps= Object.assign({
-    active: false,
-    children: 'All',
-    setFilter: vi.fn()
-  }, propOverrides)
+const setup = (propOverrides?: Partial<LinkProps>) => {
+  const props: LinkProps = Object.assign(
+    {
+      active: false,
+      children: 'All',
+      setFilter: vi.fn(),
+    },
+    propOverrides,
+  )
 
   const { container } = render(<Link {...props} />)
   const link = container.querySelector('a') as HTMLAnchorElement

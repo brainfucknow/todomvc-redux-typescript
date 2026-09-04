@@ -8,15 +8,11 @@ import { callAPIMiddleware } from '../middlewares/callapimiddleware'
 export const createTestStore = () =>
   configureStore({
     reducer,
-    middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(callAPIMiddleware)
+    middleware: (getDefaultMiddleware) =>
+      getDefaultMiddleware().concat(callAPIMiddleware),
   })
 
 export const renderWithStore = (
   ui: React.ReactElement,
-  store: ReturnType<typeof createTestStore> = createTestStore()
-) =>
-  render(
-    <Provider store={store}>
-      {ui}
-    </Provider>
-  )
+  store: ReturnType<typeof createTestStore> = createTestStore(),
+) => render(<Provider store={store}>{ui}</Provider>)

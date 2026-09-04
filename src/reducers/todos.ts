@@ -8,38 +8,34 @@ import {
   LOAD_TODO_SUCCESS,
   POST_TODO_SUCCESS,
   DELETE_TODO_SUCCESS,
-  PATCH_TODO_SUCCESS
-} from "../constants/ActionTypes";
-import { ActionMessage } from "../constants/ActionMessage";
-import { Todo } from "../models/Todo";
+  PATCH_TODO_SUCCESS,
+} from '../constants/ActionTypes'
+import { ActionMessage } from '../constants/ActionMessage'
+import { Todo } from '../models/Todo'
 
 const initialState: Todo[] = [
   {
-    text: "Use Redux",
+    text: 'Use Redux',
     completed: false,
-    id: 0
-  }
-];
+    id: 0,
+  },
+]
 export default function todoApiResults(
   state = initialState,
-  action: ActionMessage
+  action: ActionMessage,
 ) {
   switch (action?.type) {
     case LOAD_TODO_SUCCESS:
-      return action.json;
+      return action.json
     case POST_TODO_SUCCESS:
-      return [...state, action.json];
+      return [...state, action.json]
     case DELETE_TODO_SUCCESS:
-      return state.filter(t => t.id !== action.id);
+      return state.filter((t) => t.id !== action.id)
     case PATCH_TODO_SUCCESS:
-      return state.map(todo =>
-        todo.id === action.id
-          ? action.json
-          : todo
-      );
+      return state.map((todo) => (todo.id === action.id ? action.json : todo))
 
     default:
-      return todos(state, action);
+      return todos(state, action)
   }
 }
 
@@ -51,34 +47,35 @@ export function todos(state = initialState, action: ActionMessage) {
         {
           id: state.reduce((maxId, todo) => Math.max(todo.id, maxId), -1) + 1,
           completed: false,
-          text: action.text
-        }
-      ];
+          text: action.text,
+        },
+      ]
 
     case DELETE_TODO:
-      return state.filter(todo => todo.id !== action.id);
+      return state.filter((todo) => todo.id !== action.id)
 
     case EDIT_TODO:
-      return state.map(todo =>
-        todo.id === action.id ? { ...todo, text: action.text } : todo
-      );
+      return state.map((todo) =>
+        todo.id === action.id ? { ...todo, text: action.text } : todo,
+      )
 
     case COMPLETE_TODO:
-      return state.map(todo =>
-        todo.id === action.id ? { ...todo, completed: action.completed } : todo
-      );
+      return state.map((todo) =>
+        todo.id === action.id ? { ...todo, completed: action.completed } : todo,
+      )
 
-    case COMPLETE_ALL_TODOS:
-      const areAllMarked = state.every(todo => todo.completed);
-      return state.map(todo => ({
+    case COMPLETE_ALL_TODOS: {
+      const areAllMarked = state.every((todo) => todo.completed)
+      return state.map((todo) => ({
         ...todo,
-        completed: !areAllMarked
-      }));
+        completed: !areAllMarked,
+      }))
+    }
 
     case CLEAR_COMPLETED:
-      return state.filter(todo => todo.completed === false);
+      return state.filter((todo) => todo.completed === false)
 
     default:
-      return state;
+      return state
   }
 }

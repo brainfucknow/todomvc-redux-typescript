@@ -15,7 +15,9 @@ describe('components', () => {
       const container = setup()
       const header = container.querySelector('header.header') as HTMLElement
       expect(header).not.toBeNull()
-      expect((header.querySelector('h1') as HTMLElement).textContent).toBe('todos')
+      expect((header.querySelector('h1') as HTMLElement).textContent).toBe(
+        'todos',
+      )
       expect(header.querySelector('input.new-todo')).not.toBeNull()
     })
   })
