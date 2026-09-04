@@ -38,9 +38,16 @@ const ROOT = resolve('/repo')
 const APP = resolve(ROOT, 'tsconfig.json')
 const QA = resolve(ROOT, 'qa/tsconfig.json')
 
+/** @typedef {import('./typecheck-gate.mjs').CompilerRun} CompilerRun */
+
+/** @param {CompilerRun} result */
 const compileTo = (result) => () => result
 const clean = { status: 0, stdout: '', stderr: '' }
 
+/**
+ * @param {(project: string) => CompilerRun} runCompiler
+ * @param {string[]} [projects]
+ */
 const runGate = (runCompiler, projects = [APP]) =>
   typecheck({ root: ROOT, projects, runCompiler })
 
@@ -189,6 +196,7 @@ describe('the compiler the gate resolves', () => {
  * decides what the output looks like.
  */
 describe('driving the real compiler over a throwaway project', () => {
+  /** @type {string[]} */
   const fixtures = []
 
   afterAll(() => {
@@ -197,7 +205,11 @@ describe('driving the real compiler over a throwaway project', () => {
     }
   })
 
-  /** A project one directory below its root, as qa/ is below this repository. */
+  /**
+   * A project one directory below its root, as qa/ is below this repository.
+   *
+   * @param {string} source
+   */
   function fixtureProject(source) {
     const root = realpathSync(mkdtempSync(resolve(tmpdir(), 'typecheck-gate-')))
     fixtures.push(root)
@@ -218,6 +230,7 @@ describe('driving the real compiler over a throwaway project', () => {
     return { root, project: resolve(root, 'qa/tsconfig.json') }
   }
 
+  /** @param {string} source */
   function gateOver(source) {
     const { root, project } = fixtureProject(source)
     const tsc = resolveCompiler(import.meta.url)
@@ -255,8 +268,13 @@ describe('driving the real compiler over a throwaway project', () => {
  * real projects, from two working directories. CI runs it from the repository
  * root today; a `working-directory:` key would move it, and false green 3 was
  * exactly that move going unnoticed.
+ *
+ * The expected line names all three projects, so dropping one - this file's own
+ * tsconfig.tools.json included - turns this test red rather than passing
+ * quietly with less checked.
  */
 describe('the gate as a command', () => {
+  /** @param {string} cwd */
   const run = (cwd) =>
     spawnSync(process.execPath, [resolve(HERE, 'typecheck.mjs')], {
       cwd,
@@ -273,7 +291,7 @@ describe('the gate as a command', () => {
       expect(fromRoot.stderr).toBe('')
       expect(fromRoot.status).toBe(0)
       expect(fromRoot.stdout).toBe(
-        '0 error(s) in tsconfig.json, qa/tsconfig.json\n',
+        '0 error(s) in tsconfig.json, qa/tsconfig.json, tsconfig.tools.json\n',
       )
       expect(fromSubdirectory.status).toBe(fromRoot.status)
       expect(fromSubdirectory.stdout).toBe(fromRoot.stdout)

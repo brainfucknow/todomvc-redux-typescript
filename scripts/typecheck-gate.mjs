@@ -34,7 +34,29 @@ import { dirname, relative, resolve } from 'node:path'
  * process.
  */
 
+/**
+ * What this gate reads back from a compiler run. `spawnSync` returns more than
+ * this and a test's stand-in compiler supplies less, so every field is
+ * optional: the gate exists precisely to survive a compiler that produced none
+ * of them.
+ *
+ * @typedef {object} CompilerRun
+ * @property {number | null} [status]
+ * @property {string} [stdout]
+ * @property {string} [stderr]
+ * @property {Error} [error]
+ * @property {NodeJS.Signals | null} [signal]
+ */
+
+/**
+ * One tsc diagnostic: its first line, rooted at the repository, followed by
+ * however many elaboration lines tsc printed under it.
+ *
+ * @typedef {{ lines: string[] }} Diagnostic
+ */
+
 export class GateFailure extends Error {
+  /** @param {string} message */
   constructor(message) {
     super(message)
     this.name = 'GateFailure'
@@ -45,18 +67,27 @@ const LOCATED_DIAGNOSTIC = /^(\S.*?)\((\d+),(\d+)\): (?:error|warning) TS\d+: /
 const PROJECT_DIAGNOSTIC = /^(?:error|warning) TS\d+: /
 const MESSAGE_CONTINUATION = /^\s+\S/
 
+/**
+ * @param {string} message
+ * @returns {never}
+ */
 function fail(message) {
   throw new GateFailure(message)
 }
 
-/** The compiler this project installed, never whatever a PATH lookup finds. */
+/**
+ * The compiler this project installed, never whatever a PATH lookup finds.
+ *
+ * @param {string} fromUrl
+ * @returns {string}
+ */
 export function resolveCompiler(fromUrl) {
   let manifestPath
   try {
     manifestPath = createRequire(fromUrl).resolve('typescript/package.json')
   } catch (cause) {
     return fail(
-      `could not resolve typescript from this project: ${cause.message}`,
+      `could not resolve typescript from this project: ${/** @type {Error} */ (cause).message}`,
     )
   }
   const relativeBin = JSON.parse(readFileSync(manifestPath, 'utf8')).bin?.tsc
@@ -68,7 +99,13 @@ export function resolveCompiler(fromUrl) {
   return resolve(dirname(manifestPath), relativeBin)
 }
 
-/** The one adapter: everything else in this file decides, this part spawns. */
+/**
+ * The one adapter: everything else in this file decides, this part spawns.
+ *
+ * @param {string} tsc
+ * @param {string} project
+ * @returns {import('node:child_process').SpawnSyncReturns<string>}
+ */
 export function spawnCompiler(tsc, project) {
   const args = [tsc, '--project', project, '--noEmit', '--pretty', 'false']
   return spawnSync(process.execPath, args, {
@@ -77,6 +114,10 @@ export function spawnCompiler(tsc, project) {
   })
 }
 
+/**
+ * @param {string} project
+ * @param {CompilerRun} run
+ */
 function readOutcome(project, run) {
   if (run.error) fail(`could not run tsc on ${project}: ${run.error.message}`)
   if (run.signal) fail(`tsc on ${project} was killed by ${run.signal}`)
@@ -88,12 +129,27 @@ function readOutcome(project, run) {
   }
 }
 
-/** tsc reports paths relative to its own working directory, which is the project's. */
+/**
+ * tsc reports paths relative to its own working directory, which is the
+ * project's.
+ *
+ * @param {string} root
+ * @param {string} project
+ * @param {string} file
+ * @returns {string}
+ */
 function reportedAt(root, project, file) {
   return relative(root, resolve(dirname(project), file))
 }
 
+/**
+ * @param {string} root
+ * @param {string} project
+ * @param {string} stdout
+ * @returns {Diagnostic[]}
+ */
 function readReport(root, project, stdout) {
+  /** @type {Diagnostic[]} */
   const diagnostics = []
   for (const line of stdout.split('\n')) {
     if (line.trim() === '') continue
@@ -122,6 +178,12 @@ function readReport(root, project, stdout) {
   return diagnostics
 }
 
+/**
+ * @param {string} root
+ * @param {string} project
+ * @param {CompilerRun} run
+ * @returns {Diagnostic[]}
+ */
 function check(root, project, run) {
   readOutcome(project, run)
   const diagnostics = readReport(root, project, run.stdout ?? '')
@@ -137,6 +199,12 @@ function check(root, project, run) {
  * Runs every project through `runCompiler` and returns what a caller should
  * print and exit with. Raises a GateFailure instead of returning whenever the
  * compiler's behavior leaves the result unknown.
+ *
+ * @param {object} plan
+ * @param {string} plan.root
+ * @param {string[]} plan.projects
+ * @param {(project: string) => CompilerRun} plan.runCompiler
+ * @returns {{ errorCount: number, output: string }}
  */
 export function typecheck({ root, projects, runCompiler }) {
   const errors = projects.flatMap((project) =>

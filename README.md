@@ -10,7 +10,7 @@ A TodoMVC client written in TypeScript with React and Redux, built and served by
 | UI | React 19 with `createRoot` and `StrictMode` |
 | State | Redux 5 with `@reduxjs/toolkit`'s `configureStore`; `connect()` containers |
 | Data | `fetch` through a middleware, against `api/todos/` |
-| Types | TypeScript 5.9, `strict`, two projects: `tsconfig.json` for the app and `qa/tsconfig.json` for the E2E specs |
+| Types | TypeScript 5.9, `strict`, three projects: `tsconfig.json` for the app, `qa/tsconfig.json` for the E2E specs, `tsconfig.tools.json` for the config files and scripts |
 | Unit tests | Vitest, jsdom, `@testing-library/react` |
 | End-to-end tests | Playwright against a stub backend in `qa/` |
 | Lint and format | ESLint 9 flat config (`eslint.config.js`) and Prettier (`prettier.config.js`) |
@@ -63,7 +63,11 @@ E2E suite under `qa/` and the Markdown documents are excluded; see
 
 ### `npm run typecheck`
 
-Type-checks both TypeScript projects with the compiler: the application sources under `src/` and the end-to-end specs under `qa/`. A diagnostic in either one fails the check. Vite itself does not type-check while building.
+Type-checks all three TypeScript projects with the compiler: the application sources under `src/`, the end-to-end specs under `qa/`, and the repository's own tooling — `vite.config.mts`, the two `*.config.js` files, and `scripts/*.mjs`, which are JavaScript type-checked through their JSDoc. A diagnostic in any of them fails the check. Vite itself does not type-check while building.
+
+The three are separate projects rather than one because their environments
+disagree: only the tooling gets `"types": ["node"]`, so Node's globals never
+reach the app's compilation.
 
 The gate is `scripts/typecheck.mjs`, and `npm run test:scripts` is what keeps it
 honest: it has reported success without checking anything three times in this

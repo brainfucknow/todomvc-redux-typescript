@@ -26,6 +26,13 @@ const globals = require('globals')
 const tseslint = require('typescript-eslint')
 const react = require('eslint-plugin-react')
 const reactHooks = require('eslint-plugin-react-hooks')
+/**
+ * eslint-plugin-jsx-a11y 6.10.2 ships no type declarations, so this is the one
+ * require in this file that the tools type project cannot check. The
+ * suppression is deliberately the expecting kind: the day the plugin ships
+ * declarations, tsc reports this comment as unused and it goes away.
+ */
+// @ts-expect-error - untyped package
 const jsxA11y = require('eslint-plugin-jsx-a11y')
 const prettier = require('eslint-config-prettier/flat')
 

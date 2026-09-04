@@ -1,0 +1,35 @@
+{
+  // The repository's own tooling: the Vite/Vitest config and the typecheck
+  // gate's scripts. They are a third project rather than part of "src" because
+  // they need `"types": ["node"]`, and putting Node's globals in the app's
+  // compilation is exactly what the app/qa split exists to prevent.
+  //
+  // `nodenext` is what lets one project hold both module systems: it reads each
+  // file the way Node does, so *.mts and *.mjs are ESM and the extensionless
+  // *.config.js files are CommonJS, as their own comments say they are.
+  //
+  // These files are JavaScript and stay JavaScript; `checkJs` types them
+  // through the JSDoc they carry.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["node"]
+  },
+  "include": [
+    "vite.config.mts",
+    "eslint.config.js",
+    "prettier.config.js",
+    "scripts/**/*.mjs"
+  ]
+}
