@@ -453,6 +453,73 @@ bumping `@testing-library/react` to `^16.3.3` (the Specifier left the version to
 me), and using `fireEvent` for the Enter key, which is the only way to reach a
 branch that reads `which` without changing the component that reads it.
 
+**Second pass, after the chain resumed from the Specifier.** I changed nothing. The
+rewritten component suite from the first pass is committed and unaffected by the
+Specifier's fix, which touched only `features/toolchain-dependencies.feature` and
+`qa/toolchain-commands.md`; `src/`, `package.json` and the lockfile already satisfy both
+absence scenarios. Everything below is verification, and `git status --porcelain` is empty.
+
+**The step-handler question, decided independently.** The ruling asked me not to take the
+Specifier's reading on trust. No handler change is needed, and adding one would be wrong.
+The two step texts differ only by the package literal:
+
+- `<location> contains no reference to react-scripts`
+- `<location> contains no reference to react-shallow-renderer`
+
+Both are matched by the one handler `/^(\S+) contains no reference to (\S+)$/`, which takes
+location and reference as regex captures and passes them to `filesReferencing` /
+`nothingReferences`. That is one behaviour - a named location holds no occurrence of a
+named string - so it gets one handler, and a literal handler per package would be a copy
+differing only in a captured value. No other pattern in `acceptance/steps.ts` matches that
+text, so the resolution is unambiguous.
+
+**I proved the handler can fail for scenario 3, not just for scenario 1.** A handler shared
+by two scenarios could be reached by only one of them and nothing would say so. With a
+scratch `src/absence-probe.ts` carrying both names, the tier exits 1 with exactly two
+failures - `toolchain dependencies 1/example_3` (`"react-scripts" still appears in
+src/absence-probe.ts`) and `toolchain dependencies 3/example_3` (same for
+`react-shallow-renderer`) - so each scenario reaches the assertion with its own operand and
+reports its own package. Deleting the probe returns 30 green with a clean tree. This is
+D3a's shape; running it is what earns the "no change needed" conclusion above.
+
+**Done criteria, checked as the tree stands.**
+
+1. `react-shallow-renderer` appears nowhere outside the files whose job is to name it:
+   `features/toolchain-dependencies.feature`, `qa/toolchain-commands.md`, `PLAN.md` and
+   this task file. Nothing in `src/`, `package.json` or `package-lock.json`.
+2. `npm test`: 26 files, 263 tests, all passing.
+3. `npm run test:acceptance`: 5 files, 30 executions, all passing. Per-scenario breakdown
+   for this feature is 3 / 9 / 3, which is what D5 now expects.
+4. D2a1 by hand over `npx vitest run src --reporter=verbose`: all 41 ids (`C01`-`C40`,
+   `N01`) appear in the name of a passing test, none missing.
+
+**Failing-direction runs, since the suite is the instrument this task delivers.** One
+mutation at a time, each reverted before the next, tree clean after each: `Footer`'s item
+word forced to `items` fails C05 (and C03, C19, C02); `deleteTodo(todo.id + 1)` in
+`TodoItem` fails C25 and nothing else; dropping `selected` from `Link`'s `classnames` call
+fails C13 and nothing else. Same results the Cleaner recorded, re-run against the tree as I
+leave it.
+
+**Other tiers, unmoved:** `npx tsc --noEmit` clean, `npm run build` succeeds,
+`npm run test:property` 14 / 141, `npm run test:hardening` 12 / 129. Buckets `src` 10 / 55,
+`acceptance` 5 / 63, `scripts` 11 / 145, so D2c's sum check holds at 26 / 263. No floor
+moved on this pass. I ran no mutation, per the role brief.
+
+**Left for the Cleaner.** Nothing new. The carried stamp work was discharged on the first
+pass and is not reopened; no source changed on this one.
+
+**Left for the Hardener.** The six survivors that resumed the chain were the `<package>`
+column, which no longer exists. Expect 15 candidates for `toolchain-dependencies` and none
+surviving, and expect scenario 1's stored record to be reused at `--level soft` because its
+text is byte-identical to its task 01 form.
+
+**Left for QA.** Unchanged from the Cleaner's note: D2a 10 / 55, D2b 5 / 63, D2c 11 / 145,
+D1 26 / 263, D8 14 / 141, D9 12 / 129, D3 30 with the breakdown 3 / 9 / 3 for
+`toolchain dependencies 1/2/3`. A7's answer is `@testing-library/react` and
+`@testing-library/user-event` in both directions.
+
+**Open questions.** None.
+
 ### Project manager rulings on the Coder handoff
 
 Verified independently: `npx tsc --noEmit` exits 0; `npm test` 23 files / 229 tests;
@@ -750,4 +817,26 @@ requires 30 green after deleting it.
 
 **The chain continues from the Coder.** The Specifier reports no step-handler change is needed; as in
 task 01, that is its reading and not a dispensation, and the Coder reaches its own conclusion.
+
+
+### Project manager rulings on the third Coder pass
+
+Verified independently: only this task file changed; `npx tsc --noEmit` exits 0; `npm test`
+26 files / 263 tests; `npx vitest run src` 10 / 55; `npm run test:acceptance` 30 / 30. Accepted as a
+no-change pass.
+
+The step-handler judgment is reached correctly and for the stated reason: the two absence scenarios
+differ only by a package literal, both are matched by the one existing handler, and a per-package
+literal handler would be a copy differing only in a captured value. That is the brief's rule applied,
+not merely its conclusion agreed with.
+
+**The verification that mattered is that it proved the shared handler fails for scenario 3, not only
+for scenario 1.** A single probe carrying both names produced exactly two failures, `toolchain
+dependencies 1/example_3` and `3/example_3`, each naming its own package. That is the direct answer
+to the concern the Specifier raised when it split the scenarios: that a weakened second assertion
+could be invisible because the first fails first. Confirming both fail independently closes it, and
+running the three component failing-direction checks against the tree as this pass leaves it, rather
+than trusting the earlier run, is the right standard.
+
+Nothing is routed back. The chain continues from the Cleaner.
 
