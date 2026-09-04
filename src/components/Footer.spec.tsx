@@ -1,92 +1,101 @@
 import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, fireEvent } from '@testing-library/react'
+import { Provider } from 'react-redux'
+import { configureStore } from '@reduxjs/toolkit'
 import Footer, { FooterProps } from './Footer'
-import FilterLink from '../containers/FilterLink'
+import reducer from '../reducers'
+import { callAPIMiddleware } from '../middlewares/callapimiddleware'
+import { setVisibilityFilter } from '../actions'
 import TodoFilters from '../constants/TodoFilters'
 const {SHOW_ALL, SHOW_ACTIVE, SHOW_COMPLETED}=TodoFilters;
-const setup = (propOverrides?:Partial<FooterProps>) => {
+
+const setup = (propOverrides?:Partial<FooterProps>, visibilityFilter:TodoFilters = SHOW_ALL) => {
   const props:FooterProps = Object.assign({
     completedCount: 0,
     activeCount: 0,
     onClearCompleted: jest.fn(),
   }, propOverrides)
 
-  const renderer = createRenderer()
-  renderer.render(<Footer {...props} />)
-  const output = renderer.getRenderOutput()
+  const store = configureStore({
+    reducer,
+    middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(callAPIMiddleware),
+  })
+  store.dispatch(setVisibilityFilter(visibilityFilter))
+
+  const { container } = render(
+    <Provider store={store}>
+      <Footer {...props} />
+    </Provider>
+  )
 
   return {
     props: props,
-    output: output
+    container: container
   }
 }
 
-const getTextContent = (elem:JSX.Element) => {
-  const children = Array.isArray(elem.props.children) ?
-    elem.props.children : [ elem.props.children ]
-
-  return children.reduce((out:string, child:JSX.Element) =>
-    // Concatenate the text
-    // Children are either elements or text strings
-    out + (child.props ? getTextContent(child) : child)
-  , '')
-}
+const filterLinks = (container:HTMLElement) =>
+  Array.from(container.querySelectorAll('ul.filters > li > a'))
 
 describe('components', () => {
   describe('Footer', () => {
     it('should render container', () => {
-      const { output } = setup()
-      expect(output.type).toBe('footer')
-      expect(output.props.className).toBe('footer')
+      const { container } = setup()
+      const footer = container.querySelector('footer') as HTMLElement
+      expect(footer).not.toBeNull()
+      expect(footer.className).toBe('footer')
     })
 
     it('should display active count when 0', () => {
-      const { output } = setup({ activeCount: 0 })
-      const [ count ] = output.props.children
-      expect(getTextContent(count)).toBe('No items left')
+      const { container } = setup({ activeCount: 0 })
+      const count = container.querySelector('.todo-count') as HTMLElement
+      expect(count.textContent).toBe('No items left')
     })
 
     it('should display active count when above 0', () => {
-      const { output } = setup({ activeCount: 1 })
-      const [ count ] = output.props.children
-      expect(getTextContent(count)).toBe('1 item left')
+      const { container } = setup({ activeCount: 1 })
+      const count = container.querySelector('.todo-count') as HTMLElement
+      expect(count.textContent).toBe('1 item left')
     })
 
     it('should render filters', () => {
-      const todoFilters = [SHOW_ALL, SHOW_ACTIVE, SHOW_COMPLETED]
       const filterTitles = ['All', 'Active', 'Completed']
-      const { output } = setup()
-      const [ , filters ] = output.props.children
-      expect(filters.type).toBe('ul')
-      expect(filters.props.className).toBe('filters')
-      expect(filters.props.children.length).toBe(3)
-      filters.props.children.forEach(function checkFilter(filter:JSX.Element, i:number) {
-        expect(filter.type).toBe('li')
-        const a = filter.props.children
-        expect(a.type).toBe(FilterLink)
-        expect(a.props.filter).toBe(todoFilters[i])        
-        expect(a.props.children).toBe(filterTitles[i])        
+      const { container } = setup()
+      const filters = container.querySelector('ul') as HTMLElement
+      expect(filters).not.toBeNull()
+      expect(filters.className).toBe('filters')
+      expect(filters.querySelectorAll('li').length).toBe(3)
+      const links = filterLinks(container)
+      expect(links.length).toBe(3)
+      links.forEach(function checkFilter(link:Element, i:number) {
+        expect(link.textContent).toBe(filterTitles[i])
+      })
+    })
+
+    it('should select the filter matching the current visibility filter', () => {
+      const todoFilters = [SHOW_ALL, SHOW_ACTIVE, SHOW_COMPLETED]
+      todoFilters.forEach(function checkSelected(filter:TodoFilters, i:number) {
+        const { container } = setup(undefined, filter)
+        const selected = filterLinks(container).map(link => link.className === 'selected')
+        expect(selected).toEqual(todoFilters.map((_, j) => j === i))
       })
     })
 
     it('shouldnt show clear button when no completed todos', () => {
-      const { output } = setup({ completedCount: 0 })
-      const [ , , clear ] = output.props.children
-      expect(clear).toBe(false)
+      const { container } = setup({ completedCount: 0 })
+      expect(container.querySelector('button.clear-completed')).toBeNull()
     })
 
     it('should render clear button when completed todos', () => {
-      const { output } = setup({ completedCount: 1 })
-      const [ , , clear ] = output.props.children
-      expect(clear.type).toBe('button')
-      expect(clear.props.className).toBe('clear-completed')
-      expect(clear.props.children).toBe('Clear completed')
+      const { container } = setup({ completedCount: 1 })
+      const clear = container.querySelector('button.clear-completed') as HTMLButtonElement
+      expect(clear).not.toBeNull()
+      expect(clear.textContent).toBe('Clear completed')
     })
 
     it('should call onClearCompleted on clear button click', () => {
-      const { output, props } = setup({ completedCount: 1 })
-      const [ , , clear ] = output.props.children
-      clear.props.onClick({})
+      const { container, props } = setup({ completedCount: 1 })
+      fireEvent.click(container.querySelector('button.clear-completed') as HTMLButtonElement)
       expect(props.onClearCompleted).toBeCalled()
     })
   })

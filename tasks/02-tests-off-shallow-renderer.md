@@ -41,4 +41,69 @@ Eight suites use `createRenderer()` from `react-shallow-renderer` and assert on 
 
 ### Coder
 
+All eight shallow-render suites now render with `@testing-library/react` and assert on DOM.
+`src/react-shallow-renderer.d.ts` is deleted and the dependency is out of `package.json` and
+`package-lock.json`.
+
+**Child-component-identity assertions replaced by rendered output**
+
+| Old assertion | Counterpart |
+| --- | --- |
+| `App`: children `[0].type`/`[1].type` are the `Header`/`MainSection` containers | `header.header` with `h1` "todos" and `input.new-todo`; `section.main` containing `ul.todo-list` |
+| `Footer`: `a.type` is `FilterLink`, `a.props.filter` is the i-th filter | link texts in order, plus a test that the link matching the store's `visibilityFilter` is the one with class `selected` |
+| `Header`: `input.type` is `TodoTextInput` with `newTodo`, `placeholder` | `input.new-todo` with that placeholder |
+| `MainSection`: `footer.type` is `Footer` with `completedCount` 1, `activeCount` 1 | rendered `footer.footer` reads "1 item left" and shows `button.clear-completed` |
+| `MainSection`: `visibleTodoList.type` is `VisibleTodoList` | `ul.todo-list` is present |
+| `TodoItem`: `input.type` is `TodoTextInput` with `text`, `editing` | `input.edit` with value "Use Redux" |
+| `Footer`: `clear` is `false` when nothing completed | no `button.clear-completed` in the DOM |
+| `MainSection`: filtering `false` children leaves one entry | `section.main` has exactly one child and it is `ul.todo-list` |
+
+**Assertion dropped**
+
+- `TodoList`: `expect(Number(todo.key)).toBe(filteredTodos[i].id)`. A React key is not observable
+  in rendered output. What it protected -- one row per todo, in order, carrying that todo's data --
+  is covered by asserting each `li`'s label text and checkbox state against `filteredTodos[i]`.
+
+Everything else maps one-to-one.
+
+**Fixture changes forced by real rendering**
+
+- `TodoList.spec.tsx` adds `loadTodos: jest.fn()` to `actions`. `TodoList` calls it from a
+  `useEffect` that shallow rendering never ran; without it the component throws.
+- `App.spec.tsx` and `MainSection.spec.tsx` build the real store exactly as `src/index.tsx` does
+  (root reducer plus `callAPIMiddleware`) and stub `global.fetch` with a promise that never
+  settles. Mounting `VisibleTodoList` dispatches `loadTodos()`, which fetches; leaving the request
+  pending keeps the store still under the assertions and avoids updates outside `act`. Jest's jsdom
+  environment has no `fetch` of its own.
+- `Footer.spec.tsx` builds the same store and dispatches `setVisibilityFilter` to position the
+  selected link.
+
+Test count went 54 -> 55: the old `Footer` "should render filters" checked both the titles and the
+`filter` prop, and the prop's observable counterpart is a separate test.
+
+**Verified**
+
+- `npx react-scripts test --watchAll=false` -> 10 suites, 55 tests, all pass.
+- `npx react-scripts build` -> compiles, 56.9 kB gzipped JS, same as the Task 01 baseline.
+- `npm run test:e2e` -> 22 passed.
+- `git status` shows only the eight `*.spec.tsx`, the deleted `.d.ts`, `package.json` and
+  `package-lock.json`. No other file under `src/` differs.
+- Sanity-checked that the new assertions discriminate: temporarily broke `Link`'s `selected` class,
+  `MainSection`'s toggle-all `checked`, `Footer`'s singular/plural word, `TodoItem`'s
+  `onDoubleClick`, `TodoTextInput`'s `onSave`, `TodoList`'s todo text and `App`'s `MainSection`, and
+  confirmed each produced failures in the matching suite. All reverted; the components are
+  byte-identical to the previous commit.
+
+**Left for QA**
+
+- No new npm packages. `@testing-library/react` 14 and `@testing-library/dom` 10 were already
+  installed.
+- `@testing-library/jest-dom` is not in the project, so the specs assert on plain DOM properties
+  rather than `toBeInTheDocument()` and friends. A later task can tighten them if it adds the
+  package.
+- `react-shallow-renderer` still appears as prose in `PLAN.md`, this file, and
+  `tasks/07-react-19.md`. Those describe the migration rather than depend on it, so I left them.
+
+No open questions.
+
 ### QA

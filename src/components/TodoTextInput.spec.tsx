@@ -1,9 +1,9 @@
 import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, fireEvent } from '@testing-library/react'
 import TodoTextInput, { TodoTextInputProps } from './TodoTextInput'
 
 const setup = (propOverrides?:Partial<TodoTextInputProps>) => {
-  const props = Object.assign({
+  const props:TodoTextInputProps = Object.assign({
     onSave: jest.fn(),
     text: 'Use Redux',
     placeholder: 'What needs to be done?',
@@ -11,69 +11,64 @@ const setup = (propOverrides?:Partial<TodoTextInputProps>) => {
     newTodo: false
   }, propOverrides)
 
-  const renderer = createRenderer()
-
-  renderer.render(
-    <TodoTextInput {...props} />
-  )
-
-  const output = renderer.getRenderOutput()
+  const { container } = render(<TodoTextInput {...props} />)
+  const input = container.querySelector('input') as HTMLInputElement
 
   return {
     props: props,
-    output: output,
-    renderer: renderer
+    input: input
   }
 }
+
+const pressReturn = (input:HTMLInputElement) =>
+  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 })
 
 describe('components', () => {
   describe('TodoTextInput', () => {
     it('should render correctly', () => {
-      const { output } = setup()
-      expect(output.props.placeholder).toEqual('What needs to be done?')
-      expect(output.props.value).toEqual('Use Redux')
-      expect(output.props.className).toEqual('')
+      const { input } = setup()
+      expect(input.placeholder).toEqual('What needs to be done?')
+      expect(input.value).toEqual('Use Redux')
+      expect(input.className).toEqual('')
     })
 
     it('should render correctly when editing=true', () => {
-      const { output } = setup({ editing: true })
-      expect(output.props.className).toEqual('edit')
+      const { input } = setup({ editing: true })
+      expect(input.className).toEqual('edit')
     })
 
     it('should render correctly when newTodo=true', () => {
-      const { output } = setup({ newTodo: true })
-      expect(output.props.className).toEqual('new-todo')
+      const { input } = setup({ newTodo: true })
+      expect(input.className).toEqual('new-todo')
     })
 
     it('should update value on change', () => {
-      const { output, renderer } = setup()
-      output.props.onChange({ target: { value: 'Use Radox' } })
-      const updated = renderer.getRenderOutput()
-      expect(updated.props.value).toEqual('Use Radox')
+      const { input } = setup()
+      fireEvent.change(input, { target: { value: 'Use Radox' } })
+      expect(input.value).toEqual('Use Radox')
     })
 
     it('should call onSave on return key press', () => {
-      const { output, props } = setup()
-      output.props.onKeyDown({ which: 13, target: { value: 'Use Redux' } })
+      const { input, props } = setup()
+      pressReturn(input)
       expect(props.onSave).toBeCalledWith('Use Redux')
     })
 
     it('should reset state on return key press if newTodo', () => {
-      const { output, renderer } = setup({ newTodo: true })
-      output.props.onKeyDown({ which: 13, target: { value: 'Use Redux' } })
-      const updated = renderer.getRenderOutput()
-      expect(updated.props.value).toEqual('')
+      const { input } = setup({ newTodo: true })
+      pressReturn(input)
+      expect(input.value).toEqual('')
     })
 
     it('should call onSave on blur', () => {
-      const { output, props } = setup()
-      output.props.onBlur({ target: { value: 'Use Redux' } })
+      const { input, props } = setup()
+      fireEvent.blur(input)
       expect(props.onSave).toBeCalledWith('Use Redux')
     })
 
     it('shouldnt call onSave on blur if newTodo', () => {
-      const { output, props } = setup({ newTodo: true })
-      output.props.onBlur({ target: { value: 'Use Redux' } })
+      const { input, props } = setup({ newTodo: true })
+      fireEvent.blur(input)
       expect(props.onSave).not.toBeCalled()
     })
   })

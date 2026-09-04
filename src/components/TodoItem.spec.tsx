@@ -1,7 +1,6 @@
 import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, fireEvent } from '@testing-library/react'
 import TodoItem from './TodoItem'
-import TodoTextInput from './TodoTextInput'
 
 const setup = ( editing = false ) => {
   const props = {
@@ -15,105 +14,96 @@ const setup = ( editing = false ) => {
     completeTodo: jest.fn()
   }
 
-  const renderer = createRenderer()
-
-  renderer.render(
+  const { container } = render(
     <TodoItem {...props} />
   )
 
-  let output = renderer.getRenderOutput()
+  const item = () => container.querySelector('li') as HTMLElement
+  const editInput = () => container.querySelector('input.edit') as HTMLInputElement
 
   if (editing) {
-    const label = output.props.children.props.children[1]
-    label.props.onDoubleClick({})
-    output = renderer.getRenderOutput()
+    fireEvent.doubleClick(container.querySelector('label') as HTMLElement)
   }
 
   return {
     props: props,
-    output: output,
-    renderer: renderer
+    container: container,
+    item: item,
+    editInput: editInput
   }
 }
+
+const pressReturn = (input:HTMLInputElement) =>
+  fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 })
 
 describe('components', () => {
   describe('TodoItem', () => {
     it('initial render', () => {
-      const { output } = setup()
+      const { container, item } = setup()
 
-      expect(output.type).toBe('li')
-      expect(output.props.className).toBe('')
+      expect(item().className).toBe('')
 
-      const div = output.props.children
+      const div = container.querySelector('li > div') as HTMLElement
+      expect(div).not.toBeNull()
+      expect(div.className).toBe('view')
 
-      expect(div.type).toBe('div')
-      expect(div.props.className).toBe('view')
+      const input = div.querySelector('input') as HTMLInputElement
+      expect(input).not.toBeNull()
+      expect(input.type).toBe('checkbox')
+      expect(input.checked).toBe(false)
 
-      const [ input, label, button ] = div.props.children
+      const label = div.querySelector('label') as HTMLElement
+      expect(label).not.toBeNull()
+      expect(label.textContent).toBe('Use Redux')
 
-      expect(input.type).toBe('input')
-      expect(input.props.checked).toBe(false)
-
-      expect(label.type).toBe('label')
-      expect(label.props.children).toBe('Use Redux')
-
-      expect(button.type).toBe('button')
-      expect(button.props.className).toBe('destroy')
+      const button = div.querySelector('button') as HTMLButtonElement
+      expect(button).not.toBeNull()
+      expect(button.className).toBe('destroy')
     })
 
     it('input onChange should call completeTodo', () => {
-      const { output, props } = setup()
-      const input = output.props.children.props.children[0]
-      input.props.onChange({})
+      const { container, props } = setup()
+      fireEvent.click(container.querySelector('input.toggle') as HTMLInputElement)
       expect(props.completeTodo).toBeCalledWith(0,true)
     })
 
     it('button onClick should call deleteTodo', () => {
-      const { output, props } = setup()
-      const button = output.props.children.props.children[2]
-      button.props.onClick({})
+      const { container, props } = setup()
+      fireEvent.click(container.querySelector('button.destroy') as HTMLButtonElement)
       expect(props.deleteTodo).toBeCalledWith(0)
     })
 
     it('label onDoubleClick should put component in edit state', () => {
-      const { output, renderer } = setup()
-      const label = output.props.children.props.children[1]
-      label.props.onDoubleClick({})
-      const updated = renderer.getRenderOutput()
-      expect(updated.type).toBe('li')
-      expect(updated.props.className).toBe('editing')
+      const { container, item } = setup()
+      fireEvent.doubleClick(container.querySelector('label') as HTMLElement)
+      expect(item().className).toBe('editing')
     })
 
     it('edit state render', () => {
-      const { output } = setup(true)
+      const { item, editInput } = setup(true)
 
-      expect(output.type).toBe('li')
-      expect(output.props.className).toBe('editing')
-
-      const input = output.props.children
-      expect(input.type).toBe(TodoTextInput)
-      expect(input.props.text).toBe('Use Redux')
-      expect(input.props.editing).toBe(true)
+      expect(item().className).toBe('editing')
+      expect(editInput()).not.toBeNull()
+      expect(editInput().value).toBe('Use Redux')
     })
 
     it('TodoTextInput onSave should call editTodo', () => {
-      const { output, props } = setup(true)
-      output.props.children.props.onSave('Use Redux')
+      const { editInput, props } = setup(true)
+      pressReturn(editInput())
       expect(props.editTodo).toBeCalledWith(0, 'Use Redux')
     })
 
     it('TodoTextInput onSave should call deleteTodo if text is empty', () => {
-      const { output, props } = setup(true)
-      output.props.children.props.onSave('')
+      const { editInput, props } = setup(true)
+      fireEvent.change(editInput(), { target: { value: '' } })
+      pressReturn(editInput())
       expect(props.deleteTodo).toBeCalledWith(0)
     })
 
     it('TodoTextInput onSave should exit component from edit state', () => {
-      const { output, renderer } = setup(true)
-      output.props.children.props.onSave('Use Redux')
-      const updated = renderer.getRenderOutput()
-      expect(updated.type).toBe('li')
-      expect(updated.props.className).toBe('')
+      const { editInput, item } = setup(true)
+      pressReturn(editInput())
+      expect(item().className).toBe('')
     })
   })
 })

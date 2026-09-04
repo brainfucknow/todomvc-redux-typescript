@@ -1,8 +1,16 @@
 import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, fireEvent } from '@testing-library/react'
+import { Provider } from 'react-redux'
+import { configureStore } from '@reduxjs/toolkit'
 import MainSection, { MainSectionProps } from './MainSection'
-import Footer from './Footer'
-import VisibleTodoList from '../containers/VisibleTodoList'
+import reducer from '../reducers'
+import { callAPIMiddleware } from '../middlewares/callapimiddleware'
+
+beforeEach(() => {
+  // VisibleTodoList loads todos on mount; keep the request pending so the
+  // store never changes underneath an assertion.
+  (global as any).fetch = jest.fn(() => new Promise(() => {}))
+})
 
 const setup = (propOverrides?:Partial<MainSectionProps>) => {
   const props = Object.assign({
@@ -17,86 +25,92 @@ const setup = (propOverrides?:Partial<MainSectionProps>) => {
     }
   }, propOverrides)
 
-  const renderer = createRenderer()
-  renderer.render(<MainSection {...props} />)
-  const output = renderer.getRenderOutput()
+  const store = configureStore({
+    reducer,
+    middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(callAPIMiddleware),
+  })
+
+  const { container } = render(
+    <Provider store={store}>
+      <MainSection {...props} />
+    </Provider>
+  )
 
   return {
     props: props,
-    output: output,
-    renderer: renderer
+    container: container
   }
 }
 
 describe('components', () => {
   describe('MainSection', () => {
     it('should render container', () => {
-      const { output } = setup()
-      expect(output.type).toBe('section')
-      expect(output.props.className).toBe('main')
+      const { container } = setup()
+      const section = container.querySelector('section') as HTMLElement
+      expect(section).not.toBeNull()
+      expect(section.className).toBe('main')
     })
 
     describe('toggle all input', () => {
       it('should render', () => {
-        const { output } = setup()
-        const [ toggle ] = output.props.children[0].props.children
-        expect(toggle.type).toBe('input')
-        expect(toggle.props.className).toBe('toggle-all')
-        expect(toggle.props.type).toBe('checkbox')
-        expect(toggle.props.checked).toBe(false)
+        const { container } = setup()
+        const toggle = container.querySelector('input.toggle-all') as HTMLInputElement
+        expect(toggle).not.toBeNull()
+        expect(toggle.type).toBe('checkbox')
+        expect(toggle.checked).toBe(false)
       })
 
       it('should be checked if all todos completed', () => {
-        const { output } = setup({
+        const { container } = setup({
           completedCount: 2
         })
-        const [ toggle ] = output.props.children[0].props.children
-        expect(toggle.props.checked).toBe(true)
+        const toggle = container.querySelector('input.toggle-all') as HTMLInputElement
+        expect(toggle.checked).toBe(true)
       })
 
       it('should call completeAllTodos on change', () => {
-        const { output, props } = setup()
-        const [ , label ] = output.props.children[0].props.children
-        label.props.onClick({})
+        const { container, props } = setup()
+        const label = container.querySelector('section.main > span > label') as HTMLElement
+        fireEvent.click(label)
         expect(props.actions.completeAllTodos).toBeCalled()
       })
     })
 
     describe('footer', () => {
       it('should render', () => {
-        const { output } = setup()
-        const [ , , footer ] = output.props.children
-        expect(footer.type).toBe(Footer)
-        expect(footer.props.completedCount).toBe(1)
-        expect(footer.props.activeCount).toBe(1)
+        const { container } = setup()
+        const footer = container.querySelector('footer.footer') as HTMLElement
+        expect(footer).not.toBeNull()
+        const count = footer.querySelector('.todo-count') as HTMLElement
+        expect(count.textContent).toBe('1 item left')
+        expect(footer.querySelector('button.clear-completed')).not.toBeNull()
       })
 
       it('onClearCompleted should call clearCompleted', () => {
-        const { output, props } = setup()
-        const [ , , footer ] = output.props.children
-        footer.props.onClearCompleted()
+        const { container, props } = setup()
+        fireEvent.click(container.querySelector('button.clear-completed') as HTMLButtonElement)
         expect(props.actions.clearCompleted).toBeCalled()
       })
     })
 
     describe('visible todo list', () => {
       it('should render', () => {
-        const { output } = setup()
-        const [ , visibleTodoList ] = output.props.children
-        expect(visibleTodoList.type).toBe(VisibleTodoList)
+        const { container } = setup()
+        expect(container.querySelector('ul.todo-list')).not.toBeNull()
       })
     })
 
     describe('toggle all input and footer', () => {
       it('should not render if there are no todos', () => {
-        const { output } = setup({
+        const { container } = setup({
           todosCount: 0,
           completedCount: 0
         })
-        const renderedChildren = output.props.children
-        .filter((item:boolean) => item !== false)
-        expect(renderedChildren.length).toBe(1)
-        expect(renderedChildren[0].type).toBe(VisibleTodoList)
+        const section = container.querySelector('section.main') as HTMLElement
+        expect(section.querySelector('input.toggle-all')).toBeNull()
+        expect(section.querySelector('footer.footer')).toBeNull()
+        expect(section.children.length).toBe(1)
+        expect(section.children[0].className).toBe('todo-list')
       })
     })
   })

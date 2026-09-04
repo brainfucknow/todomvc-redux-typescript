@@ -1,5 +1,5 @@
 import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render, fireEvent } from '@testing-library/react'
 import Link, { LinkProps } from './Link'
 
 const setup = (propOverrides?:Partial<LinkProps>) => {
@@ -9,33 +9,32 @@ const setup = (propOverrides?:Partial<LinkProps>) => {
     setFilter: jest.fn()
   }, propOverrides)
 
-  const renderer = createRenderer();
-  renderer.render(<Link {...props} />)
-  const output = renderer.getRenderOutput()
+  const { container } = render(<Link {...props} />)
+  const link = container.querySelector('a') as HTMLAnchorElement
 
   return {
     props: props,
-    output: output,
+    link: link,
   }
 }
 
 describe('component', () => {
   describe('Link', () => {
     it('should render correctly', () => {
-      const { output } = setup()
-      expect(output.type).toBe('a')
-      expect(output.props.style.cursor).toBe('pointer')
-      expect(output.props.children).toBe('All')
+      const { link } = setup()
+      expect(link).not.toBeNull()
+      expect(link.style.cursor).toBe('pointer')
+      expect(link.textContent).toBe('All')
     })
 
     it('should have class selected if active', () => {
-      const { output } = setup({ active: true })
-      expect(output.props.className).toBe('selected')
+      const { link } = setup({ active: true })
+      expect(link.className).toBe('selected')
     })
 
     it('should call setFilter on click', () => {
-      const { output, props } = setup()
-      output.props.onClick()
+      const { link, props } = setup()
+      fireEvent.click(link)
       expect(props.setFilter).toBeCalled()
     })
   })
