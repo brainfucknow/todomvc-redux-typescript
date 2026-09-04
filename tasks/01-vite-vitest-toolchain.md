@@ -358,6 +358,59 @@ Acceptance pipeline (APS):
    tasks 02-05 are about to rewrite, and the task says to fix only the errors the upgrade
    surfaces. Flag it if you would rather absorb that churn here.
 
+#### Second pass: correction under Coder-handoff ruling 1
+
+Done. `typescript` moved to `^5.9.3`. Nothing else changed; nothing committed.
+
+**What I changed**
+
+Two files, both from a single `npm install typescript@^5.9.3`:
+
+- `package.json`: `typescript` `^7.0.2` -> `^5.9.3`.
+- `package-lock.json`: regenerated. The only removals are the twenty
+  `@typescript/typescript-<platform>` optional native binaries that TypeScript 7 pulls in;
+  `node_modules/typescript` is now `5.9.3`. 8 insertions, 349 deletions, no other package
+  moved.
+
+No source file, config file, feature file or QA file was touched. `verbatimModuleSyntax`
+stays off per the ruling.
+
+**What I verified**
+
+The downgrade surfaced **no type errors and no test failures**. Re-verified after
+`rm -rf node_modules && npm ci` (exit 0), so the lockfile alone reproduces this:
+
+- `npx tsc --version` -> `Version 5.9.3`; `npx tsc --noEmit` exits 0 with no output.
+- `npm test`: 13 files, 92 passing, 0 failing, 0 skipped.
+- `npx vitest run src`: **10 files, 54 passing** — the Specifier's D2a floor is intact,
+  as predicted. `npx vitest run acceptance`: 3 files, 38 passing. 54 + 38 = 92.
+- `npm run test:acceptance`: 5 features parse, 5 entry points generate, 21 scenario
+  executions pass. That run exercises the dev server, the port-4000 proxy, the production
+  build and the preview server, so those paths are covered too.
+- `npm run build`: exits 0, emits `dist/index.html` plus hashed JS and CSS. The
+  third-party `input::input-placeholder` lightningcss warning from `todomvc-app-css` is
+  unchanged and still only a warning.
+- `typescript compilation 2` ("at least 5") and QA D7 ("major version is 5 or higher")
+  both hold on 5.9.3, matching the Specifier's second note.
+- `react-scripts` count is still 0 in `package.json`, `package-lock.json` and `src`.
+- `git status --short` shows exactly `package.json` and `package-lock.json` modified.
+
+`typescript-eslint@8.69.0`'s `peerDependencies.typescript` range `>=4.8.4 <6.1.0` now
+contains the pin, which was the point of the ruling. I did not install
+`typescript-eslint` — that is task 06's.
+
+**Left for the next role**
+
+Unchanged from my first note. `scripts/crap.mjs` is still the Cleaner's to write; the
+Vitest isolation hint, the lightningcss warning, CI wiring for `test:acceptance` (task 06),
+and the missing Playwright driver for `qa/todo-app-regression.md` all stand as recorded
+there.
+
+**Open questions**
+
+None. Ruling 1 is discharged, and both my earlier open questions are closed: ruling 1
+settled the TypeScript major, ruling 2 settled the QA spec inventory.
+
 ### Project manager rulings on the Coder handoff
 
 Verified independently before ruling: `npx tsc --noEmit` exits 0, `npm test` passes 13 files
@@ -381,6 +434,7 @@ Two corrections are required before the chain continues.
    tests this task legitimately added; the suite is now 13 files and 92 tests, with the
    original 10 files and 54 cases all intact. The Coder was right not to edit `qa/`. A fresh
    Specifier is being spawned to correct the procedure before the Coder's second pass.
+
 
 
 ### Cleaner
