@@ -5,6 +5,7 @@ import {
   compilerMajorVersion,
   referencedAssets,
   referencedScripts,
+  scriptArgv,
 } from './inspection.ts'
 
 const indexPage = [
@@ -73,5 +74,25 @@ describe('availableScripts', () => {
 
   it('returns nothing when the manifest declares no scripts', () => {
     expect(availableScripts('{"name":"todomvc"}')).toEqual([])
+  })
+})
+
+describe('scriptArgv', () => {
+  it('reads the argv of the script the manifest declares', () => {
+    expect(scriptArgv('{"scripts":{"build":"vite build"}}', 'build')).toEqual(['vite', 'build'])
+  })
+
+  it('keeps a command that takes no arguments whole', () => {
+    expect(scriptArgv('{"scripts":{"dev":"vite"}}', 'dev')).toEqual(['vite'])
+  })
+
+  it('refuses a script the manifest does not declare, naming it', () => {
+    expect(() => scriptArgv('{"scripts":{"build":"vite build"}}', 'bundle'))
+      .toThrow('package.json declares no "bundle" script to run')
+  })
+
+  it('refuses a script declared as nothing to run', () => {
+    expect(() => scriptArgv('{"scripts":{"build":"   "}}', 'build'))
+      .toThrow('package.json declares no "build" script to run')
   })
 })

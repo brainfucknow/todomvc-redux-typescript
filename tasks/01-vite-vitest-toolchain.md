@@ -2210,6 +2210,240 @@ file names. D10's point still holds: no `property/` or `hardening/` file is in t
    free of project imports, in which case the alternative is the assertion I deleted as
    tautological: keep the two lists apart and have a spec require they agree.
 
+#### Third pass: one owner for the production build, and properties for the judgments that decide a step
+
+Done. Four files changed and three added, all under `acceptance/` and `property/`. Nothing
+committed. `src/`, `features/`, `qa/`, `e2e/`, `.mutation/` and every config are untouched, and no
+npm script and no dependency was added.
+
+**The dependency review found one thing to fix, and it was in the fixture this chain resumed for**
+
+`acceptance/fixtures.ts` built the production bundle by running `node_modules/.bin/vite build`.
+`package.json` declares `"build": "vite build"`. Two statements of how this project produces a
+production bundle, agreeing by coincidence, with nothing making them agree - and the acceptance
+tier is the one place where that coincidence is load-bearing. `production build 1-4` assert about
+*the bundle this project ships*; the moment the declared build script gains a flag, an env prefix or
+a different bundler, the tier would keep testing an artifact nobody deploys, and every scenario would
+stay green while doing it. That is the same shape as the defect that reopened this task: a scenario
+named for a distinction it can no longer detect.
+
+The fixture now asks the owner instead of restating what it says:
+
+```ts
+const [command, ...args] = scriptArgv(readProjectFile('package.json'), 'build')
+const { code, output } = await runCommand(executable(command), args, { NODE_ENV: 'production' })
+```
+
+- `scriptArgv(manifestText, name)` is new in `acceptance/inspection.ts` (core, pure): the argv of a
+  script the manifest declares, refusing by name a script that is absent or declared as nothing to
+  run. It shares a private `declaredScripts` parse with `availableScripts`, which had the same two
+  lines. It knows one narrow thing - an npm script is a command and its arguments separated by
+  whitespace - and the comment says so, because a script needing shell syntax would have to be read
+  some other way.
+- `executable` in `acceptance/commands.ts` is exported and `viteBundler` is gone. `typescriptCompiler`
+  stays a constant: `tsc --noEmit` has no npm script to read it from, and PM ruling 3 bars adding one
+  in this task, so the compiler steps must name the binary. The asymmetry is deliberate, not an
+  oversight.
+- Layers are unchanged. `fixtures.ts` is a shell importing a core (`inspection.ts`) and a shell
+  (`project-files.ts`); no new module, no cycle, no import leaves the package.
+
+**Verified in both directions, not just the green one**
+
+| Check | Result |
+| --- | --- |
+| `npm run test:acceptance` | 5 features parse, 5 entry points generate, **26 scenario executions pass** |
+| the artifact the tier leaves in `dist/` | md5 `e432ae91` / `1cba6aae` / `43022ca5`, 167,067 bytes - **identical to what the Cleaner recorded and to what `npm run build` emits** |
+| `NODE_ENV` put back to `test` by hand | exactly `production build 4/example_1` and `example_2` redden on the missing markers, the file's other 5 pass; restored, 7 pass |
+| `scripts.build` renamed to `bundle` by hand | all 7 executions of that file fail with `package.json declares no "build" script to run` |
+
+The second of those is the one that says the refactor did what it claims. Before this pass, renaming
+the build script would have changed nothing about how the tier builds; now the tier stops, because it
+is reading the manifest rather than remembering it.
+
+**Property tests: the module that decides every step's verdict had none**
+
+Coverage assessment across the three packages' core modules: `runtime`, `generator`, `layout` (via
+the feature/IR round trip), `inspection`, `layering`, `packages`, `complexity`, `coverage`, `options`
+and `score` all had properties from the two earlier passes. `assertions.ts`, `report.ts`,
+`mutation-jobs.ts` and `tiers.ts` had none. `assertions.ts` is the worst of those by a distance: every
+acceptance step's pass or fail goes through it, this chain added two judgments to it, and its only
+tests were the Coder's examples for those two plus the Hardener's tier. `npm run test:property` goes
+from 11 files / 95 properties to **14 / 141**.
+
+- `property/assertions.property.ts` (24) - each judgment against the predicate it is named for, over
+  inputs nobody wrote down: `statusIs`, `bodyEquals`, `scriptIsAvailable`, `compilationSucceeded` and
+  `everyAssetRespondsWith` accept exactly their condition and name what failed; `bodyContains` and
+  `bodyExcludes` are exact opposites on the same observation, and `bodyContains` agrees with
+  `responseContains` on the observed response; `responseContains` accepts content inserted anywhere,
+  quotes what it looked for, and reports an excerpt bounded independently of the body, so the message
+  does not grow with a 167 kB bundle; `majorVersionIsAtLeast` stays accepting as the compiler gets
+  newer; `everyAssetRespondsWith` refuses an empty asset list rather than passing vacuously;
+  `scriptReferencedByResponse` answers with the one script, agrees with `referencedScripts`, refuses
+  a page with none, and names all of several in page order.
+- `property/report.property.ts` (7) - the gate's own verdict, which nothing had generalised:
+  `overGate` counts exactly the functions above the gate; raising the gate can never find more
+  offenders; rows are one per offender, or one per function when all were asked for; the summary
+  accounts for every measured function, listed or not; files read in path order whatever order they
+  were measured in; functions read worst first within a file; a run measuring nothing the caller asked
+  about is refused.
+- `property/mutation-jobs.property.ts` (9) - the runner adapter's protocol: a duration parses back to
+  the milliseconds it was written as, whole or fractional, and anything that is not a duration is
+  declined rather than guessed; a run that reported a failure or never reported at all is an
+  infrastructure error whatever it exited; zero and only zero is a success; the output passes through
+  untouched however it was classified; a response line is one newline-terminated JSON object that
+  parses back to what went in.
+- `property/inspection.property.ts` gains 5 - `referencedScripts` finds the scripts and none of the
+  stylesheets and is the leading half of what `referencedAssets` answers; `scriptArgv` reads back the
+  argv it was written from, reads the same argv however much whitespace separates it, and refuses an
+  undeclared or empty declaration by name.
+
+**That they bite, checked by hand on every judgment rather than argued.** Each break below reddens
+the property file and goes back green when restored:
+
+| Break | Properties red |
+| --- | --- |
+| `responseContains` condition inverted | 4 |
+| `excerpt` stops truncating | 1 |
+| `statusIs` `!==` -> `<` | 2 |
+| `bodyExcludes` `includes` -> `===` | 3 |
+| `bodyEquals` weakened to `includes` | 1 |
+| `majorVersionIsAtLeast` `<` -> `<=` | 1 |
+| `everyAssetRespondsWith` filter inverted | 2 |
+| an empty asset list defaulted to one asset | 1 |
+| `scriptIsAvailable` weakened to a length check | 1 |
+| `compilationSucceeded` `!== 0` -> `< 0` | 1 |
+| `nothingReferences` tolerates one offender | 1 |
+| `scriptReferencedByResponse` tolerates two scripts | 1 |
+| `referencedScripts` reads link tags | 3 |
+| `scriptArgv` stops splitting / stops trimming | 2 / 2 |
+| `gateReport` drops the file sort / reverses the function sort | 2 / 1 |
+| summary counts files instead of functions | 1 |
+| `overGate` counts every function | 2 |
+| `jobTimeout` ignores its unit / unanchors its pattern | 2 / 1 |
+| `classify` turns a terminated run into a verdict / every run into a success | 1 / 1 |
+
+**One break initially survived and the property was wrong, not the code.** `entry.crap > options.max`
+changed to `>=` passed, because the scores were drawn from a continuous range and never landed on the
+gate exactly. The generator now mixes small integers in with the arbitrary doubles, ties happen, and
+the mutant dies. A property over a boundary has to be able to reach the boundary; `report.spec.ts`
+caught this one by example, which is why it was worth the generator and not a reason to skip it.
+
+**What I verified**
+
+Every number read off a command I ran, in the tree as I leave it.
+
+| Command | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0, no output |
+| `npm test` | **23 files / 228 tests**, 0 failing, 0 skipped |
+| `npx vitest run src` | **10 / 54 - the D2a floor, untouched** |
+| `npx vitest run acceptance` | **5 / 63** |
+| `npx vitest run scripts` | 8 / 111 |
+| `npm run test:property` | **14 / 141**, and the tier run **20 times** with 0 failures |
+| `npm run test:hardening` | 12 / 128, unchanged |
+| `npm run test:acceptance` | 5 parse, 5 generate, **26 scenario executions pass** |
+| `npm run build` | exit 0, 167.06 kB, `Minified React error` count 1, `src/index.tsx` count 0 in `dist/index.html` |
+| `npx vitest run scripts/architecture` | 2 / 21 - the boundary rules and every package's layer map still hold |
+
+- 54 + 63 + 111 = 228 and 10 + 5 + 8 = 23, so D1 is still exhaustively split with no overlap.
+- **CRAP.** `node scripts/crap.mjs acceptance/inspection.ts acceptance/assertions.ts` (the changed
+  measured files): **32 functions, 0 over the gate**. Whole project: 40 files, 224 functions, **2 over
+  the gate** - the same two pre-existing `src/` functions every pass since the Cleaner's merge has
+  reported. **I am applying the CRAP exception to `src/reducers/apis.ts` `executing` and recording
+  that I did**: one flat `switch` on `action?.type` answering one question, at 100% coverage, so its
+  13.0 is cc alone. `src/middlewares/callapimiddleware.ts` at 30.0 is coverage, not complexity, and
+  task 01's Out of scope plus the D2a floor bar both fixes.
+- `git status --short` shows exactly `acceptance/commands.ts`, `acceptance/fixtures.ts`,
+  `acceptance/inspection.ts`, `acceptance/inspection.spec.ts`, `property/inspection.property.ts`
+  modified and the three new `property/` files. `git status --short src features qa e2e .mutation` is
+  empty. `git status --porcelain --ignored` lists `bin/ build/ coverage/ dist/ node_modules/
+  test-results/` as `!!` and nothing as `??` but the sources I added, so QA E1 still reads true.
+- I ran no mutation of any kind and no Gherkin mutation, and no parser or dry-checker run beyond what
+  `npm run test:acceptance` does - no feature file changed. No dependency added, so no lockfile change.
+
+**Test counts moved. The Specifier reconciliation before QA is where they land.**
+
+| Step | As the Cleaner's fourth pass left it | Now |
+| --- | --- | --- |
+| D1 `npm test` | 23 files / 224 | **23 files / 228** |
+| D2 file list | 10 `src` + 5 `acceptance` + 8 `scripts` | **unchanged - no spec file was added or moved** |
+| D2a `npx vitest run src` | 10 / 54 | **10 / 54, the floor, intact** |
+| D2b `npx vitest run acceptance` | 5 / 59 | **5 / 63** |
+| D2c `npx vitest run scripts` | 8 / 111 and the sums | 8 / 111, sums **54 + 63 + 111 = 228**, 10 + 5 + 8 = 23 |
+| D8 `npm run test:property` | 11 / 95 | **14 / 141** |
+| D3-D7, D9, D10 | | unchanged; D5 is still 26 |
+
+The reconciliation this pass owes is therefore smaller than the last one: four numbers, no file list.
+The Coder's fourth-pass table is still owed on top of it if the tree has not been reconciled since -
+D1 22 -> 23 and D2 gaining `acceptance/assertions.spec.ts` are its part, and this pass's D1 and D2b
+supersede its numbers. `e2e/toolchain-commands.spec.ts` carries D1, D2b, D2c and D5 as literals; I did
+not touch `e2e/`, and its `24 -> 26` edits are still outstanding alongside these.
+
+**Left for the Hardener**
+
+- **New core surface to mutate:** `scriptArgv` and the private `declaredScripts` in
+  `acceptance/inspection.ts`. Both are covered by the unit spec and by properties in all four
+  directions (declared, undeclared, blank, whitespace-separated), so equality-, message- and
+  regex-mutants should die in the unit or property tier.
+- `viteBundler` is gone from `acceptance/commands.ts` and `executable` is now exported. `commands.ts`
+  is a shell, so `modulesIn('core')` does not name it and Stryker's mutate set is unaffected.
+- **The three new `property/` files are already in the mutation tier's judge set** -
+  `vitest.mutation.config.ts` includes `property/**/*.property.ts` - so `assertions.ts`, `report.ts`
+  and `mutation-jobs.ts` mutants are now judged by 40 more properties than the last run saw. Expect
+  survivors to fall rather than rise; if one of those three files' recorded results changes, that is
+  the property tier reaching mutants the examples missed.
+- `.mutation/` is untouched. The two staleness items handed over by the Coder and the Cleaner are
+  unchanged, and my pass moves the same two hashes again and adds no third: the gherkin manifest's
+  `implementation_hash` (`steps.ts` is unchanged but `fixtures.ts` and `commands.ts` are not) and
+  `test-tier.json`'s `tier_hash`, which the three new property files move.
+
+**Findings I did not fix, and who owns them**
+
+1. **`src/selectors/index.ts` and `src/middlewares/callapimiddleware.ts` import `RootState` from
+   `src/containers/index.ts`** - domain policy and an IO adapter depending on the UI barrel. Still
+   true, still `tasks/04-hooks-replace-connect.md`'s by the ruling on the first Architect pass. The
+   `src` half of the boundary check remains "imports nothing outside `src`", which passes; task 04 is
+   when `src` becomes a fourth entry in `PACKAGES` with a real layer map.
+2. **The UI re-walks facts the domain already knows.** `components/MainSection.tsx` still derives
+   `activeCount = todosCount - completedCount` and "all complete" as `completedCount === todosCount`
+   from two counts the container passes, while `reducers/todos.ts` answers the same question itself
+   for `COMPLETE_ALL_TODOS`, and no selector owns either observable. Task 04, unchanged.
+3. **`acceptance/assertions.ts` exports a type named `Response`,** which shadows the platform
+   `Response` inside `fixtures.ts` - at exactly the point where the adapter translates one into the
+   other. It is correct today and type-only, but the rename that would make it read right
+   (`ObservedResponse`) touches `hardening/assertions.hardening.ts`, which is the Hardener's tier, and
+   this pass had no other reason to enter it. Small, safe, and better done by whoever next has that
+   file open.
+4. **`observedResponse` is exported but reached in production only by its own siblings.** The
+   hardening tier imports it, so de-exporting it would redden another role's tier for a cosmetic gain.
+   Same disposition as the first pass gave `resolveArgument` and `matchStep`: part of the module's
+   stated contract rather than accidental API.
+5. **`startDevServer` and `startPreviewServer` still drive Vite's Node API rather than `npm run dev`
+   / `npm run preview`, and that is right.** The same "ask the owner" argument that moved the build
+   does not carry: those scenarios need the server's ephemeral URL handed back, which a spawned npm
+   script cannot give, and the API starts the same server the script starts. Recorded so the
+   asymmetry with the build is not read as a job half done.
+6. **`scripts/crap/tiers.ts` and `acceptance/layout.ts` were assessed for properties and left.**
+   `tiers.ts` is a data declaration plus two path joins, and `tiers.spec.ts` already asserts the one
+   relation that matters - a tier measuring the same sources has to be listed. `layout.ts`'s round
+   trip is already a property in `property/generator.property.ts`. After this pass every core module
+   in the three packages has property coverage or a written reason not to.
+7. **A later task that changes `package.json`'s `build` script now changes what the acceptance tier
+   builds,** by design. That is the point of the fix, but it is worth knowing before task 06 touches
+   the script surface: if `build` ever needs shell syntax rather than a plain command and its
+   arguments, `scriptArgv` refuses to guess and the tier fails loudly rather than building something
+   else.
+
+**Left for QA**
+
+- Nothing new. The boundary rules and the new judgments all run inside `npm test` and
+  `npm run test:property`, which procedure D already covers at D1/D2b and D8.
+
+**Open questions**
+
+None.
+
+
 ### Project manager rulings on the Architect handoff
 
 Verified independently: `npx tsc --noEmit` exits 0; `npm test` 15 files / 119 tests;
@@ -3317,4 +3551,35 @@ cleanup would have been wrong:
 CRAP on changed measured files is 0 over the gate across 30 functions. The two whole-project
 offenders are the same pre-existing `src/` functions dispositioned several passes ago, with the
 documented exception applied to `executing` and recorded.
+
+
+### Project manager rulings on the third Architect pass
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 23 files / 228 tests;
+`npx vitest run src` holds the D2a floor at 10 / 54; `npm run test:property` 14 files / 141;
+`npm run test:acceptance` 26 scenario executions; renaming `scripts.build` to `bundle` reddens the
+tier with `package.json declares no "build" script to run`, naming the scripts it did find;
+`src/`, `features/`, `qa/`, `e2e/`, `.mutation/` and every config untouched. Accepted.
+
+**The find is the same defect class that reopened this task, caught one level further out.** The
+fixture ran `node_modules/.bin/vite build` while `package.json` declares `"build": "vite build"`: two
+statements of how this project produces a production bundle, agreeing by coincidence. In the
+acceptance tier that coincidence is load-bearing, because `production build 1-4` assert about the
+bundle this project *ships*. Change the declared script and the tier would have stayed green while
+testing an artifact nobody deploys. Having the fixture ask `package.json` what the build command is
+converts the coincidence into a dependency, which is what the tier needed to mean what it claims.
+
+Leaving `typescriptCompiler` a constant is correct and correctly reasoned: `tsc --noEmit` has no npm
+script to ask, and an earlier ruling bars adding one in this task because task 06 owns it. Deriving
+one call site and not the other would have been consistency for its own sake.
+
+On the property tier: aiming it at `assertions.ts` first is the right priority, since that is where
+every acceptance step's verdict is decided and where this chain added two judgments. And the
+generator that initially let `crap > max` survive as `>=` was fixed in the *generator*, not the code
+under test. That is the correct response to a surviving mutant in a property test - the property was
+not exercising the boundary, so the property was wrong, not the boundary.
+
+Counts moved and are recorded for the reconciliation pass that precedes QA: D1 228, D2b 63, D8 141,
+with 54 + 63 + 111 = 228 still exhaustive. D2's file list does not move, since no spec file was added
+or renamed.
 

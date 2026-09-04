@@ -1,7 +1,9 @@
 import { createServer as createHttpServer } from 'node:http'
 import type { Server } from 'node:http'
 import type { AssetResult, Response } from './assertions.ts'
-import { runCommand, viteBundler } from './commands.ts'
+import { executable, runCommand } from './commands.ts'
+import { scriptArgv } from './inspection.ts'
+import { readProjectFile } from './project-files.ts'
 
 const BACKEND_PORT = 4000
 
@@ -79,11 +81,15 @@ export async function startDevServer(): Promise<string> {
   return addressed(fixtures.devServer)
 }
 
+// The scenario is about the bundle this project ships, so the build it runs is
+// the one `package.json` declares rather than a second statement of it here.
+//
 // Vite reads NODE_ENV, not its mode, to decide whether a build is a production
 // one, and Vitest runs this process with NODE_ENV=test - so a build driven from
 // inside this process bundles React's development entry.
 const runProductionBuild = async (): Promise<void> => {
-  const { code, output } = await runCommand(viteBundler, ['build'], { NODE_ENV: 'production' })
+  const [command, ...args] = scriptArgv(readProjectFile('package.json'), 'build')
+  const { code, output } = await runCommand(executable(command), args, { NODE_ENV: 'production' })
   if (code !== 0) {
     throw new Error(`the production build failed (exit ${code}):\n${output}`)
   }

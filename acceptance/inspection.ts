@@ -33,7 +33,23 @@ export function compilerMajorVersion(versionOutput: string): number {
   return Number(banner[1])
 }
 
-export function availableScripts(manifestText: string): string[] {
+const declaredScripts = (manifestText: string): Record<string, string> => {
   const manifest: { scripts?: Record<string, string> } = JSON.parse(manifestText)
-  return Object.keys(manifest.scripts ?? {})
+  return manifest.scripts ?? {}
+}
+
+export function availableScripts(manifestText: string): string[] {
+  return Object.keys(declaredScripts(manifestText))
+}
+
+// The argv of a script the manifest declares, so a caller that wants to run
+// what the project runs does not have to restate the command. An npm script is
+// a command and its arguments separated by whitespace; a script needing shell
+// syntax to be understood would have to be read some other way.
+export function scriptArgv(manifestText: string, name: string): string[] {
+  const command = declaredScripts(manifestText)[name]?.trim()
+  if (!command) {
+    throw new Error(`package.json declares no "${name}" script to run`)
+  }
+  return command.split(/\s+/)
 }

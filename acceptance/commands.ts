@@ -10,10 +10,11 @@ export type CommandResult = {
   output: string
 }
 
-const executable = (name: string): string => join(projectRoot, 'node_modules', '.bin', name)
+// What `npm run` resolves a bare command name to.
+export const executable = (name: string): string =>
+  join(projectRoot, 'node_modules', '.bin', name)
 
 export const typescriptCompiler = executable('tsc')
-export const viteBundler = executable('vite')
 
 // Overrides are merged onto this process's environment, not a replacement for it.
 export async function runCommand(
