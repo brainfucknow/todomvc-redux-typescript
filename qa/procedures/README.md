@@ -37,10 +37,18 @@ fixed sleep is the only way to make this suite flake.
 4. Before each procedure the harness resets the stub: fixture data restored to
    the one the procedure names, all faults cleared.
 
-The app may be served from the dev server or from a production build; the
-procedures do not depend on which. One difference to be aware of: under the dev
-server the app runs inside `React.StrictMode`, which mounts the list twice, so
-**the initial `GET api/todos/` is issued twice**. The stub must answer both
+The app may be served from the dev server or from a production build. Every
+procedure but one is indifferent to which. The exception is procedure 20, which
+needs a real transport failure, and a proxy cannot deliver one (see Faults
+below), so it runs only where the browser reaches the stub directly: that is
+`npm run test:e2e`, where the stub serves the built app on its own origin and
+all 22 procedures run. The supplementary suites `npm run test:e2e:dev` and
+`npm run test:e2e:preview` reach the stub through a proxy and skip procedure 20,
+naming the reason in the run output.
+
+One further difference to be aware of: under the dev server the app runs inside
+`React.StrictMode`, which mounts the list twice, so **the initial
+`GET api/todos/` is issued twice**. The stub must answer both
 identically, and faults must be armed per method-and-path rather than "the next
 request" (see Faults below).
 
@@ -106,7 +114,13 @@ Two kinds, armed per method-and-path, staying armed until the harness resets.
 twice under StrictMode.
 
 - **transport(method, path)**: matching requests get no valid HTTP response (the
-  connection is closed). This is the only fault the client recognizes as failure.
+  connection is closed). This is the only fault the client recognizes as failure,
+  and it recognizes it only when the stub answers the browser directly. An HTTP
+  proxy in between necessarily turns the destroyed connection into a `502`, which
+  is an HTTP answer rather than a transport failure. Where the client reads a JSON
+  body it still fails, on the body; `DELETE`, whose body it never reads (see the
+  fixture contract above), leaves nothing to tell that `502` apart from a success,
+  which is why procedure 20 needs an unproxied origin.
 - **status(method, path, code, body)**: matching requests get that HTTP status and
   body. The client never checks the status; see `21-http-error-status-ignored.md`.
 

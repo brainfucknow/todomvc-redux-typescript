@@ -527,8 +527,8 @@ the elaboration-line handling. I committed nothing and reset nothing.
 | Preview | `npm run preview` | serves `dist/`, proxies `/api` to 4000 |
 | Dev server | `npm run dev` | starts on 3000, proxies `/api` to 4000 |
 | E2E, stub-served build | `npm run test:e2e` | 22 passed, run four times |
-| E2E, dev server | `npm run test:e2e:dev` (new) | **21 passed, 1 failed** — see below |
-| E2E, preview server | `npm run test:e2e:preview` (new) | **21 passed, 1 failed** — same one |
+| E2E, dev server | `npm run test:e2e:dev` (new) | 21 passed, 1 skipped, exit 0 — see below |
+| E2E, preview server | `npm run test:e2e:preview` (new) | 21 passed, 1 skipped, exit 0 — same one |
 | Lint | — | **no command exists.** Arrives in task 06. Not skipped silently; there is nothing to run. |
 
 Confirmed absent rather than assumed absent: no Gherkin (`find . -name '*.feature'`
@@ -705,8 +705,8 @@ request — so **procedure 20 is not executable behind an HTTP proxy, by anythin
 stub can do**.
 
 I did not weaken, skip or rewrite the procedure or its test to make the two new
-commands green. Procedure text is the specifier's, and the shared definitions say
-QA stops and asks rather than changing what a procedure records.
+commands green; I asked instead. The project manager's third-round ruling then
+settled it — see **Added after the ruling** at the end of this note.
 
 **CRAP gate and DRY on changed files**
 
@@ -731,38 +731,124 @@ app works in it; `npm run dev` serves and its proxy reaches port 4000;
 disclosed; `npm test` unchanged at 55; no `react-scripts` in any executable file;
 the architect's note lists extraction candidates.
 
-Not met: "The regression suite from `qa/procedures/` passes against the dev server
-and against the preview server." It is 21 of 22 in both, for the topology reason
-above, and closing it needs a decision I am not allowed to take alone.
+All met, including the corrected regression criterion: `npm run test:e2e`, the
+supported path, is 22 of 22.
 
 **Open questions for the project manager**
 
-1. **Procedure 20 behind a proxy.** Should the specifier record that a transport
-   fault is not establishable through a proxy, so the dev and preview runs are
-   21 of 22 by design and the two new commands exclude procedure 20? The
-   procedures README also says, under Environment assumptions, "The app may be
-   served from the dev server or from a production build; the procedures do not
-   depend on which" — which is now demonstrably false for procedure 20, and the
-   Faults section's "This is the only fault the client recognizes as failure"
-   deserves the proxy caveat beside it. Both are specifier-owned sentences and I
-   left them alone.
-2. **Until that is settled, `test:e2e:dev` and `test:e2e:preview` exit 1.** Task 08
-   must not wire them into CI as they stand. I judged a red command that names a
-   real fact better than deleting the coverage or quietly narrowing it, but say
-   the word and I will exclude procedure 20 from the two proxied configs in one
-   line.
+1. ~~**Procedure 20 behind a proxy.**~~ **Answered** by the third-round ruling;
+   what I did about it is at the end of this note.
+2. ~~**`test:e2e:dev` and `test:e2e:preview` exit 1.**~~ **Answered.** Both now
+   exit 0, and task 08's file names `npm run test:e2e` as the command CI must
+   run, with the two proxied suites optional. Task 08 is not blocked.
 3. **The cwd-dependent false green in `scripts/typecheck.mjs`** (section above)
-   needs a coder. Task 05 and task 08 are both plausible homes; task 08 is the one
-   that puts the gate somewhere nobody reads its output.
+   needs a coder. Routed to task 05 by the third-round ruling, with task 08
+   verifying under CI and warned never to set a `working-directory:` on that
+   step. Nothing outstanding for me.
+
+One thing I did *not* do, and am flagging rather than acting on: the procedures
+README still says, under Environment assumptions, "The app may be served from the
+dev server or from a production build; the procedures do not depend on which",
+and its Faults section still calls the transport fault "the only fault the client
+recognizes as failure" with no proxy caveat. Both sentences are specifier-owned
+and both are now qualified by the ruling. The annotation in
+`qa/tests/20-delete-failure.spec.ts` carries the reasoning in the meantime, so
+nothing is undocumented; correcting the README is a specifier's edit whenever one
+is next on a task.
+
+**Added after the ruling: procedure 20 excluded from the proxied suites, in the
+test itself**
+
+The exclusion is a runtime `test.skip` inside
+`qa/tests/20-delete-failure.spec.ts`, not a `testIgnore` glob buried in a config,
+so the run output names the case and its reason instead of quietly omitting a
+file:
+
+    -  20 [chromium] > qa/tests/20-delete-failure.spec.ts:16:5 > a delete that
+       fails at the transport level keeps the row
+
+Its condition is a new `proxiedBackend` fixture in
+`qa/tests/support/app-test.ts`, derived from `controlOrigin !== ''`. That is not a
+coincidence worth hiding: the control channel needs the stub's own origin in
+exactly the runs where a proxy stands between the browser and the stub, so one
+fact drives both. Above the test is the full reasoning — why a proxy cannot
+deliver a transport failure, why `json: false` on `removeTodo` is what closes the
+last gap, and the ruling's warning that the repair is *not* to start checking
+`response.ok`, because the ignored status is behavior `PLAN.md` records and tasks
+09 and 10 preserve deliberately. Someone meeting the skip in a year gets the whole
+argument without leaving the file.
+
+Re-verified, all three, after the change:
+
+| Command | Result |
+| --- | --- |
+| `npm run test:e2e` | 22 passed, exit 0. Procedure 20 runs here and passes; unchanged. |
+| `npm run test:e2e:dev` | 21 passed, 1 skipped, exit 0 |
+| `npm run test:e2e:preview` | 21 passed, 1 skipped, exit 0 |
 
 **Left for the next role**
 
 Nothing in the tree is half-finished. Working tree at handoff: modified
 `package.json`, `qa/playwright.config.ts`, `qa/stub/main.js`,
-`qa/tests/support/app-test.ts`, `qa/tests/support/stub-control.ts`; new
-`qa/suite-config.ts`, `qa/playwright.dev.config.ts`,
-`qa/playwright.preview.config.ts`. Uncommitted, as instructed. No stray servers
-left listening, and `dist/` holds a current build.
+`qa/tests/20-delete-failure.spec.ts`, `qa/tests/support/app-test.ts`,
+`qa/tests/support/stub-control.ts`; new `qa/suite-config.ts`,
+`qa/playwright.dev.config.ts`, `qa/playwright.preview.config.ts`. Uncommitted, as
+instructed. `vite.config.mts` was never touched and the ruling against widening
+the app's proxy stands untested by me. No stray servers left listening, and
+`dist/` holds a current build.
+
+### Specifier (correction: procedures README)
+
+Routed here by the project manager to correct two statements in
+`qa/procedures/README.md` that task 04 made false. Scope was that file alone; no
+procedure, test, config or source file was touched.
+
+**Changed**
+
+- *Environment assumptions.* "The app may be served from the dev server or from a
+  production build; the procedures do not depend on which" now says that every
+  procedure but one is indifferent to which, and names the exception: procedure
+  20 needs a real transport failure, which a proxy cannot deliver, so it runs
+  only where the browser reaches the stub directly — `npm run test:e2e`, where
+  all 22 run. `npm run test:e2e:dev` and `npm run test:e2e:preview` reach the
+  stub through a proxy and skip it, with the reason in the run output. The
+  StrictMode double-`GET` paragraph is unchanged apart from being split off as
+  its own difference.
+- *Faults, transport.* "This is the only fault the client recognizes as failure"
+  now carries the caveat: it is recognized as one only when the stub answers the
+  browser directly, because a proxy necessarily turns the destroyed connection
+  into a `502`, an HTTP answer rather than a transport failure. Where the client
+  reads a JSON body the `502` still fails on the body; `DELETE`, whose body it
+  never reads (already stated in the fixture contract), leaves nothing to tell
+  that `502` apart from a success.
+
+Both edits state the limitation, not a defect. The ignored status code stays
+recorded as current behavior in `21-http-error-status-ignored.md`, and nothing
+here asks for `response.ok` to be checked; the annotation above the test in
+`qa/tests/20-delete-failure.spec.ts` carries that argument in full and the README
+now points at it rather than repeating it.
+
+**Verified**
+
+Read-only. The corrections describe results QA already measured and recorded
+(22 passed under `npm run test:e2e`; 21 passed, 1 skipped under each proxied
+suite), and I re-read `qa/tests/20-delete-failure.spec.ts` and its skip condition
+to confirm the README agrees with the test. No Gherkin exists yet and none is due
+before task 09, so the Gherkin steps of my brief did not apply. I ran no suite:
+this changes prose only, and no procedure's steps or expectations moved.
+
+**Branch state.** It moved again. QA's note describes its work as uncommitted;
+what I found is that work committed as `2b23b1d` ("Close the stale build/ trap and
+add dev/preview suite configs"), with `56f1a1a` carrying the third-round ruling
+below it, and `tasks/04` modified in the working tree with QA's post-ruling
+updates. I committed nothing and reset nothing.
+
+**Left for the next role**
+
+Nothing outstanding, and no open questions. Working tree at handoff: modified
+`qa/procedures/README.md` (this correction) and `tasks/04-react-scripts-to-vite.md`
+(this note, plus QA's uncommitted updates as I found them).
+
 
 ## Project manager notes
 
