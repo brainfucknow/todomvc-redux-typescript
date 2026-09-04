@@ -62,8 +62,8 @@ Serial. Each task assumes every earlier task is merged.
 | 01 | Characterize current behavior | Characterization | specifier -> QA | **done** |
 | 02 | Migrate component tests off react-shallow-renderer | Tooling | coder -> QA | **done** |
 | 03 | Migrate Jest to Vitest | Tooling | coder -> QA | **done** |
-| 04 | Replace react-scripts with Vite | Tooling | coder -> architect -> QA | in progress |
-| 05 | TypeScript 3.9 to 5.x and modern tsconfig | Tooling | coder -> QA | pending |
+| 04 | Replace react-scripts with Vite | Tooling | coder -> architect -> QA | **done** |
+| 05 | TypeScript 3.9 to 5.x and modern tsconfig | Tooling | coder -> QA | in progress |
 | 06 | ESLint 9 flat config and Prettier | Tooling | coder -> QA | pending |
 | 07 | React 18 to 19 and remove prop-types | Tooling | coder -> QA | pending |
 | 08 | Dependency hygiene and CI release checks | Tooling | coder -> QA | pending |
