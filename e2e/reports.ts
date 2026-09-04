@@ -19,26 +19,88 @@ export const summaryLine = (output: string, label: string): string => {
 export const testFiles = (output: string): string => summaryLine(output, 'Test Files')
 export const testCases = (output: string): string => summaryLine(output, 'Tests')
 
-const RESULT_LINE = /^\s*[✓×↓✗]\s/
+const RESULT_LINE = /^\s*([✓×↓✗])\s/
 const SOURCE_FILE = /([\w./-]+\.tsx?)\s*$/
+const DURATION = /\s+[\d.]+m?s$/
+// `src/foo.spec.ts (3 tests) 12ms` - a file's own line, not a test's.
+const FILE_SUMMARY = /\(\d+ tests?[^)]*\)$/
+
+export type TestResult = {
+  passed: boolean
+  file: string
+  name: string
+}
+
+// One result line: a marker, then either the full `[|project|] file > suite >
+// ... > name` a verbose run prints, or just the name, which is what the default
+// reporter's list of failures gives. Read whole rather than by marker alone, so
+// the rows that require a *passing* test carrying an id and the rows that
+// require a *failing* one read the same output the same way.
+export const testResults = (output: string): TestResult[] => {
+  const results: TestResult[] = []
+  for (const line of plain(output).split('\n')) {
+    const marked = RESULT_LINE.exec(line)
+    if (marked === null) {
+      continue
+    }
+    const named = line.slice(marked[0].length).split(' > ')
+    const file = named.length > 1 ? SOURCE_FILE.exec(named[0]) : null
+    const name = named[named.length - 1].replace(DURATION, '').trim()
+    // A failure list names the test and nothing else, so a nameless-file result
+    // is kept; a file's own summary line is not a test and is dropped.
+    if ((named.length > 1 && file === null) || FILE_SUMMARY.test(name)) {
+      continue
+    }
+    results.push({ passed: marked[1] === '✓', file: file === null ? '' : file[1], name })
+  }
+  return results
+}
 
 // Which files a `--reporter=verbose` run reported results from.
-export const reportedFiles = (output: string): string[] => {
-  const files = new Set<string>()
-  for (const line of plain(output).split('\n')) {
-    const [head] = line.split(' > ')
-    const found = SOURCE_FILE.exec(head)
-    if (RESULT_LINE.test(line) && found !== null) {
-      files.add(found[1])
-    }
-  }
-  return [...files].sort()
-}
+export const reportedFiles = (output: string): string[] =>
+  [...new Set(testResults(output).map((result) => result.file))].sort()
 
 // How many executions a named scenario reported, counted off the test names the
 // generated entry points produce: `<scenario name>/example_<n>`.
 export const scenarioExecutions = (output: string, scenario: string): number =>
-  plain(output).split('\n').filter((line) => RESULT_LINE.test(line) && line.includes(`> ${scenario}/example_`)).length
+  testResults(output).filter((result) => result.name.startsWith(`${scenario}/example_`)).length
+
+// The behaviour ids `qa/component-behaviour-inventory.md` records, read out of
+// the first cell of every table row that carries one. D2a1 asks for a passing
+// test name holding each of them.
+export const behaviourIds = (inventory: string): string[] =>
+  [...inventory.matchAll(/^\| ([CN]\d+) \|/gm)].map((found) => found[1])
+
+export type FrozenSuite = {
+  file: string
+  cases: number
+  names: string[]
+}
+
+// The two out-of-scope spec files the inventory freezes, with the case count
+// and the case names it freezes them at. D2a2 asks for exactly these.
+export const frozenSuites = (inventory: string): FrozenSuite[] =>
+  [...inventory.matchAll(/^\| `(\S+\.spec\.tsx?)` \| (\d+) \| (.+) \|$/gm)].map((found) => ({
+    file: found[1],
+    cases: Number(found[2]),
+    names: [...found[3].matchAll(/`([^`]+)`/g)].map((name) => name[1]),
+  }))
+
+// The packages under a scope that a `package.json` declares, from either
+// dependency block. A7 compares this against what the checkout imports.
+export const declaredPackages = (packageJson: string, scope: string): string[] => {
+  const manifest = JSON.parse(packageJson) as Record<string, Record<string, string> | undefined>
+  return Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
+    .filter((name) => name.startsWith(scope))
+    .sort()
+}
+
+// The packages under a scope that a `grep` over the checkout found named in an
+// import or a require, read out of the quoted specifier.
+export const importedPackages = (grepOutput: string, scope: string): string[] =>
+  [...new Set([...plain(grepOutput).matchAll(/['"]([^'"]+)['"]/g)]
+    .map((found) => found[1])
+    .filter((name) => name.startsWith(scope)))].sort()
 
 // The script names `npm run` prints. Two-space indent is a name; the command
 // under it is indented further. Lifecycle scripts are printed in a block of

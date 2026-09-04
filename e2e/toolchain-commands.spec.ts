@@ -9,12 +9,16 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isPortBound, npm, projectRoot, run, startBackendStub, startServer } from './harness.ts'
+import { isPortBound, npm, projectRoot, run, startBackendStub, startServer, type CommandResult } from './harness.ts'
 import {
+  behaviourIds,
+  declaredPackages,
   declaredScripts,
   documentedChecks,
   documentedScripts,
+  frozenSuites,
   gitStatus,
+  importedPackages,
   isCoveredBy,
   pathsWith,
   plain,
@@ -22,6 +26,7 @@ import {
   scenarioExecutions,
   testCases,
   testFiles,
+  testResults,
 } from './reports.ts'
 
 test.describe.configure({ mode: 'serial' })
@@ -30,6 +35,34 @@ const BACKEND_PORT = 4000
 const BACKEND_BODY = '[{"id":1,"text":"Buy milk","completed":false}]'
 
 const readme = (): string => readFileSync(join(projectRoot, 'README.md'), 'utf8')
+const inventory = (): string => readFileSync(join(projectRoot, 'qa/component-behaviour-inventory.md'), 'utf8')
+
+// The two packages procedure A requires gone: task 01 removed the first, task
+// 02 the second. Every A row reads both.
+const GONE_PACKAGES = ['react-scripts', 'react-shallow-renderer']
+
+// A7's scope, and what "imported" means for it: a specifier an import or a
+// require names, so a package merely mentioned in prose - which this file, the
+// procedure, and the plan all do - is not a use.
+const TESTING_LIBRARY = '@testing-library/'
+const IMPORT_SPECIFIER = "(from|import|require\\() *\\(?'@testing-library/[a-z-]+'"
+const UNREAD_BY_A7 = ['node_modules', 'dist', 'build', 'coverage'].map((directory) => `--exclude-dir=${directory}`)
+
+// D5's breakdown, and the total D3 and D3a read as a green tier.
+const SCENARIO_EXECUTIONS: Record<string, number> = {
+  'development server 1': 4,
+  'api proxy 1': 2,
+  'production build 1': 3,
+  'production build 2': 1,
+  'production build 3': 1,
+  'production build 4': 2,
+  'toolchain dependencies 1': 3,
+  'toolchain dependencies 2': 9,
+  'toolchain dependencies 3': 3,
+  'typescript compilation 1': 1,
+  'typescript compilation 2': 1,
+}
+const TOTAL_EXECUTIONS = Object.values(SCENARIO_EXECUTIONS).reduce((total, count) => total + count, 0)
 
 // What B3 reads off the page, so C5 can say "exactly as it did in B3" and mean it.
 const expectTodoPage = async (page: Page): Promise<void> => {
@@ -121,7 +154,9 @@ test('Procedure A: install', async () => {
 
       const installed = run('npm', ['ci'], scratch)
       expect(installed.code, installed.output).toBe(0)
-      expect(plain(installed.output)).not.toMatch(/react-scripts/)
+      for (const gone of GONE_PACKAGES) {
+        expect(plain(installed.output), gone).not.toContain(gone)
+      }
       expect(existsSync(join(scratch, 'node_modules'))).toBe(true)
     } finally {
       rmSync(scratch, { recursive: true, force: true })
@@ -129,20 +164,40 @@ test('Procedure A: install', async () => {
   })
 
   await test.step('A3 grep the manifests', async () => {
-    const counted = run('grep', ['-c', 'react-scripts', 'package.json', 'package-lock.json'])
-    expect(plain(counted.output).trim().split('\n')).toEqual(['package.json:0', 'package-lock.json:0'])
+    for (const gone of GONE_PACKAGES) {
+      const counted = run('grep', ['-c', gone, 'package.json', 'package-lock.json'])
+      expect(plain(counted.output).trim().split('\n'), gone).toEqual(['package.json:0', 'package-lock.json:0'])
+    }
   })
 
-  await test.step('A4 npm ls react-scripts', async () => {
-    const listed = npm('ls', 'react-scripts')
-    expect(plain(listed.output)).toContain('(empty)')
-    expect(plain(listed.output)).not.toMatch(/react-scripts@/)
+  await test.step('A4 npm ls', async () => {
+    for (const gone of GONE_PACKAGES) {
+      const listed = npm('ls', gone)
+      expect(plain(listed.output), gone).toContain('(empty)')
+      expect(plain(listed.output), gone).not.toContain(`${gone}@`)
+    }
   })
 
   await test.step('A5 grep the sources', async () => {
-    const found = run('grep', ['-rn', 'react-scripts', 'src'])
-    expect(plain(found.output).trim()).toBe('')
-    expect(found.code).toBe(1)
+    for (const gone of GONE_PACKAGES) {
+      const found = run('grep', ['-rn', gone, 'src'])
+      expect(plain(found.output).trim(), gone).toBe('')
+      expect(found.code, gone).toBe(1)
+    }
+  })
+
+  await test.step('A6 the ambient declaration went with the package it declared', async () => {
+    expect(existsSync(join(projectRoot, 'src/react-shallow-renderer.d.ts'))).toBe(false)
+  })
+
+  await test.step('A7 the declared testing-library packages are the imported ones', async () => {
+    const declared = declaredPackages(readFileSync(join(projectRoot, 'package.json'), 'utf8'), TESTING_LIBRARY)
+    const found = run('grep', ['-rhoE', IMPORT_SPECIFIER, ...UNREAD_BY_A7, '.'])
+    const imported = importedPackages(found.output, TESTING_LIBRARY)
+    // Two empty sets would agree, and would mean the grep stopped working
+    // rather than that the checkout is clean.
+    expect(imported.length, 'no testing-library import found, so A7 would pass by arithmetic').toBeGreaterThan(0)
+    expect(declared, 'declared but not imported, or imported but not declared').toEqual(imported)
   })
 })
 
@@ -281,72 +336,192 @@ test('Procedure C: production build and preview', async ({ page }) => {
   }
 })
 
+// A Vitest summary tail, as a number, requiring the run it came from to be
+// clean: `28 passed (28)`. A run with failures or skips says so on this line,
+// so a tail that is not of this shape fails the row reading it. The rows that
+// record a total rather than matching one read it through here.
+const cleanTotal = (tail: string): number => {
+  const found = /^(\d+) passed \((\d+)\)$/.exec(tail)
+  expect(found, `not a clean run: ${tail}`).not.toBeNull()
+  expect(found![1], `not every test reported passed: ${tail}`).toBe(found![2])
+  return Number(found![1])
+}
+
+type Totals = {
+  files: number
+  cases: number
+}
+
+const totalsOf = (output: string): Totals => ({
+  files: cleanTotal(testFiles(output)),
+  cases: cleanTotal(testCases(output)),
+})
+
+// What `npm test` is supposed to have run, read off the tree rather than
+// listed here: `src/**/*.spec.{ts,tsx}`, `acceptance/*.spec.ts` and
+// `scripts/**/*.spec.ts`. A task that splits or merges a spec file passes D2
+// only by leaving the tree and the run agreeing.
+const specFilesInTree = (): string[] => [
+  ...filesUnder('src', /\.spec\.tsx?$/),
+  ...filesUnder('acceptance', /^acceptance\/[^/]+\.spec\.ts$/),
+  ...filesUnder('scripts', /\.spec\.ts$/),
+].sort()
+
+// The three commands procedure D runs more than once, each spelled where the
+// row that names it can be read against the procedure.
+const suiteUnderSrc = (): CommandResult => run('npx', ['vitest', 'run', 'src', '--reporter=verbose'])
+const acceptanceTier = (): CommandResult => npm('run', 'test:acceptance')
+const featureFiles = (): string[] => filesUnder('features', /\.feature$/)
+
+// What `git status` says about one path, which is how the two rows that put a
+// file back check that they did.
+const gitStatusOf = (path: string): string => plain(run('git', ['status', '--porcelain', path]).output).trim()
+
+const passingNames = (output: string): string[] =>
+  testResults(output).filter((result) => result.passed).map((result) => result.name)
+
+const failingNames = (output: string): string[] =>
+  testResults(output).filter((result) => !result.passed).map((result) => result.name)
+
+// D2a3-D2a5: break one behaviour, require a failing test carrying the id that
+// answers it, put the file back. A green run there would mean D2a1 is
+// attributing coverage to tests that assert nothing.
+const expectBreakingFails = (file: string, behaviour: string, mutation: string, id: string): void => {
+  const source = join(projectRoot, file)
+  const original = readFileSync(source, 'utf8')
+  expect(original.includes(behaviour), `${file} no longer holds the text this row breaks`).toBe(true)
+  try {
+    writeFileSync(source, original.replace(behaviour, mutation))
+    const reran = suiteUnderSrc()
+    expect(reran.code, `${file} was broken and the suite still passed`).not.toBe(0)
+    expect(failingNames(reran.output).filter((name) => name.includes(id)), `no failing test carries ${id}`).not.toEqual([])
+  } finally {
+    writeFileSync(source, original)
+  }
+  // Procedure E watches untracked paths only, so a modification left behind
+  // here has to be caught here.
+  expect(gitStatusOf(file), `${file} was left modified`).toBe('')
+}
+
 test('Procedure D: test tiers', async () => {
   const unit = npm('test', '--', '--reporter=verbose')
+  let whole: Totals = { files: 0, cases: 0 }
 
   await test.step('D1 npm test', async () => {
     expect(unit.code, unit.output).toBe(0)
-    expect(testFiles(unit.output)).toBe('23 passed (23)')
-    expect(testCases(unit.output)).toBe('228 passed (228)')
+    whole = totalsOf(unit.output)
   })
 
-  await test.step('D2 the D1 file list', async () => {
-    expect(reportedFiles(unit.output)).toEqual([
-      ...filesUnder('src', /\.spec\.tsx?$/),
-      'acceptance/assertions.spec.ts',
-      'acceptance/generator.spec.ts',
-      'acceptance/inspection.spec.ts',
-      'acceptance/layout.spec.ts',
-      'acceptance/runtime.spec.ts',
-      'scripts/architecture/layering.spec.ts',
-      'scripts/architecture/packages.spec.ts',
-      'scripts/crap/complexity.spec.ts',
-      'scripts/crap/coverage.spec.ts',
-      'scripts/crap/options.spec.ts',
-      'scripts/crap/report.spec.ts',
-      'scripts/crap/score.spec.ts',
-      'scripts/crap/tiers.spec.ts',
-    ].sort())
-    expect(reportedFiles(unit.output).filter((file) =>
+  await test.step('D2 the D1 file list is the spec files in the tree', async () => {
+    const reported = reportedFiles(unit.output)
+    expect(reported).toEqual(specFilesInTree())
+    expect(reported.filter((file) =>
       file.startsWith('build/acceptance/generated/') || file.startsWith('property/') || file.startsWith('hardening/')))
       .toEqual([])
   })
 
-  await test.step('D2a the pre-existing suite under src', async () => {
-    const suite = run('npx', ['vitest', 'run', 'src'])
-    expect(suite.code, suite.output).toBe(0)
-    expect(testFiles(suite.output)).toBe('10 passed (10)')
-    expect(testCases(suite.output)).toBe('54 passed (54)')
+  // D2a runs the suite and D2a1 re-runs it verbose; one verbose run answers
+  // both, and prints the same summary line D2a reads.
+  const underSrc = suiteUnderSrc()
+  let src: Totals = { files: 0, cases: 0 }
+
+  await test.step('D2a the component suite under src', async () => {
+    expect(underSrc.code, underSrc.output).toBe(0)
+    // Recorded, not matched: task 02 rewrote these files, so a moved total is
+    // not by itself a finding. D2a1 is what must hold.
+    src = totalsOf(underSrc.output)
+    expect(src.files).toBeGreaterThan(0)
   })
+
+  await test.step('D2a1 every behaviour id is carried by a passing test', async () => {
+    const ids = behaviourIds(inventory())
+    expect(ids.length, 'the inventory records no ids for D2a1 to trace').toBeGreaterThan(0)
+    const passing = passingNames(underSrc.output)
+    expect(ids.filter((id) => !passing.some((name) => name.includes(id))), 'behaviour ids with no passing test').toEqual([])
+  })
+
+  await test.step('D2a2 the two out-of-scope files are frozen', async () => {
+    const frozen = frozenSuites(inventory())
+    expect(frozen.length, 'the inventory freezes no file for D2a2 to read').toBeGreaterThan(0)
+    for (const suite of frozen) {
+      const reported = testResults(underSrc.output).filter((result) => result.file === suite.file)
+      expect(reported.length, suite.file).toBe(suite.cases)
+      expect(reported.filter((result) => !result.passed), suite.file).toEqual([])
+      expect(reported.map((result) => result.name).sort(), suite.file).toEqual([...suite.names].sort())
+    }
+  })
+
+  await test.step('D2a3 breaking the footer count fails C05', async () => {
+    expectBreakingFails('src/components/Footer.tsx', "activeCount === 1 ? 'item' : 'items'", "'items'", 'C05')
+  })
+
+  await test.step('D2a4 breaking the destroy control fails C25', async () => {
+    expectBreakingFails('src/components/TodoItem.tsx', 'deleteTodo(todo.id)', 'deleteTodo(todo.id + 1)', 'C25')
+  })
+
+  await test.step('D2a5 breaking the filter link class fails C13', async () => {
+    expectBreakingFails('src/components/Link.tsx', 'classnames({ selected: active })', 'classnames({})', 'C13')
+  })
+
+  let pipeline: Totals = { files: 0, cases: 0 }
 
   await test.step('D2b the acceptance-pipeline unit tests', async () => {
     const suite = run('npx', ['vitest', 'run', 'acceptance'])
     expect(suite.code, suite.output).toBe(0)
-    expect(testFiles(suite.output)).toBe('5 passed (5)')
-    expect(testCases(suite.output)).toBe('63 passed (63)')
+    pipeline = totalsOf(suite.output)
+    expect(pipeline.files).toBeGreaterThanOrEqual(5)
+    expect(pipeline.cases).toBeGreaterThanOrEqual(63)
   })
 
   await test.step('D2c the project tooling unit tests, and the sum', async () => {
     const suite = run('npx', ['vitest', 'run', 'scripts'])
     expect(suite.code, suite.output).toBe(0)
-    expect(testFiles(suite.output)).toBe('8 passed (8)')
-    expect(testCases(suite.output)).toBe('111 passed (111)')
-    expect(54 + 63 + 111).toBe(228)
-    expect(10 + 5 + 8).toBe(23)
+    const tooling = totalsOf(suite.output)
+    expect(tooling.files).toBeGreaterThanOrEqual(8)
+    expect(tooling.cases).toBeGreaterThanOrEqual(111)
+    // The three buckets are disjoint and exhaustive, so a case lost from one
+    // cannot hide behind a case gained in another.
+    expect(src.files + pipeline.files + tooling.files, 'the bucket file totals do not sum to D1').toBe(whole.files)
+    expect(src.cases + pipeline.cases + tooling.cases, 'the bucket case totals do not sum to D1').toBe(whole.cases)
   })
 
-  const acceptance = npm('run', 'test:acceptance')
+  const acceptance = acceptanceTier()
 
   await test.step('D3 npm run test:acceptance', async () => {
     expect(acceptance.code, acceptance.output).toBe(0)
     const printed = plain(acceptance.output)
-    for (const feature of filesUnder('features', /\.feature$/)) {
+    const features = featureFiles()
+    for (const feature of features) {
       expect(printed).toContain(`parsing ${feature}`)
       expect(printed).toContain(`generated build/acceptance/generated/${feature.split('/')[1].replace('.feature', '.acceptance.ts')}`)
     }
-    expect(testFiles(acceptance.output)).toBe('5 passed (5)')
-    expect(testCases(acceptance.output)).toBe('27 passed (27)')
+    expect(cleanTotal(testFiles(acceptance.output))).toBe(features.length)
+    expect(cleanTotal(testCases(acceptance.output))).toBe(TOTAL_EXECUTIONS)
     generatedPaths.push('build/acceptance')
+  })
+
+  await test.step('D3a the absence scenarios can fail', async () => {
+    // A scenario asserting a package is gone passes whenever the name is
+    // missing, which is also what a scenario asserting nothing looks like.
+    // Putting both names back, in the one place a scratch file can put them,
+    // is what tells the two apart.
+    const probe = 'src/absence-probe.ts'
+    try {
+      writeFileSync(join(projectRoot, probe), `export const probe = '${GONE_PACKAGES.join(' and ')}'\n`)
+      const probed = acceptanceTier()
+      expect(probed.code, 'the probe is in the tree and the acceptance tier stayed green').not.toBe(0)
+      expect(failingNames(probed.output).sort())
+        .toEqual(['toolchain dependencies 1/example_3', 'toolchain dependencies 3/example_3'])
+      for (const gone of GONE_PACKAGES) {
+        expect(plain(probed.output), gone).toContain(`"${gone}" still appears in ${probe}`)
+      }
+    } finally {
+      rmSync(join(projectRoot, probe), { force: true })
+    }
+    const cleaned = acceptanceTier()
+    expect(cleaned.code, cleaned.output).toBe(0)
+    expect(cleanTotal(testCases(cleaned.output))).toBe(TOTAL_EXECUTIONS)
+    expect(gitStatusOf(probe), 'the probe was left behind').toBe('')
   })
 
   // Procedure C's closing paragraph: D3 rebuilds `dist/` by running the
@@ -363,30 +538,18 @@ test('Procedure D: test tiers', async () => {
   await test.step('D4 the pipeline output', async () => {
     const written = readdirSync(join(projectRoot, 'build/acceptance'))
     expect(written.sort()).toEqual(['generated', 'ir'])
-    expect(filesUnder('build/acceptance/ir', /\.json$/).length).toBe(5)
-    expect(filesUnder('build/acceptance/generated', /\.acceptance\.ts$/).length).toBe(5)
+    const features = featureFiles().length
+    expect(filesUnder('build/acceptance/ir', /\.json$/).length).toBe(features)
+    expect(filesUnder('build/acceptance/generated', /\.acceptance\.ts$/).length).toBe(features)
   })
 
   await test.step('D5 the scenario executions', async () => {
     const executions = run('npx', ['vitest', 'run', '--config', 'vitest.acceptance.config.ts', '--reporter=verbose'])
     expect(executions.code, executions.output).toBe(0)
-    const counted = {
-      'development server 1': 4,
-      'api proxy 1': 2,
-      'production build 1': 3,
-      'production build 2': 1,
-      'production build 3': 1,
-      'production build 4': 2,
-      'toolchain dependencies 1': 3,
-      'toolchain dependencies 2': 9,
-      'typescript compilation 1': 1,
-      'typescript compilation 2': 1,
-    }
-    for (const [scenario, expected] of Object.entries(counted)) {
+    for (const [scenario, expected] of Object.entries(SCENARIO_EXECUTIONS)) {
       expect(scenarioExecutions(executions.output, scenario), scenario).toBe(expected)
     }
-    expect(Object.values(counted).reduce((total, count) => total + count, 0)).toBe(27)
-    expect(testCases(executions.output)).toBe('27 passed (27)')
+    expect(cleanTotal(testCases(executions.output))).toBe(TOTAL_EXECUTIONS)
   })
 
   await test.step('D6 the TypeScript compiler checks the project', async () => {
@@ -403,25 +566,29 @@ test('Procedure D: test tiers', async () => {
 
   const property = npm('run', 'test:property', '--', '--reporter=verbose')
   const hardening = npm('run', 'test:hardening', '--', '--reporter=verbose')
+  let properties: Totals = { files: 0, cases: 0 }
+  let hardened: Totals = { files: 0, cases: 0 }
 
   await test.step('D8 npm run test:property', async () => {
     expect(property.code, property.output).toBe(0)
-    expect(testFiles(property.output)).toBe('14 passed (14)')
-    expect(testCases(property.output)).toBe('141 passed (141)')
+    properties = totalsOf(property.output)
+    expect(properties.files).toBeGreaterThanOrEqual(14)
+    expect(properties.cases).toBeGreaterThanOrEqual(141)
   })
 
   await test.step('D9 npm run test:hardening', async () => {
     expect(hardening.code, hardening.output).toBe(0)
-    expect(testFiles(hardening.output)).toBe('12 passed (12)')
-    expect(testCases(hardening.output)).toBe('128 passed (128)')
+    hardened = totalsOf(hardening.output)
+    expect(hardened.files).toBeGreaterThanOrEqual(12)
+    expect(hardened.cases).toBeGreaterThanOrEqual(128)
   })
 
   await test.step('D10 the tiers do not overlap', async () => {
     const inUnit = reportedFiles(unit.output)
     const inProperty = reportedFiles(property.output)
     const inHardening = reportedFiles(hardening.output)
-    expect(inProperty.length).toBe(14)
-    expect(inHardening.length).toBe(12)
+    expect(inProperty.length, 'the property file list and its summary disagree').toBe(properties.files)
+    expect(inHardening.length, 'the hardening file list and its summary disagree').toBe(hardened.files)
     expect(inUnit.filter((file) => inProperty.includes(file) || inHardening.includes(file))).toEqual([])
     expect(inProperty.every((file) => file.startsWith('property/'))).toBe(true)
     expect(inHardening.every((file) => file.startsWith('hardening/'))).toBe(true)

@@ -13,6 +13,11 @@ The project runs on current React (19.x) with matching `@types/react` and `@type
 - Fix what React 19 breaks: removed APIs, the stricter `@types/react` 19 typings (notably that `children` is no longer implicit on `React.FunctionComponent`), and any ref or `propTypes` handling React 19 no longer supports on function components.
 - Confirm StrictMode double-invocation does not produce duplicate `loadTodos` requests; if it does, that is behavior this task must fix.
 
+- Carried from task 02, for the Specifier: `qa/toolchain-commands.md`'s procedure-A paragraph lists
+  `qa/component-behaviour-inventory.md` among the files that still name `react-shallow-renderer`. The
+  inventory never writes the package name. Prose in a procedure, so it fails nothing, but a procedure
+  that misdescribes the tree is how a verifier learns to discount it.
+
 ## Out of scope
 
 - Adopting new React 19 features (Actions, `use`, `useOptimistic`, the compiler). This is a version upgrade, not a feature adoption.
