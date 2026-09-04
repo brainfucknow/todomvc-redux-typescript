@@ -310,4 +310,96 @@ Everything here that is specific to a GitHub runner:
    installs with `--omit=dev` - so I left the classification alone rather than
    making an untested claim about a deployment that does not exist.
 
+#### Follow-up: the project manager's ruling on the four questions
+
+Applied on top of the note above, still uncommitted. Where the two disagree,
+this section wins: the dependency table's `@types/classnames` row and question
+4 are both superseded here.
+
+One bookkeeping note: the ruling names my committed work as `08d5477`, but no
+such object exists in this clone. The commit carrying it here is `86240bb`,
+"Wire every gate into CI and test the typecheck gate", on top of `c386004`.
+Nothing was reset or forced; I mention it only so the hash in the ruling is not
+taken as a missing commit.
+
+**1. `reselect` - left alone, routed to task 13.** No change.
+
+**2. `classnames` 2.2.6 -> 2.5.1, `@types/classnames` deleted.** The bump is
+behavior-neutral, checked four ways rather than assumed:
+
+- All three call sites (`Link`, `TodoItem`, `TodoTextInput` - the ruling says
+  two) pass a single object literal of booleans, `classnames({ selected })`.
+  That form has been the same since 2.x; 2.5.1's additions are `toString`
+  handling on objects and array flattening, neither of which these reach.
+- `npm run typecheck` is 0 with `@types/classnames` gone: the three TS7016s I
+  predicted do not appear, because 2.5.1 ships `index.d.ts` and an `exports`
+  map that names it.
+- The built bundle differs in exactly one place. Comparing the JS before and
+  after byte by byte: a common prefix of 212,803 bytes, a common suffix of
+  9,301, and one differing region of 268 -> 432 bytes, which is the classnames
+  implementation itself (2.2.6's single loop replaced by 2.5.1's
+  `classNames`/`parseValue`/`appendClass`). Nothing else in 222 kB moved. The
+  CSS is byte-identical.
+- `test:unit` 55 passing (those specs assert rendered `className` strings),
+  `test:e2e` 22 passed, `test:e2e:dev` and `test:e2e:preview` 21 passed / 1
+  skipped each.
+
+**3. Dependency classification fixed.** `dependencies` is now exactly the eight
+the browser bundle needs - `@reduxjs/toolkit`, `classnames`, `react`,
+`react-dom`, `react-redux`, `redux`, `reselect`, `todomvc-app-css` - and
+`typescript`, `@types/node`, `@types/react`, `@types/react-dom` moved to
+`devDependencies`.
+
+The sanity check as specified cannot pass, and the reason is not about this
+change. `npm ci --omit=dev` succeeds (exit 0), but `npm run build` then fails
+with `sh: 1: vite: not found`: the build toolchain is itself a devDependency,
+as it was before this task, so a runtime-only install has nothing to build
+with. Nor is there a production install to protect - `vite build` inlines
+every dependency into `dist/`, which is served as static files and reads no
+`node_modules` at all; the E2E suite has been proving that all along, since the
+stub serves `dist/` directly. For this project the two lists say what ends up
+in the bundle, not what a deployment installs.
+
+So I ran the two checks that do carry the meaning:
+
+- After `npm ci --omit=dev` in a throwaway copy: 0 vulnerabilities, and the only
+  populated top-level packages are the eight and their transitives (`@types/`
+  holds just `react` and `use-sync-external-store`, both pulled in by
+  `react-redux`; the `@eslint`, `@playwright`, `@vitejs` and `@vitest`
+  directories are empty shells npm leaves behind).
+- Every bare specifier imported by shipped `src/` - `@reduxjs/toolkit`,
+  `classnames`, `react`, `react-dom/client`, `react-redux`, `redux`,
+  `reselect`, `todomvc-app-css/index.css`, with the specs and test-support
+  excluded - resolves inside that runtime-only install. Nothing I moved to
+  `devDependencies` is reachable from the bundle.
+
+**4. `pull_request` added, `push` narrowed.** The workflow now runs on every
+pull request and on pushes to `master`, so a branch with an open PR is checked
+once rather than twice, and a branch without one is checked the moment a PR
+opens. `master` is this repository's only long-lived remote branch, which is
+what I took as the default; if the default branch is ever renamed, that list is
+the one line to change.
+
+**Clean room, re-run end to end after all of the above.** Rebuilt from
+`git ls-files` plus untracked-not-ignored into an empty directory, `npm ci` from
+the lockfile, then the workflow's steps in order:
+
+| Step | Result |
+| --- | --- |
+| `npm ci` | exit 0, 296 packages, 0 vulnerabilities, `classnames` 2.5.1, no `@types/classnames` |
+| `npm run lint` | exit 0 |
+| `npm run format:check` | exit 0 |
+| `npm run typecheck` | exit 0, `0 error(s) in tsconfig.json, qa/tsconfig.json` |
+| `npm test` | exit 0, 11 files / 71 tests (`unit` 10/55, `scripts` 1/16) |
+| `npm run build` | exit 0 |
+| the propTypes grep, verbatim, under `bash -e` | exit 0 |
+| `CI=true npm run test:e2e` | exit 0, 22 passed |
+
+The workflow file was re-parsed as YAML after the trigger edit:
+`{'push': {'branches': ['master']}, 'pull_request': None}`.
+
+Unchanged from the note above: what I could not verify is still everything
+specific to a GitHub runner - the action majors, the npm cache, the Playwright
+browser install, the failure-only artifact upload, and any Node but 22.22.2.
+
 ### QA

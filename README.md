@@ -86,7 +86,8 @@ cannot be delivered through an HTTP proxy.
 
 ## Continuous integration
 
-`.github/workflows/nodejs.yml` runs, on every push: `npm ci`, then lint, format
-check, typecheck, unit tests, production build, a grep that fails if `propTypes`
-returns to `src/`, and the end-to-end suite against the built app. Every step is
-one of the commands above, so a red job reproduces locally by name.
+`.github/workflows/nodejs.yml` runs, on every pull request and on every push to
+`master`: `npm ci`, then lint, format check, typecheck, unit tests, production
+build, a grep that fails if `propTypes` returns to `src/`, and the end-to-end
+suite against the built app. Every step is one of the commands above, so a red
+job reproduces locally by name.

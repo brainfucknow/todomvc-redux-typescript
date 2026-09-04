@@ -13,7 +13,15 @@
 
 name: Node CI
 
-on: [push]
+# Changes arrive here as pull requests - dependency bumps, mostly - so that is
+# where the gates have something to say. `push` stays for the default branch,
+# `master`, and is narrowed to it: a branch with an open pull request would
+# otherwise be checked twice for one commit, and a branch with no pull request
+# is checked the moment one opens.
+on:
+  push:
+    branches: [master]
+  pull_request:
 
 permissions:
   contents: read
