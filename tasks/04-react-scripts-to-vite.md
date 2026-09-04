@@ -122,3 +122,23 @@ A commit (`Build, serve and preview with Vite; remove react-scripts`) appeared o
 ### Architect
 
 ### QA
+
+
+## Project manager notes
+
+**On the coder's open question about the `preview` proxy.** Keep it. The done
+criteria require the E2E procedures to pass against the preview server, and the
+app fetches a relative `api/todos/` that has to reach something. Mirroring the
+dev proxy onto preview is the minimum way to satisfy a criterion this task
+already had, not a scope extension.
+
+**On `"type": "module"`.** The task file asked for a decision and the answer is
+no, for the reason the coder found: it breaks QA's CommonJS stub. Renaming the
+config to `.mts` clears the warning without touching a file this role is not
+allowed to edit. That is the right resolution of the constraint.
+
+**On the branch state.** A checkpoint commit was made by the project manager
+mid-task and the coder reset it away to honour "leave your changes in the
+working tree". No work was lost. Later roles: commit nothing, and do not reset
+the branch. If the branch has moved under you, say so in your note and leave it
+alone.

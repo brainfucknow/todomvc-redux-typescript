@@ -41,6 +41,7 @@ Known type debt that the bump will surface:
 
 ## Done criteria
 
+- **The typecheck gate is weaker than it looks right now, and this task is what fixes it.** Task 04's coder established that while the TypeScript 3.9 parse errors in `node_modules` stand, `tsc` withholds semantic diagnostics program-wide: a planted syntax error under `src/` fails the gate, but a planted *type* error passes it. So the project has had no real type checking since the dependency graph modernized. Once the compiler can parse its dependencies, the same script becomes a genuine type gate with no change to it. Before you finish, prove that: plant a type error under `src/`, confirm the gate now catches it, and revert. Say so in your handoff.
 - `npm run typecheck` passes with zero errors everywhere, not merely under `src/`. Task 04 had to scope its gate to the project's own sources because TypeScript 3.9 cannot parse the `.d.ts` files that `@reduxjs/toolkit`, `react-redux`, `vitest`, `@types/react` and `@types/node` ship; that is around 1800 parse errors inside `node_modules`, and clearing them is the main reason this task exists. Widen the gate back to everything once the compiler can read them.
 - `npm run typecheck` passes on TypeScript 5.x with `strict` on and no new `any`, no `@ts-ignore`, and no `@ts-expect-error` introduced. If one is unavoidable, it carries a comment naming the reason and appears in the handoff.
 - `npm test` passes with the same test count.
