@@ -355,6 +355,158 @@ sends to the backend.
 above should reproduce. Read Finding 2 before running the procedures against
 `npm run dev` or `npm run preview`.
 
+### Coder (repair: typecheck false green)
+
+Single defect, single file: `scripts/typecheck.mjs`. Nothing else in the tree
+changed. Nothing under `src/` or `qa/` was touched, and no test, config or
+manifest needed adjusting for the repair.
+
+**The false green, reproduced first**
+
+Put an `npx` on `PATH` ahead of the real one that prints npm's own
+`npm error could not determine executable to run` to stderr and exits 1, then
+run the script as it stood:
+
+    0 error(s) under src/, 1 in dependencies (task 05)
+    EXIT=0
+
+The compiler never ran; npm's error message became the one "dependency"
+diagnostic, `compilerRan` was true because a line existed, and the gate passed.
+
+**The fix: I replaced the architect's suggestion rather than adopting it, and
+kept half of it**
+
+The suggestion was to require every diagnostic line to match a tsc diagnostic
+shape and treat anything else as a failure to run. That is a good check and it
+is now in the script, but on its own it still answers "did the compiler run?"
+by reading the compiler's output. Inference from output is the defect, not the
+regex. A stub that exits non-zero printing nothing, or one printing a line that
+happens to look like a diagnostic, still gets through a purely textual test.
+
+So the repair has two halves, and the summary line is only reached if both hold.
+
+*Half one: resolve the compiler instead of hoping `npx` finds it.* The script no
+longer spawns `npx`. It resolves `typescript/package.json` through Node's own
+resolver, reads `bin.tsc` from that manifest, and spawns
+`process.execPath <that path> --noEmit --pretty false`. "Is tsc installed" is now
+a checked precondition with its own exit-1 message, not something inferred from
+stderr afterwards, and the npm layer that produced the masquerading error line is
+gone from the pipeline entirely. Resolving via the manifest rather than
+deep-importing `typescript/bin/tsc` is deliberate: it does not depend on an
+`exports` map. I checked the two versions task 05 might install --
+`typescript@5.9.2` still ships `bin.tsc` and no `exports`; `typescript@7.0.2`
+ships `bin.tsc`, exports `./package.json`, is `"type": "module"`, and its
+`bin/tsc` is an ordinary Node ESM shim. `node <bin/tsc>` works for both.
+
+*Half two: require a complete, parseable tsc report.* Every guard exits 1 with a
+`typecheck:` message on stderr rather than printing a summary:
+
+- `spawnSync` error, or the process died on a signal;
+- anything on stderr at all (tsc writes diagnostics to stdout; stderr means a
+  crash, a module-load failure, or a wrapper talking);
+- a stdout line that is neither a located diagnostic (`file(line,col): error TSnnnn:`),
+  nor an indented continuation of the one before it;
+- a file-less `error TSnnnn:` -- a project-level error such as TS18003
+  "No inputs were found" or a missing/unreadable tsconfig. tsc ran and reported
+  cleanly there, but it checked no source file, so zero errors under `src/` means
+  nothing. This route was a second, quieter false green and it is closed;
+- exit status non-zero with no diagnostic parsed at all.
+
+**One reporting change, forced by the fix**
+
+Multi-line diagnostics now attach their indented elaboration lines to the
+diagnostic above them instead of being counted as separate errors. This was not
+optional: without it a chained `src/` error would trip the "cannot read as a
+diagnostic" guard and turn a real type error into a spurious "the compiler did
+not run". Two consequences, both improvements: the count is now diagnostics, not
+lines (previously a three-line `src/` error printed one line and added two to the
+*dependency* count), and the full elaboration is printed for `src/` errors.
+Today's 313 is unchanged because the current dependency parse errors are all
+single-line.
+
+**The contract is unchanged**
+
+Still gates only on `src/`, still reports everything else without failing, same
+summary sentence, byte-identical output on a healthy tree:
+`0 error(s) under src/, 313 in dependencies (task 05)`, exit 0. Nothing was
+widened; task 05 still owns the dependency errors.
+
+**Verified**
+
+Repository, after the repair: `npm run typecheck` exit 0 with the line above;
+`npm test` 10 files / 55 tests; `npm run build` succeeds (57.33 kB gzipped main
+chunk, same as before); `npm run test:e2e` 22 passed. The poisoned-`npx` `PATH`
+that produced the false green now has no effect at all, because the script does
+not consult `PATH`.
+
+Failure modes, each driven through the real script in a scratch project (a stub
+`node_modules/typescript` whose `bin/tsc` I controlled, or a copy of the script
+with no `typescript` in scope). Every one exits 1:
+
+| condition | result |
+| --- | --- |
+| `typescript` not resolvable | `could not resolve typescript from this project: Cannot find module ...` |
+| manifest declares no `bin.tsc` | `the installed typescript package declares no tsc binary (...)` |
+| `bin.tsc` points at a missing file | `tsc did not run to completion; it wrote to stderr: ... MODULE_NOT_FOUND` |
+| npm's "could not determine executable to run" on stderr, exit 1 | `tsc did not run to completion; it wrote to stderr: ...` (was: exit 0, green) |
+| the same message on stdout, exit 1 | `tsc printed output this gate cannot read as a diagnostic: ...` |
+| exit 1, no output whatsoever | `tsc exited 1 without reporting a diagnostic` |
+| config matches no inputs (TS18003) | `tsc reported a project-level error, so no source file was checked: ...` |
+| no tsconfig at all (tsc prints its banner) | `tsc printed output this gate cannot read as a diagnostic: Version 3.9.2` |
+
+And the green paths still behave: a real syntax error under `src/` prints and
+exits 1 (`2 error(s) under src/`); a real chained multi-line type error prints
+all three of its lines and counts as one; a clean project prints
+`0 error(s) under src/, 0 in dependencies` and exits 0.
+
+**The one hole left, named rather than hidden**
+
+A `typescript` package that resolves, runs, exits 0 and prints nothing is
+indistinguishable from a genuinely clean compile by any check on the outside of
+the process. Closing it needs the compiler to prove it did work -- a preflight
+`--version` (which a lying stub can also print), or a canary file the gate
+expects an error from. Both cost a spawn or a fixture for a scenario that means
+`node_modules/typescript` has been replaced by something that is not TypeScript.
+I judged that out of proportion here. The realistic CI failures -- binary absent,
+install partial, resolution broken, config unreadable, compiler crashed -- are
+all closed.
+
+**On adding a test for this script**
+
+Worth having, and I did not add it unasked. It would be a unit test spawning
+`scripts/typecheck.mjs` against a stub `typescript` in a temp directory,
+asserting exit code and stderr for the rows in the table above. It does not
+belong in the current suite: `npm test` is Vitest over `src/` with a jsdom
+environment, and this is a Node process test, so it would need its own Vitest
+project or at minimum a node-environment file, and it would move the count off
+10 files / 55 tests. Task 08 wires the gate into CI and is the natural home --
+it is the task that gains most from the gate being provably unfoolable.
+
+**For QA**
+
+Verify by re-running the four commands; all four are green in the working tree.
+If you want the repair itself exercised, the reproduction is one line: run
+`npm run typecheck` with a directory ahead of it on `PATH` containing an
+executable named `npx` that exits non-zero -- the gate must be unaffected now,
+where before it turned green.
+
+**Branch state, and it moved again**
+
+I committed nothing and reset nothing. Partway through, commit `a56bbc5`
+("Harden the typecheck script against a compiler that never ran") appeared on the
+branch carrying an intermediate version of my file -- the same mid-task
+checkpointing the previous coder and the architect both recorded. I left it
+alone. The final version, with the elaboration-line handling, is in the working
+tree as an uncommitted modification to `scripts/typecheck.mjs`. Whoever commits
+next should take the working tree, not `a56bbc5`.
+
+**Open questions**
+
+None blocking. One for the project manager: task 05's plan to plant a type error
+and prove the gate catches it is now worth running, and its proof should include
+one negative case -- that the gate fails when the compiler cannot run -- so the
+strengthening does not quietly rot.
+
 ### QA
 
 

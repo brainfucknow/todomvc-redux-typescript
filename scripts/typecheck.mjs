@@ -53,11 +53,14 @@ function readReport(stdout) {
   for (const line of stdout.split('\n')) {
     if (line.trim() === '') continue
     const located = LOCATED_DIAGNOSTIC.exec(line)
+    const elaboration = MESSAGE_CONTINUATION.test(line) ? diagnostics[diagnostics.length - 1] : undefined
     if (located) {
-      diagnostics.push({ file: located[1], line })
+      diagnostics.push({ file: located[1], lines: [line] })
+    } else if (elaboration) {
+      elaboration.lines.push(line)
     } else if (PROJECT_DIAGNOSTIC.test(line)) {
       fail(`tsc reported a project-level error, so no source file was checked:\n${line}`)
-    } else if (!(MESSAGE_CONTINUATION.test(line) && diagnostics.length > 0)) {
+    } else {
       fail(`tsc printed output this gate cannot read as a diagnostic:\n${line}`)
     }
   }
@@ -71,8 +74,8 @@ if (compiler.status !== 0 && diagnostics.length === 0) {
 }
 
 const inSources = diagnostics.filter(({ file }) => file.startsWith('src/'))
-for (const { line } of inSources) {
-  process.stdout.write(`${line}\n`)
+for (const { lines } of inSources) {
+  process.stdout.write(`${lines.join('\n')}\n`)
 }
 process.stdout.write(`${inSources.length} error(s) under src/, ${diagnostics.length - inSources.length} in dependencies (task 05)\n`)
 process.exit(inSources.length === 0 ? 0 : 1)
