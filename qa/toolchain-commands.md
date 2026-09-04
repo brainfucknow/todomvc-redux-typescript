@@ -101,8 +101,9 @@ project ships, and that is a finding rather than a reason to re-run C1.
 | D2b | `npx vitest run acceptance` | Exits 0, 0 failing, 0 skipped. At least 5 test files and at least 63 passing tests. These are unit tests of the acceptance-pipeline code under `acceptance/`, not generated acceptance tests. |
 | D2c | `npx vitest run scripts` | Exits 0, 0 failing, 0 skipped. At least 8 test files and at least 111 passing tests - task 02 brings the mutation runners' stamp logic under test here, so the total rises. These are unit tests of the project's own tooling under `scripts/` - the CRAP gate, the architecture checker, the stamp logic - not application code. Also check the sum: the D2a, D2b and D2c totals add up to what D1 reported, in files and in cases. |
 | D3 | `npm run test:acceptance` | Exits 0. Output shows each `features/*.feature` file being parsed, entry points being generated, and every scenario passing. |
+| D3a | Write a scratch file `src/absence-probe.ts` holding the text `react-scripts` and the text `react-shallow-renderer`, re-run D3, then delete the file and re-run D3 | The first re-run exits non-zero with exactly two failures, `toolchain dependencies 1/example_3` and `toolchain dependencies 3/example_3`, each reporting that the package still appears in `src/absence-probe.ts`. After the delete, D3 is green at 30 again and `git status --porcelain` reports no leftover path. |
 | D4 | `ls build/acceptance` | Contains the JSON IR and the generated entry points produced by D3. |
-| D5 | Count the scenario executions reported by D3, per scenario (D3's runner takes no reporter flag; for the breakdown re-run the entry points it generated with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose`, where each test is named `<scenario>/example_<n>`) | 30 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 + 2 for `production build 1/2/3/4`, 6 + 9 for `toolchain dependencies 1/2`, 1 + 1 for `typescript compilation 1/2`. |
+| D5 | Count the scenario executions reported by D3, per scenario (D3's runner takes no reporter flag; for the breakdown re-run the entry points it generated with `npx vitest run --config vitest.acceptance.config.ts --reporter=verbose`, where each test is named `<scenario>/example_<n>`) | 30 in total: 4 for `development server 1`, 2 for `api proxy 1`, 3 + 1 + 1 + 2 for `production build 1/2/3/4`, 3 + 9 + 3 for `toolchain dependencies 1/2/3`, 1 + 1 for `typescript compilation 1/2`. `toolchain dependencies 1` reads the three locations for `react-scripts` and `toolchain dependencies 3` reads the same three for `react-shallow-renderer`; each package is named in its own scenario's step text rather than in a shared example column. |
 | D6 | `npx tsc --noEmit` | Exits 0 with no diagnostic output. |
 | D7 | `npx tsc --version` | Major version is 5 or higher. |
 | D8 | `npm run test:property` | Exits 0, 0 failing, 0 skipped. At least 14 test files and at least 141 passing tests. |
@@ -111,8 +112,8 @@ project ships, and that is a finding rather than a reason to re-run C1.
 
 Fail D on any non-zero exit, any failing or skipped test, any missing spec file,
 any scenario not reported, any behaviour id with no passing test, or any of
-D2a3-D2a5 staying green. The non-zero exit and the failures D2a3-D2a5 induce are
-the results those rows ask for, and are the one exception.
+D2a3-D2a5 and D3a staying green. The non-zero exits and failures those four
+rows induce are the results they ask for, and are the one exception.
 
 D2a, D2b and D2c split the D1 total so a change is attributable. The three
 buckets are disjoint and exhaustive, so their totals sum to D1's exactly; check
@@ -134,6 +135,15 @@ id-carrying test goes red. A green run there means D2a1 is measuring nothing.
 Revert each edit before making the next, and confirm `git status --porcelain`
 reports the file unmodified again - procedure E watches untracked paths only and
 will not catch a modification left behind here.
+
+D3a does the same for the two acceptance scenarios that assert a package is gone.
+Both read `package.json`, `package-lock.json` and `src`, and both pass whenever
+the name is absent - which is also what a scenario asserting nothing looks like.
+Putting the name back, in the one place a scratch file can put it, is what tells
+the two apart. The probe carries both names because each scenario names its own
+package: `toolchain dependencies 1` `react-scripts`, `toolchain dependencies 3`
+`react-shallow-renderer`. Delete the probe before running procedure E, which
+fails on an untracked path A-D left behind.
 
 The counts in D2b, D2c, D8 and D9 are floors. A tier may gain cases when the
 task's handoff notes record which tier gained them and why; a drop below a floor

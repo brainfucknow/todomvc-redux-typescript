@@ -190,6 +190,89 @@ installed but unused" does not say whether `@testing-library/react` should then 
 re-declared at a current version, so A7 checks the invariant that matters - declared if and
 only if imported - and leaves the version to the Coder.
 
+**Second pass, on the project manager's finding about `toolchain dependencies 1`.**
+Only `features/toolchain-dependencies.feature` and `qa/toolchain-commands.md` changed.
+
+**The fix: the package name is inlined in step text, one scenario per package.**
+
+- `toolchain dependencies 1` is back to `Then <location> contains no reference to
+  react-scripts` over the three location rows - byte-identical to its task 01 form.
+- `toolchain dependencies 3` is new and does the same for `react-shallow-renderer`.
+  Index 3 because indexes are stable ids and 2 is taken; it sits last in the file so
+  position and index agree.
+- `<location>` stays a column. A mutated location names a path that cannot be read, so
+  those cells die - the PM's own output shows them dying.
+- No example cell now feeds an absence assertion, and no step handler changed.
+- The feature is 15 executions again (3 + 9 + 3), so D5's total stays 30.
+
+**Why two scenarios rather than one scenario with two `Then` steps.** Both shapes remove
+the unkillable column, and the one-scenario shape is shorter. But the mutator's candidates
+are example cells, and with two steps sharing one `<location>` column the first step fails
+first, so no candidate's kill would depend on the second step: a weakened
+`react-shallow-renderer` assertion would be invisible to mutation. One scenario per package
+gives each assertion its own three cells and probes both. Six candidates, all expected to die.
+
+**Why not the positive-set shape.** The PM's second option - assert that the declared
+dependency set equals an expected set - is killable, but it reaches only `package.json`:
+the lockfile's set is the whole transitive tree and `src` declares no set at all. It would
+judge one of the three locations done criterion 1 names, while churning on every dependency
+change in tasks 03-06. Inlining judges all three and costs nothing.
+
+**One DRY finding, reviewed and kept.** `gherkin-ir-dry-checker --include-exact` reports 3
+step occurrences, 3 unique, and one medium-confidence `possible-synonym` (score 0.571)
+pairing the two `contains no reference to` steps. Its own suggested action is to normalise
+only when the different wording is accidental drift. It is not drift: the two steps are one
+template with two literals, and the literals cannot be a column. I checked the one-scenario
+variant as well and it draws the same finding, so it follows from naming two packages, not
+from how the scenarios are split. Renaming either step to duck the check would be gaming it.
+
+**The rule is now in the feature file.** A comment under `Feature:` says why the package is
+named in step text and never in a column, so the next editor meets it where the mistake gets
+made rather than only in PLAN section 4.
+
+**QA procedure.** Two edits to `qa/toolchain-commands.md`, both in procedure D:
+
+- D5's breakdown is `3 + 9 + 3 for toolchain dependencies 1/2/3`, and it records which
+  package each scenario reads. The total is unchanged at 30.
+- **D3a is new**, and is the failing-direction row procedure D had for the component suite
+  (D2a3-D2a5) but not for the acceptance tier. A scenario asserting an absence passes
+  whenever the name is missing, which is also exactly what a scenario asserting nothing
+  looks like; D3a tells them apart by writing a scratch `src/absence-probe.ts` carrying both
+  names, re-running D3, and requiring exactly two failures - `toolchain dependencies
+  1/example_3` and `3/example_3` - then deleting it and requiring 30 green again. Fail D if
+  D3a stays green.
+
+**Verified.** `bin/gherkin-parser` parses the edited feature. `gherkin-ir-dry-checker
+--include-exact` as above. `npm run test:acceptance`: 5 files, 30 executions, all green.
+Verbose breakdown confirms 3 / 9 / 3 for this feature. D3a executed exactly as written: with
+the probe present the run exits 1 with exactly two failures, `"react-scripts" still appears
+in src/absence-probe.ts` and `"react-shallow-renderer" still appears in src/absence-probe.ts`;
+after deleting it, 30 green and `git status --porcelain` lists only my two files. I ran no
+mutation, per the role brief - proving the replacement cells die is the Hardener's run.
+
+**I checked the rest of `features/` for the same defect.** The only other absence step is
+`production build 3`, whose literal is inlined and which has no examples table. No other
+feature asserts an absence from an example cell.
+
+**Left for the Coder.** Nothing for this fix: `src/`, `package.json` and the lockfile already
+satisfy both scenarios, and the tier is green as the tree stands. The earlier pass's
+leftovers were discharged and are not reopened.
+
+**Left for the Hardener.** Expect 15 candidates for `toolchain-dependencies` and 0 survivors;
+the six that survived were the `package` column, which no longer exists. Two things to expect
+in the output: scenario 1's text is byte-identical to its task 01 form, so at `--level soft`
+its stored record in `.mutation/gherkin/toolchain-dependencies.manifest` (3 candidates, 3
+killed) may be reused rather than re-tested whenever the acceptance implementation
+fingerprint has not moved, while scenario 3 is new and is tested either way. I did not touch
+`.mutation/`.
+
+**Left for QA.** `e2e/toolchain-commands.spec.ts` is still yours to move and still carries the
+pre-task figures; for this change it needs the scenario breakdown `toolchain dependencies 1`
+3, `2` 9, `3` 3, and a step for D3a. Everything the earlier note and the Cleaner's note left
+you stands.
+
+**Open questions.** None.
+
 ### Project manager rulings on the Specifier handoff
 
 Verified independently: `npm run test:acceptance` is red exactly as designed, `3 failed | 27 passed
@@ -627,4 +710,44 @@ Hardener, QA. The Hardener re-run is what proves the replacement rows die.
 **Standing guidance strengthened.** `PLAN.md` section 4 now also says that a Gherkin step asserting
 an absence must not take its operand from an example column, since the whole column is unkillable by
 construction.
+
+
+### Project manager rulings on the second Specifier pass
+
+Verified independently: `npm run test:acceptance` green at 5 files / 30 executions;
+`node scripts/acceptance-mutation.ts` now **exits 0 with zero survivors**, the three new candidates
+all killed and scenario 1's record correctly reused because its text is byte-identical to its task 01
+form; only `features/`, `qa/` and this task file changed. The defect is discharged. Accepted.
+
+**Its rejection of my suggested alternative is correct, and I was wrong to offer it as an equal
+option.** I proposed asserting that the declared dependency set equals an expected set. That reaches
+only `package.json`: the lockfile's set is the whole transitive tree, and `src` declares no set at
+all. It would therefore have judged one of the three locations done criterion 1 names, while churning
+on every dependency change through tasks 03 to 06. Naming the package in step text is the better
+answer, and the Specifier should be reasoning about which shape actually holds rather than taking a
+project manager's example as a menu.
+
+**The choice of two scenarios over one scenario with two `Then` steps is the sharp part.** Mutation
+candidates are example cells. With both assertions sharing one `<location>` column, the first step
+fails first, so no candidate's kill would ever depend on the second step, and a weakened
+`react-shallow-renderer` assertion would be invisible to mutation. That is the same failure mode as
+the defect being fixed, one level subtler, and it would have passed every check the project runs.
+
+Two further things are right about this pass. It recorded the reason in a comment under `Feature:`,
+so the next person to reach for a parameter there meets the argument rather than rediscovering it.
+And it swept the rest of `features/` for the same shape, confirming `production build 3` is the only
+other absence step and that its literal is inlined with no examples table.
+
+Keeping the medium `possible-synonym` finding at 0.571 is accepted: the Specifier checked that the
+one-scenario variant draws the identical finding, so it follows from naming two packages rather than
+from how they are split, and it is not accidental drift. Using the dry checker's report as evidence
+for a decision rather than as a list to zero out is the right use of it.
+
+**D3a is a genuine gap closed.** Procedure D had failing-direction rows for the component suite
+(D2a3-D2a5) but none for the acceptance tier, so nothing checked that the tier could fail at all. The
+new row writes a scratch source carrying both package names, requires exactly two failures, then
+requires 30 green after deleting it.
+
+**The chain continues from the Coder.** The Specifier reports no step-handler change is needed; as in
+task 01, that is its reading and not a dispensation, and the Coder reaches its own conclusion.
 
