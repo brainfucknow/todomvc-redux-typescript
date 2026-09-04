@@ -1,20 +1,19 @@
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { screen } from '@testing-library/react'
 import Header from './Header'
-import { pressEnter } from '../test-utils'
+import { rootOf } from '../test-queries'
+import { pressEnter, renderComponent } from '../test-render'
 
 const renderHeader = () => {
   const addTodo = vi.fn()
-  const user = userEvent.setup()
-  return { addTodo, user, ...render(<Header addTodo={addTodo} />) }
+  const rendered = renderComponent(<Header addTodo={addTodo} />)
+  return { addTodo, header: rootOf(rendered), ...rendered }
 }
 
 const newTodoField = () => screen.getByPlaceholderText('What needs to be done?')
 
 describe('Header', () => {
   it('C10 shows the todos heading and the new-todo field', () => {
-    const { container } = renderHeader()
-    const header = container.firstElementChild as HTMLElement
+    const { header } = renderHeader()
     expect(header.tagName).toBe('HEADER')
     expect(header.className).toBe('header')
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('todos')

@@ -15,7 +15,7 @@ Every component in `src/components/` is a function component. `prop-types` is go
   task 02 found that `@testing-library/user-event` v14 never sets `keyCode`, so the component is
   reachable from a modern test only through a hand-built event. The behavior is identical; make the
   change while the file is already being rewritten, and delete the `pressEnter()` helper in
-  `src/test-utils.tsx` if nothing else needs it.
+  `src/test-render.tsx` if nothing else needs it.
 - Keep the `autoFocus`, blur, and Enter-key behavior of `TodoTextInput` identical, including that blur saves only when `newTodo` is false and Enter clears the field only when `newTodo` is true.
 
 ## Out of scope

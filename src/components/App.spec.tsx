@@ -1,6 +1,7 @@
 import { screen } from '@testing-library/react'
 import App from './App'
-import { renderWithStore } from '../test-utils'
+import { countText, shownTodoTexts } from '../test-queries'
+import { renderWithStore } from '../test-render'
 
 describe('App', () => {
   it('C01 shows the heading and the new-todo field', () => {
@@ -16,9 +17,8 @@ describe('App', () => {
         { id: 1, text: 'Run the tests', completed: true },
       ],
     })
-    expect(Array.from(container.querySelectorAll('ul.todo-list label')).map((label) => label.textContent))
-      .toEqual(['Use Redux', 'Run the tests'])
+    expect(shownTodoTexts(container)).toEqual(['Use Redux', 'Run the tests'])
     expect(container.querySelector('input.toggle-all')).not.toBeNull()
-    expect(container.querySelector('.todo-count')?.textContent).toBe('1 item left')
+    expect(countText(container)).toBe('1 item left')
   })
 })

@@ -1,7 +1,6 @@
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { screen } from '@testing-library/react'
 import TodoTextInput, { TodoTextInputProps } from './TodoTextInput'
-import { pressEnter } from '../test-utils'
+import { pressEnter, renderComponent } from '../test-render'
 
 const renderInput = (propOverrides?: Partial<TodoTextInputProps>) => {
   const props: TodoTextInputProps = {
@@ -12,8 +11,7 @@ const renderInput = (propOverrides?: Partial<TodoTextInputProps>) => {
     newTodo: false,
     ...propOverrides,
   }
-  const user = userEvent.setup()
-  return { props, user, ...render(<TodoTextInput {...props} />) }
+  return { props, ...renderComponent(<TodoTextInput {...props} />) }
 }
 
 const textbox = () => screen.getByRole('textbox') as HTMLInputElement

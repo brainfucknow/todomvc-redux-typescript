@@ -1,8 +1,12 @@
+// How a component under test is mounted and driven: the store it renders
+// against, the actions it is handed, and the one keystroke `userEvent` cannot
+// send. What the rendered output is then read with is in `./test-queries.ts`.
 import type { ReactElement, ReactNode } from 'react'
 import { configureStore } from '@reduxjs/toolkit'
 import type { Middleware } from '@reduxjs/toolkit'
 import { Provider } from 'react-redux'
 import { fireEvent, render } from '@testing-library/react'
+import type { RenderOptions } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { Mock } from 'vitest'
@@ -43,12 +47,20 @@ export const createTestStore = ({ todos = [], visibilityFilter = TodoFilters.SHO
 const storeProvider = (store: ReturnType<typeof createTestStore>) =>
   ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>
 
+// The session that drives a rendered component, as the specs receive it.
+export type TestUser = ReturnType<typeof userEvent.setup>
+
+// A component that holds no container, with the user session that drives it.
+export const renderComponent = (ui: ReactElement, options?: RenderOptions) => ({
+  user: userEvent.setup(),
+  ...render(ui, options),
+})
+
 // The one provider setup for components that hold a container, so no spec file
 // builds its own store.
 export const renderWithStore = (ui: ReactElement, state?: TestState) => {
   const store = createTestStore(state)
-  const user = userEvent.setup()
-  return { store, user, ...render(ui, { wrapper: storeProvider(store) }) }
+  return { store, ...renderComponent(ui, { wrapper: storeProvider(store) }) }
 }
 
 export const mockTodoActions = () => ({

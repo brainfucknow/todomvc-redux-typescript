@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { screen } from '@testing-library/react'
 import TodoItem, { TodoItemProps } from './TodoItem'
-import { pressEnter } from '../test-utils'
+import type { TestUser } from '../test-render'
+import { pressEnter, renderComponent } from '../test-render'
 
 const list = ({ children }: { children: ReactNode }) => <ul>{children}</ul>
 
@@ -14,15 +14,14 @@ const renderItem = (propOverrides?: Partial<TodoItemProps>) => {
     completeTodo: vi.fn(),
     ...propOverrides,
   }
-  const user = userEvent.setup()
-  return { props, user, ...render(<TodoItem {...props} />, { wrapper: list }) }
+  return { props, ...renderComponent(<TodoItem {...props} />, { wrapper: list }) }
 }
 
 const row = () => screen.getByRole('listitem')
 const destroyControl = () => screen.getByRole('button')
 const editField = () => screen.getByRole('textbox') as HTMLInputElement
 
-const startEditing = (user: ReturnType<typeof userEvent.setup>) => user.dblClick(screen.getByText('Use Redux'))
+const startEditing = (user: TestUser) => user.dblClick(screen.getByText('Use Redux'))
 
 describe('TodoItem', () => {
   it('C23 shows an active todo as an unchecked box, its text and a destroy control', () => {

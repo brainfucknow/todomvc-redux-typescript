@@ -411,6 +411,170 @@ No test count floor moved; nothing is routed back.
 
 ### Cleaner
 
+Owned `src/` and `scripts/`; `features/`, `qa/` and `e2e/` untouched, and no component,
+action, reducer, selector or middleware was changed. No behaviour was added.
+
+**The carried stamp work is done, and both runners are now shells over a tested
+package.** `scripts/mutation-reuse/` is new. It holds what the two mutation runners
+record between runs and what it takes to believe it, which is the logic task 01 found
+no tier judging:
+
+- `fingerprint.ts` (core) - which entries of a directory listing a stamp covers
+  (`selectedFiles`) and the digest over their paths and contents (`fingerprint`).
+  The selection is the part worth testing: the defect task 01 found was a stamp that
+  did not cover what it claimed to, and that is a selection defect, not a hashing one.
+- `stamp.ts` (core) - the record itself. `resultsAreReusable` gates on the version and
+  the field, `stampText` writes it, `reachedVerdict` says whether a run earned the
+  right to be stamped. The two runners' stamps differ only by the field they are
+  written under, so they are two values of one `Stamp` type rather than two copies.
+- `manifest.ts` (core) - the gherkin manifest block travelling in and out of a staged
+  feature. Untested pure text handling in the same shell, closing the same gap.
+- `files.ts` (shell) - the two file reads both runners share. Declared a shell in the
+  layer map, so the CRAP gate and Stryker skip it and no core module can import it.
+
+`scripts/acceptance-mutation.ts` and `scripts/mutation.ts` keep the environment: they
+list, read, spawn and write. `scripts/acceptance-mutation.ts` no longer imports
+`implementationHash` from the acceptance package.
+
+**Behaviour preservation is demonstrated, not assumed.** Both stamps hash to exactly
+what is committed under `.mutation/`: the refactored acceptance path recomputes
+`sha256:ca92e55f...`, the value in `.mutation/acceptance-implementation.json`, so the
+stored gherkin manifests stay reusable across this change; and the tier fingerprint
+computed the old way and the new way agree on the tree as it stands. The sort was the
+only thing that could have moved (`localeCompare` where `mutation.ts` used a default
+sort) and it does not, on this file set. `node scripts/mutation.ts --help` runs the
+refactored shell end to end - it fingerprints the tier, reads the stamp, reports
+correctly that the tier has moved, and spawns Stryker with `--force`; I restored
+`.mutation/test-tier.json` afterwards and `git status` on `.mutation/` is clean.
+
+**The new specs were tested in the failing direction,** as PLAN section 4 requires,
+one mutation at a time and each reverted: dropping the version gate in `stamp.ts`
+fails "disbelieves a stamp from a version that covered something else"; dropping the
+`without` filter in `selectedFiles` fails "leaves out the entries the selection
+excludes"; dropping the sort in `fingerprint` fails "does not move with the order the
+files were listed in"; taking the end marker out of `manifestBlock`'s slice fails
+three of its four cases; making `reachedVerdict` unconditional fails "does not count
+a run that never exited on its own".
+
+**The rewritten suite, as my subject.** Every inventory id still names the test that
+answers it, the mapping is unchanged, and `npx vitest run src` still reports 10 files
+and 55 tests. What changed is the plumbing the eight spec files share:
+
+- `src/test-utils.tsx` was doing two jobs and is split by them, with names that say
+  which: `src/test-render.tsx` (how a component under test is mounted, driven and
+  handed its actions - `createTestStore`, `renderWithStore`, `mockTodoActions`,
+  `pressEnter`) and `src/test-queries.ts` (how rendered output is read when a role or
+  a name will not reach it).
+- `renderComponent(ui, options?)` is new, and is the store-less sibling of
+  `renderWithStore`. Four spec files were each calling `userEvent.setup()` themselves;
+  now one place decides how a user session is made, and `renderWithStore` is written
+  in terms of it.
+- `rootOf(rendered)` replaces five copies of `container.firstElementChild as
+  HTMLElement`. Each spec still names its own root (`footer`, `anchor`, `section`,
+  `header`, `list`), so the tests read as they did.
+- `countText` and the clear-completed control were spelled twice, once with the
+  explanation of why the count cannot be read by text and once without. They are now
+  read the same way wherever they are read, with the explanation in one place.
+  `shownTodoTexts` does the same for the three spellings of "the todos the user sees"
+  in `App`, `MainSection` and `TodoList`.
+- `TodoItem.spec.tsx` no longer imports `userEvent` only to spell a type; `TestUser`
+  comes from the render helper.
+
+**Verified.**
+
+- `npm test`: 26 files, 263 tests, 0 failing, 0 skipped. Buckets: `src` 10 / 55,
+  `acceptance` 5 / 63, `scripts` 11 / 145. 10+5+11 = 26 and 55+63+145 = 263, so D2c's
+  sum check holds.
+- D2a1 by hand: all 41 ids (`C01`-`C40`, `N01`) appear in the name of a passing test.
+- D2a3-D2a5 in the failing direction, one at a time, each reverted and the tree clean
+  after: `Footer`'s item word forced to `items` fails C05 (and C03, C19, C02);
+  `deleteTodo(todo.id + 1)` in `TodoItem` fails C25 and nothing else; dropping
+  `selected` in `Link` fails C13 and nothing else.
+- `npm run test:acceptance` 5 files / 30 executions green. `npm run test:property`
+  14 / 141. `npm run test:hardening` 12 / 129. `npx tsc --noEmit` clean.
+  `npm run build` succeeds.
+- CRAP gate over the whole tree: 45 files, 261 functions, 2 over the gate. Everything
+  new and changed is at 100% coverage and scores at or under 3. The two over the gate
+  are the two the Coder reported, unchanged and untouched:
+  `src/middlewares/callapimiddleware.ts:18` (cc 5, cov 0%, CRAP 30.0), which this
+  task's Out of scope bars me from testing, and `src/reducers/apis.ts:4` `executing`
+  (cc 13, cov 100%), a single switch answering one question, which is the exception
+  the shared CRAP definition names.
+- Mixed-job scan, by Stryker mutant count on a dry run into a scratch incremental file
+  (no mutants were tested, and `.mutation/` is untouched): `fingerprint.ts` 25,
+  `manifest.ts` 19, `stamp.ts` 30, against 60-64 for the existing single-job modules
+  `scripts/crap/options.ts`, `scripts/crap/score.ts` and
+  `scripts/architecture/packages.ts`. Nothing indicates a source doing more than one
+  job, so nothing was split further.
+- No mutation run and no gherkin mutation, per the role brief.
+
+**Floors that moved, which the D2b/D2c/D8/D9 floor rule asks me to record.**
+
+- **D2c rises from 8 files / 111 tests to 11 files / 145 tests.** The three new spec
+  files under `scripts/mutation-reuse/` are the stamp logic this task carried; D2c's
+  floor note already anticipated the rise.
+- **D9 rises from 128 to 129 tests, in the same 12 files.** One row, and not a test I
+  wrote: `hardening/packages.hardening.ts` runs `test.each(PACKAGES)` for the pure
+  dependencies a package grants, and there is now a fourth package. It passes, which
+  says `scripts/mutation-reuse` grants exactly `node:crypto` and `node:path` and its
+  core modules import exactly those.
+- D2a (10 / 55), D2b (5 / 63) and D8 (14 / 141) are unmoved.
+
+**Left for the Architect.** One duplication I could not remove without deciding a
+boundary, which is yours. `fingerprint()` and `acceptance/generator.ts`'s
+`implementationHash()` are the same digest, and the layer rules bar any cross-package
+import, so neither package can reach the other's copy. The count of copies is
+unchanged by my work - `scripts/mutation.ts` had its own inline digest before - but
+one of them is now a tested module and the other is not the acceptance package's to
+give away. Related: both runner shells still import `projectRoot` from
+`acceptance/project-files.ts`, so the language-mutation runner depends on the
+acceptance pipeline for one constant.
+
+**Left for the Hardener.** `scripts/mutation-reuse/`'s three core modules are in
+`modulesIn('core')`, so Stryker now mutates them; the mutation tier's own fingerprint
+has moved as well, so the next `npm run test:mutation` is a full run by design.
+`files.ts` is declared a shell and is deliberately outside both the gate and the
+mutate set. The inventory's "Gaps in the baseline" section still stands in full and
+the rewrite covers none of those five.
+
+**Left for QA.** The numbers above are the ones procedure D wants: D2a 10 files / 55
+tests, D2b 5 / 63, D2c 11 / 145, D1 26 / 263, D8 14 / 141, D9 12 / 129.
+`e2e/toolchain-commands.spec.ts` still carries the pre-task figures (54 under `src`,
+111 under `scripts`, the sum 228, hardening 128) and an explicit list of the eight
+`scripts/` spec files; the three new ones are `scripts/mutation-reuse/fingerprint.spec.ts`,
+`manifest.spec.ts` and `stamp.spec.ts`. Moving that file is yours, as the Specifier said.
+
+**Open question, for the project manager.** `tasks/05-function-components.md` tells its
+Coder to delete `pressEnter()` from `src/test-utils.tsx`. That helper now lives in
+`src/test-render.tsx`, and `src/test-utils.tsx` is gone. The instruction still holds as
+written otherwise; I did not edit another task's file to say so.
+
+### Project manager rulings on the Cleaner handoff
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 26 files / 263 tests; `npx vitest run
+src` unchanged at 10 / 55; `npx vitest run scripts` 11 / 145; hardening 129; acceptance tier 30 / 30;
+all 41 inventory ids still appear in passing test names. Accepted.
+
+The stamp package is the right discharge of the carried item, and for the right reason: it puts
+`selectedFiles` - *which* entries a stamp covers - in the tested core, and that selection is exactly
+where task 01's defect lived. The two runners' stamps becoming two values of one `Stamp` type rather
+than two copies is what stops the defect recurring in only one of them. Declaring the package in
+`scripts/architecture/packages.ts` so the boundary check, the CRAP gate and Stryker all reach it is
+what task 01 established, and demonstrating behavior preservation by showing both fingerprints still
+equal the values committed in `.mutation/` is the correct evidence.
+
+Splitting `test-utils.tsx` into mount-and-drive versus read-rendered-output is a real cohesion split
+rather than a file-size one, and removing five `firstElementChild as HTMLElement` casts removes a
+class of test that breaks on markup changes it should not care about.
+
+Its open question is answered by amendment, not argument: `tasks/05-function-components.md` referred
+to `pressEnter()` in `src/test-utils.tsx`, which no longer exists. The reference is corrected to
+`src/test-render.tsx`. It was right not to edit another task's file.
+
+Floors moved as recorded: D2c 8 / 111 -> 11 / 145, D9 128 -> 129. D2a, D2b and D8 unmoved. Under the
+recorded-rise rule the Specifier introduced, these need no procedure edit.
+
+
 ### Architect
 
 ### Hardener

@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { screen } from '@testing-library/react'
 import Link, { LinkProps } from './Link'
+import { rootOf } from '../test-queries'
+import { renderComponent } from '../test-render'
 
 const renderLink = (propOverrides?: Partial<LinkProps>) => {
   const props: LinkProps = {
@@ -9,9 +10,8 @@ const renderLink = (propOverrides?: Partial<LinkProps>) => {
     setFilter: vi.fn(),
     ...propOverrides,
   }
-  const user = userEvent.setup()
-  const rendered = render(<Link {...props} />)
-  return { props, user, anchor: rendered.container.firstElementChild as HTMLElement, ...rendered }
+  const rendered = renderComponent(<Link {...props} />)
+  return { props, anchor: rootOf(rendered), ...rendered }
 }
 
 describe('Link', () => {

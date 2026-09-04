@@ -1,7 +1,8 @@
 import { screen } from '@testing-library/react'
 import MainSection, { MainSectionProps } from './MainSection'
 import type { Todo } from '../models/Todo'
-import { mockTodoActions, renderWithStore } from '../test-utils'
+import { clearCompletedControl, countText, rootOf, shownTodoTexts } from '../test-queries'
+import { mockTodoActions, renderWithStore } from '../test-render'
 
 const storedTodos: Todo[] = [
   { id: 0, text: 'Use Redux', completed: false },
@@ -16,13 +17,11 @@ const renderMainSection = (propOverrides?: Partial<MainSectionProps>, todos: Tod
     ...propOverrides,
   }
   const rendered = renderWithStore(<MainSection {...props} />, { todos })
-  return { props, section: rendered.container.firstElementChild as HTMLElement, ...rendered }
+  return { props, section: rootOf(rendered), ...rendered }
 }
 
 const toggleAll = (section: HTMLElement) => section.querySelector<HTMLInputElement>('input.toggle-all')
 const todoList = (section: HTMLElement) => section.querySelector<HTMLElement>('ul.todo-list')
-const countText = (section: HTMLElement) => section.querySelector('.todo-count')?.textContent
-const clearControl = () => screen.getByRole('button', { name: 'Clear completed' })
 
 describe('MainSection', () => {
   it('C15 renders the main section', () => {
@@ -53,20 +52,19 @@ describe('MainSection', () => {
   it('C19 reads the active count and offers to clear the completed todos', () => {
     const { section } = renderMainSection()
     expect(countText(section)).toBe('1 item left')
-    expect(clearControl().className).toBe('clear-completed')
+    expect(clearCompletedControl().className).toBe('clear-completed')
   })
 
   it('C20 clears the completed todos when the clear control is clicked', async () => {
     const { props, user } = renderMainSection()
-    await user.click(clearControl())
+    await user.click(clearCompletedControl())
     expect(props.actions.clearCompleted).toHaveBeenCalledTimes(1)
   })
 
   it('C21 shows the visible todos between the toggle-all control and the footer', () => {
     const { section } = renderMainSection()
     const list = todoList(section) as HTMLElement
-    expect(Array.from(list.querySelectorAll('label')).map((label) => label.textContent))
-      .toEqual(['Use Redux', 'Run the tests'])
+    expect(shownTodoTexts(section)).toEqual(['Use Redux', 'Run the tests'])
     expect(list.previousElementSibling?.contains(toggleAll(section) as Node)).toBe(true)
     expect((list.nextElementSibling as HTMLElement).className).toBe('footer')
   })
