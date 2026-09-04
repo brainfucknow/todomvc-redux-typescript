@@ -23,12 +23,25 @@ export default {
   // mutation tier per mutant. Before switching back, check that a mutant inside
   // a function body actually dies.
   testRunner: 'command',
+  // `--bail=1` because a mutant needs a verdict, not a report: the first
+  // failing test has already killed it, and the rest of the tier is time paid
+  // for nothing. A mutant nothing kills still runs the whole tier, which is
+  // the run whose result has to be complete. It is on the command rather than
+  // in the config so that running the tier by hand still reports every test.
   commandRunner: {
-    command: 'npx vitest run --config vitest.mutation.config.ts',
+    command: 'npx vitest run --config vitest.mutation.config.ts --bail=1',
   },
   coverageAnalysis: 'off',
 
-  mutate: modulesIn('core'),
+  // The components are here as well, and they are the one mutated source that
+  // belongs to no package. Task 02 rewrote every component spec against
+  // rendered output, and the CRAP gate reports those functions at 100%
+  // coverage; coverage says the tests ran the code, and only mutation says
+  // whether they would have noticed it change. The rest of `src/` stays out:
+  // nothing else in it was rewritten, `callAPIMiddleware` is 0% covered by a
+  // task that is barred from testing it, and the reducers and selectors belong
+  // to whichever task next opens them.
+  mutate: [...modulesIn('core'), 'src/components/*.tsx', '!src/components/*.spec.tsx'],
 
   // The compiler rejects a mutant that could not have been written: `'core'`
   // to `""` in a layer map, or a dropped `!== undefined` filter. Reporting

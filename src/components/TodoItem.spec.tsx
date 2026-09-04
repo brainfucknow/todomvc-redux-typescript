@@ -1,10 +1,7 @@
-import type { ReactNode } from 'react'
 import { screen } from '@testing-library/react'
 import TodoItem, { TodoItemProps } from './TodoItem'
 import type { TestUser } from '../test-render'
-import { pressEnter, renderComponent } from '../test-render'
-
-const list = ({ children }: { children: ReactNode }) => <ul>{children}</ul>
+import { insideList, pressEnter, renderComponent } from '../test-render'
 
 const renderItem = (propOverrides?: Partial<TodoItemProps>) => {
   const props: TodoItemProps = {
@@ -14,7 +11,7 @@ const renderItem = (propOverrides?: Partial<TodoItemProps>) => {
     completeTodo: vi.fn(),
     ...propOverrides,
   }
-  return { props, ...renderComponent(<TodoItem {...props} />, { wrapper: list }) }
+  return { props, ...renderComponent(<TodoItem {...props} />, { wrapper: insideList }) }
 }
 
 const row = () => screen.getByRole('listitem')

@@ -56,6 +56,11 @@ export const renderComponent = (ui: ReactElement, options?: RenderOptions) => ({
   ...render(ui, options),
 })
 
+// A row is a `<li>`, so it is mounted inside the list it belongs to rather than
+// loose in the container: `getByRole('listitem')` finds one only where a list
+// can hold it.
+export const insideList = ({ children }: { children: ReactNode }) => <ul>{children}</ul>
+
 // The one provider setup for components that hold a container, so no spec file
 // builds its own store.
 export const renderWithStore = (ui: ReactElement, state?: TestState) => {

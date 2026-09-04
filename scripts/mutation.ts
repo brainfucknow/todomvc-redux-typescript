@@ -6,7 +6,7 @@ import { readFiles, readIfPresent } from './mutation-reuse/files.ts'
 import { fingerprint, selectedFiles } from './mutation-reuse/fingerprint.ts'
 import { MUTATION_TIER_STAMP } from './mutation-reuse/layout.ts'
 import { MUTATION_TIER, reachedVerdict, resultsAreReusable, stampText } from './mutation-reuse/stamp.ts'
-import { mutationTierTests } from '../vitest.mutation.config.ts'
+import { mutationTierFiles } from '../vitest.mutation.config.ts'
 
 // Stryker's incremental report is the mutation manifest: it reuses a recorded
 // result when the mutated source is unchanged. It decides that from source and
@@ -16,7 +16,8 @@ import { mutationTierTests } from '../vitest.mutation.config.ts'
 // tier as it was when the manifest was last written, and forces a full run once
 // that has moved - the manifest stays differential without ever being trusted
 // across a change in the tests that judge the mutants. A change to a mutated
-// source is Stryker's own to notice, so only the tests are fingerprinted here.
+// source is Stryker's own to notice, so what is fingerprinted here is the tier:
+// its tests, and the helpers they are written against that nothing mutates.
 
 // Found from this file's own location, the way every shell outside the
 // acceptance package finds it. That package exports a `projectRoot` of its own,
@@ -41,7 +42,7 @@ const entriesIn = (directory: string): string[] => {
 }
 
 const tierFingerprint = (): string =>
-  fingerprint(readFiles(projectRoot, [TIER_CONFIG, ...selectedFiles(mutationTierTests, entriesIn)]))
+  fingerprint(readFiles(projectRoot, [TIER_CONFIG, ...selectedFiles(mutationTierFiles, entriesIn)]))
 
 // Spelled here rather than shared with `scripts/acceptance-mutation.ts`, which
 // takes its own from `acceptance/pipeline.ts`: the only module with one to
