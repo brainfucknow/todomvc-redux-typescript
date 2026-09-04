@@ -1,21 +1,33 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 /**
- * TypeScript 3.9 cannot parse the .d.ts files shipped by the project's current
- * dependencies, so `tsc --noEmit` never exits zero and, while those parse errors
- * stand, withholds every semantic diagnostic. Until task 05 bumps the compiler
- * this gate is therefore limited to what tsc still reports about the project's
- * own sources; it turns into a full type check on the same script once the
- * node_modules parse errors are gone.
+ * The whole-program type gate. TypeScript 5 can parse every .d.ts the project's
+ * dependencies ship, so a diagnostic anywhere - the app's sources, the QA
+ * specs, or node_modules - fails this gate. There is no longer a category of
+ * error it forgives.
  *
- * Because the gate is narrow it must never pass by accident: a run that reaches
- * the summary line has resolved the compiler, executed it, and read a complete
- * tsc report back. Anything else exits non-zero here rather than reporting zero
- * errors it never looked for.
+ * Two properties this gate must never lose, both of which it once did:
+ *
+ * It must never pass by accident. A run that reaches the summary line has
+ * resolved the compiler, executed it, and read a complete tsc report back.
+ * Anything else exits non-zero here rather than reporting zero errors it never
+ * looked for.
+ *
+ * It must not depend on the working directory. tsc searches ancestors for a
+ * tsconfig.json and prints paths relative to wherever it was started, so a gate
+ * that reads either of those reports something different when it runs from a
+ * subdirectory - which is exactly what a CI `working-directory:` key produces.
+ * Every project below is named by an absolute path anchored to this script, run
+ * from the directory that holds it, and reported relative to the repository
+ * root.
  */
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const PROJECTS = [resolve(ROOT, 'tsconfig.json'), resolve(ROOT, 'qa/tsconfig.json')]
 
 const LOCATED_DIAGNOSTIC = /^(\S.*?)\((\d+),(\d+)\): (?:error|warning) TS\d+: /
 const PROJECT_DIAGNOSTIC = /^(?:error|warning) TS\d+: /
@@ -39,43 +51,55 @@ function compilerPath() {
   }
 }
 
-function runCompiler(tsc) {
-  const run = spawnSync(process.execPath, [tsc, '--noEmit', '--pretty', 'false'], { encoding: 'utf8' })
-  if (run.error) fail(`could not run tsc: ${run.error.message}`)
-  if (run.signal) fail(`tsc was killed by ${run.signal}`)
+function runCompiler(tsc, project) {
+  const args = [tsc, '--project', project, '--noEmit', '--pretty', 'false']
+  const run = spawnSync(process.execPath, args, { cwd: dirname(project), encoding: 'utf8' })
+  if (run.error) fail(`could not run tsc on ${project}: ${run.error.message}`)
+  if (run.signal) fail(`tsc on ${project} was killed by ${run.signal}`)
   const noise = (run.stderr ?? '').trim()
-  if (noise) fail(`tsc did not run to completion; it wrote to stderr:\n${noise}`)
+  if (noise) fail(`tsc on ${project} did not run to completion; it wrote to stderr:\n${noise}`)
   return run
 }
 
-function readReport(stdout) {
+/** tsc reports paths relative to its own working directory, which is the project's. */
+function reportedAt(project, file) {
+  return relative(ROOT, resolve(dirname(project), file))
+}
+
+function readReport(project, stdout) {
   const diagnostics = []
   for (const line of stdout.split('\n')) {
     if (line.trim() === '') continue
     const located = LOCATED_DIAGNOSTIC.exec(line)
     const elaboration = MESSAGE_CONTINUATION.test(line) ? diagnostics[diagnostics.length - 1] : undefined
     if (located) {
-      diagnostics.push({ file: located[1], lines: [line] })
+      const rooted = line.replace(located[1], reportedAt(project, located[1]))
+      diagnostics.push({ lines: [rooted] })
     } else if (elaboration) {
       elaboration.lines.push(line)
     } else if (PROJECT_DIAGNOSTIC.test(line)) {
-      fail(`tsc reported a project-level error, so no source file was checked:\n${line}`)
+      fail(`tsc reported an error about ${project} itself, so no source file was checked:\n${line}`)
     } else {
-      fail(`tsc printed output this gate cannot read as a diagnostic:\n${line}`)
+      fail(`tsc on ${project} printed output this gate cannot read as a diagnostic:\n${line}`)
     }
   }
   return diagnostics
 }
 
-const compiler = runCompiler(compilerPath())
-const diagnostics = readReport(compiler.stdout ?? '')
-if (compiler.status !== 0 && diagnostics.length === 0) {
-  fail(`tsc exited ${compiler.status} without reporting a diagnostic`)
+function check(tsc, project) {
+  const run = runCompiler(tsc, project)
+  const diagnostics = readReport(project, run.stdout ?? '')
+  if (run.status !== 0 && diagnostics.length === 0) {
+    fail(`tsc exited ${run.status} on ${project} without reporting a diagnostic`)
+  }
+  return diagnostics
 }
 
-const inSources = diagnostics.filter(({ file }) => file.startsWith('src/'))
-for (const { lines } of inSources) {
+const compiler = compilerPath()
+const errors = PROJECTS.flatMap((project) => check(compiler, project))
+for (const { lines } of errors) {
   process.stdout.write(`${lines.join('\n')}\n`)
 }
-process.stdout.write(`${inSources.length} error(s) under src/, ${diagnostics.length - inSources.length} in dependencies (task 05)\n`)
-process.exit(inSources.length === 0 ? 0 : 1)
+const projectNames = PROJECTS.map((project) => relative(ROOT, project)).join(', ')
+process.stdout.write(`${errors.length} error(s) in ${projectNames}\n`)
+process.exit(errors.length === 0 ? 0 : 1)

@@ -1,4 +1,3 @@
-import React from 'react'
 import App from './App'
 import { renderWithStore } from '../test-support/store'
 import { stubPendingFetch } from '../test-support/fetch'

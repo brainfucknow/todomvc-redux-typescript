@@ -1,4 +1,3 @@
-import React from 'react'
 import { fireEvent } from '@testing-library/react'
 import MainSection, { MainSectionProps } from './MainSection'
 import { renderWithStore } from '../test-support/store'
