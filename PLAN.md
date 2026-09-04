@@ -64,8 +64,8 @@ Serial. Each task assumes every earlier task is merged.
 | 03 | Migrate Jest to Vitest | Tooling | coder -> QA | **done** |
 | 04 | Replace react-scripts with Vite | Tooling | coder -> architect -> QA | **done** |
 | 05 | TypeScript 3.9 to 5.x and modern tsconfig | Tooling | coder -> QA | **done** |
-| 06 | ESLint 9 flat config and Prettier | Tooling | coder -> QA | in progress |
-| 07 | React 18 to 19 and remove prop-types | Tooling | coder -> QA | pending |
+| 06 | ESLint 9 flat config and Prettier | Tooling | coder -> QA | **done** |
+| 07 | React 18 to 19 and remove prop-types | Tooling | coder -> QA | in progress |
 | 08 | Dependency hygiene and CI release checks | Tooling | coder -> QA | pending |
 | 09 | Extract the todo API client into a testable module | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |
 | 10 | Replace callAPIMiddleware with RTK slices and thunks | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |

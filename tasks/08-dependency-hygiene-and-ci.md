@@ -4,6 +4,18 @@
 **Chain:** coder -> QA
 **Status:** pending
 
+## Why this task is now the most load-bearing one left in the tooling track
+
+Tasks 04, 05 and 06 built four gates: `lint`, `format:check`, `typecheck` and
+the E2E suite. CI runs **none** of them. It still runs `npm ci`, `npm run build`
+and `npm test` on `actions/checkout@v1`.
+
+Task 06's QA put the consequence plainly: a gate nobody runs automatically is
+close in effect to one that cannot fail. `typecheck` has been in that position
+since task 05, and the whole point of task 05 was that the project had been
+passing a typecheck that checked nothing. Wiring these up is the difference
+between this project having been modernized and merely appearing to have been.
+
 ## Goal
 
 Close out the tooling track: remove dependencies nothing uses, and make CI run every check the project now has.

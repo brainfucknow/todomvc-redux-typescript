@@ -279,3 +279,224 @@ captured directly:
 Only this note is uncommitted; nothing else in the tree changed.
 
 ### QA
+
+Verified independently, by my own methods rather than by re-reading the coder's.
+Nothing changed in the working tree: the branch is still
+`claude/react-modernization-plan-u7dgen` at `b990750`, and `git status` is clean
+apart from this note. Every probe below was restored and the gates re-run to
+zero afterwards.
+
+**The reformat: 37 files, and what actually differs**
+
+Checked by taking each formattable file's pre-task version at `95a0f03`, piping
+it through `prettier --stdin-filepath` under the new config, and comparing bytes
+against the committed version. 43 files qualified. 36 are byte-identical to
+Prettier's output on the old source, so they cannot carry a hand edit. Seven
+differ: `package.json` (the devDependency and script additions, which I read in
+full - nothing else moved) and exactly the six the coder named. No source file
+was added or deleted; the only additions in the task are `eslint.config.js`,
+`prettier.config.js`, and `.prettierignore`.
+
+**Behavior preservation, proven on the build output rather than argued**
+
+I built `95a0f03` and `HEAD` from identical `node_modules` into separate trees
+and compared the emitted bundles. The CSS is byte-identical. The JavaScript
+differs by 9 bytes out of 173,801: a common prefix of 172,077 characters and a
+common suffix of 251, with one differing region that contains exactly two
+things and nothing else.
+
+- `case Yn:let n=...;return ...` became `case Yn:{let t=...;return ...}`. Only a
+  block scope, and it tightens one that previously leaked across the switch.
+- The middleware arrow gained `let r=n` and renamed minifier registers
+  downstream. The destructuring, the three-string-types throw, the request
+  dispatch, the `fetch` chain, `.then`, and `.catch` are character-for-character
+  the same shape.
+
+That is the whole runtime delta of this task. Two consequences worth stating
+because they were the things at risk. `TodoList`'s new
+`import * as TodoActions` is elided completely - it does not appear in the
+bundle, and the module was already in the graph through `VisibleTodoList`. And
+the middleware still never reads `response.ok`; `grep` finds no `.ok` anywhere
+in `src/`, so the behavior task 10 is scheduled to replace is preserved intact,
+and `qa/tests/21-http-error-status-ignored.spec.ts` still pins it.
+
+`dist/index.html` differs from the old build only in `<meta charset="utf-8">`
+becoming `<meta charset="utf-8" />`. Same DOM.
+
+The lockfile's 3337-line diff resolves to 132 changed package entries, every one
+of them marked `dev`. Zero runtime packages moved, and `dependencies` in
+`package.json` is unchanged. The identical bundle prefix says the same thing
+from the other direction.
+
+**The lint gate can fail, tested on real files**
+
+Stdin probes prove a config block matches a filename. They do not prove ESLint
+walks to that file, so I planted a real violation in a real tracked file for
+each of the eight blocks, ran `npm run lint`, and captured the exit code
+directly with `rc=$?` and no pipe in front of it. Baseline 0. Every probe 1:
+`src/models/Todo.ts` and `src/components/Header.tsx` (the second one raising
+three `jsx-a11y` errors, so the React and a11y rules are live and not just the
+core set), `qa/suite-config.ts`, `qa/tests/03-add-todo.spec.ts`,
+`qa/stub/faults.js` (core `no-unused-vars`, so the CommonJS block is doing
+work), `vite.config.mts`, `scripts/typecheck.mjs`, `eslint.config.js`,
+`prettier.config.js`. All restored, final run 0.
+
+Separately, the quieter failure: a file that no block matches is still "linted",
+with no rules, and passes. I ran `--print-config` over all 82 files ESLint
+visits and counted enabled rules on each. None has zero. `src/` gets 132 (129
+error, 3 warning), the `qa` TypeScript files 65, the stub and the root CommonJS
+configs 60. Nothing falls through.
+
+`--max-warnings=0` is load-bearing, confirmed. My first attempt at a
+warning-only plant was not one - `react-hooks/set-state-in-effect` fired as an
+error alongside it and the test proved nothing, so I replaced it with a
+`useEffect` reading a state value with an empty dependency array. That yields
+one warning and no errors: `npx eslint .` exits 0 and prints it, `npm run lint`
+exits 1. The flag is the only thing standing between a warning and a green run.
+
+`format:check` falsified twice, exit code captured directly: once with a badly
+spaced statement appended to `src/models/Todo.ts` (exit 1), once with nothing
+but three trailing spaces on line 1 (exit 1). Restored, exit 0.
+
+**The suppressions: three, all load-bearing, none over-broad**
+
+`grep` across the tree finds exactly three suppression comments, all
+`eslint-disable-next-line`, covering seven rule names between them. There is no
+file-level or repository-level disable, and no `@ts-ignore`, `@ts-expect-error`,
+`@ts-nocheck`, or `prettier-ignore` anywhere in the repository.
+
+Deleting each directive in turn and re-running raises exit 1 with exactly the
+rules that directive names, and nothing else. In the other direction,
+`eslint . --report-unused-disable-directives` exits 0 with no output, which means
+not one of the seven names suppresses nothing - no rule was listed for padding.
+
+On whether each is genuine rather than convenient: all three are. `Link.tsx`'s
+anchors have a click handler and no `href`; either fix changes the rendered
+element and its keyboard behavior, and the task file names this case as out of
+scope explicitly. `MainSection.tsx`'s toggle-all is an empty `<label>` that
+`todomvc-app-css` draws as a chevron, sitting next to a `readOnly` checkbox with
+no `onChange` - associating the two would make a label click toggle the checkbox
+natively, which is new behavior, and labelling or adding a key handler changes
+what the user sees. `TodoTextInput.tsx`'s `autoFocus` decides where the caret
+lands on mount for both the new-todo field and an item opened for editing.
+
+**No rule was quietly switched off**
+
+This is the same thing as a suppression and harder to see, so I checked it
+directly rather than by reading the file. `eslint.config.js` contains no rule
+overrides at all - every `rules` block is a spread of an upstream recommended
+set. I then resolved the full config and read the 386 disabled rules. They are
+`eslint-config-prettier`'s formatting set, plus upstream's own defaults:
+`typescript-eslint` retiring base rules in favour of its own
+(`no-unused-vars`, `no-undef`, `no-redeclare`, `no-unused-expressions` and so
+on), `jsx-runtime` retiring `react/react-in-jsx-scope`, and `jsx-a11y`'s
+recommended set turning off its three deprecated or opt-in rules. Nothing local.
+
+One thing to record rather than to fix: `eslint-config-prettier` also switches
+off `no-unexpected-multiline`, which is a correctness rule in `js.recommended`,
+not a formatting one. That is the config's documented behavior and it is
+harmless while Prettier owns layout, since Prettier's output cannot produce the
+ambiguity the rule guards. Noted so nobody rediscovers it as a hole.
+
+**The two type-only fixes**
+
+Both confirmed non-behavioral by the bundle comparison above, and consistent on
+reading. In the middleware, `const message = action as Partial<ApiActionMessage>`
+is an alias for the same object, `!message.types` is the same test as
+`!action.types`, `next(action)` still forwards the original reference, and the
+`payload = {}` default survives the destructure. The removed `AnyAction`,
+`Dispatch`, and `RootState` imports were type-only and erased already.
+`TodoList`'s `actions: typeof TodoActions` matches what `MainSection` has always
+declared for the same object, what `VisibleTodoList` supplies through
+`bindActionCreators`, and what `TodoList.spec.tsx` already passed - the spec
+typechecks unchanged against the tighter type, which is independent evidence the
+type is true rather than merely accepted.
+
+**CRAP gate and DRY on changed files**
+
+The task changed no control flow anywhere, which the bundle diff establishes
+directly, so no file's CRAP moved. Measured anyway, pre and post, on every
+semantically changed file: `callapimiddleware.ts` 6 both sides, `todos.ts`
+`todos` 9 and `todoApiResults` 7 both sides, `TodoList.tsx` under threshold both
+sides. Nothing exceeds 10, so the gate passes outright without needing the
+`switch` exception, and the two `switch`es that come closest each answer one
+question. Test coverage did not move either: 10 files, 55 tests, same as
+baseline, and the middleware is exercised by `createTestStore` in the component
+specs as well as by all five E2E failure procedures. I could not compute an
+absolute CRAP number because the repository installs no coverage provider - see
+the findings below.
+
+DRY: the only new code is two declarative config files. `eslint.config.js`
+repeats `ecmaVersion`, `sourceType`, and `globals` across its blocks, and I
+considered extracting a shared base. Declined: those three keys are the entire
+reason the blocks are separate, and hoisting them would hide the differences
+that make the config correct. Nothing else duplicates.
+
+**Absence confirmed, not assumed**
+
+No Gherkin: no `.feature` files, no `gherkin-parser` or `gherkin-mutator`, no
+APS wiring, nothing in `package.json` or `PLAN.md`. No acceptance pipeline. No
+property tests - `fast-check` is not installed. No mutation manifests and no
+mutation tooling. So there was nothing of that kind to run, and I invented
+none.
+
+**Regression suite**
+
+Run from a clean tree at `b990750`, each exit code captured directly.
+`npm run lint` 0, `npm run format:check` 0, `npm run typecheck` 0 (both
+projects), `npm test` 0 with 10 files and 55 tests, `npm run build` 0 at 57.32
+kB gzipped. `npm run test:e2e` 22 passed. `npm run test:e2e:dev` 21 passed, 1
+skipped. `npm run test:e2e:preview` 21 passed, 1 skipped. Every number matches
+the baseline exactly. The single skip is
+`qa/tests/20-delete-failure.spec.ts:23`, guarded on `proxiedBackend` and
+carrying its reason in the call - a proxy turns the transport fault into a 502,
+which this client reads as success. Deliberate and unchanged.
+
+All 21 procedures in `qa/procedures/` still pair one-to-one by name with the 21
+specs in `qa/tests/`. `git diff 95a0f03 HEAD -- qa/` is empty: the suite was not
+touched by this task, and I did not touch it either.
+
+I also re-ran `lint` and `format:check` with `dist/` and `qa/.artifacts/`
+populated from the E2E runs, which is the state CI would be in after a build.
+Both still 0; the ignore lists hold.
+
+**Findings for the project manager**
+
+1. **The new gates are not wired into CI.** `.github/workflows/nodejs.yml` runs
+   `npm ci`, `npm run build --if-present`, and `npm test`. It does not run
+   `lint`, `format:check`, `typecheck`, or any E2E config. Task 06's scope asked
+   for scripts that are "CI-safe", not for scripts wired into CI, and the done
+   criteria are all met as written - so this is not a failure of this task and I
+   am not naming a role for a fix. But it is worth saying plainly: a gate that
+   only runs when somebody remembers to run it is close in effect to the gate
+   that cannot fail, and `typecheck` has been in that position since task 05.
+   Wiring the four of them into the workflow is a small, self-contained change;
+   it needs an owner and a task number. The workflow also still uses
+   `actions/checkout@v1` and `actions/setup-node@v1`, which is the same
+   conversation.
+2. **No coverage provider is installed.** `@vitest/coverage-v8` is absent, so
+   the project cannot produce a coverage number, and the CRAP gate cannot be
+   computed in absolute terms by anyone - only its delta, which is what I
+   verified. Since CRAP is a standing project gate, that is a gap worth a
+   decision. Adding a devDependency was outside what this task authorised me to
+   do.
+3. **`qa/` stays unformatted, and I am the one keeping it that way.** Your
+   ruling stands and I am not overruling it. For the record, the cost of
+   reversing it is exactly 37 files: every `.ts` and `.js` under `qa/` would be
+   rewritten, the whole suite. Doing that during the task whose central claim is
+   "the reformat changed nothing" would make this diff harder to audit for no
+   verification benefit. If it is wanted, it should be its own change with its
+   own regression run.
+4. **The ESLint 10 evidence holds.** I read the peer ranges off the installed
+   packages rather than trusting the table: `eslint-plugin-react` 7.37.5 declares
+   `^9.7` and `eslint-plugin-jsx-a11y` 6.10.2 declares `^9`, while the other four
+   already accept `^10`. Two real blockers, both rule-only plugins. The decision
+   to stay on 9.39.5 without `--legacy-peer-deps` or an `overrides` block is
+   correctly made.
+
+**Left for the next role**
+
+Nothing outstanding and no open questions of my own. Task 06's done criteria are
+all met and independently verified. Item 1 above is the only thing I would want
+answered before it is forgotten, and it is a scope question for you rather than
+a defect in this task.
