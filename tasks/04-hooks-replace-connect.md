@@ -11,6 +11,9 @@ Components read state with `useSelector` and dispatch with `useDispatch`. The `s
 - Replace the four `connect()` containers (`FilterLink`, `Header`, `MainSection`, `VisibleTodoList`) with hook usage in the components they wrapped.
 - Introduce typed `useAppSelector` and `useAppDispatch` hooks bound to the real store types.
 - Derive `RootState` and `AppDispatch` from the configured store / root reducer. The hand-written `RootState` in `src/containers/index.ts` omits the `errorMessage` and `exec` slices that `reducers/index.ts` actually combines; the derived type must include them.
+- Fix `errorMessage` in `src/reducers/apis.ts`: its state parameter infers as `null` from its default
+  value, so the reducer cannot be handed back a message it previously stored. Deriving `RootState`
+  from the real root reducer inherits this defect into the derived type, which is why it lands here.
 - Remove `bindActionCreators` plumbing and the `actions: any` prop on `TodoList` in favor of components dispatching what they need.
 - Move the store construction out of `src/index.tsx` into its own module so tests and the typed hooks can import the store's types without importing the app entry.
 

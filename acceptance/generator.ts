@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { basename, join, relative, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
+import { METADATA_DIR, entrypointFileName, featurePathForIr } from './layout.ts'
 
 const METADATA_SCHEMA_VERSION = 1
 
@@ -79,12 +80,11 @@ export function entrypointSource(options: EntrypointOptions): string {
 // document, so the caller resolves them once, at the point where it writes.
 export function featureArtifacts(request: ArtifactRequest): FeatureArtifacts {
   const { featureName, irPath, outputDir, acceptanceDir, cwd } = request
-  const slug = basename(irPath, '.json')
-  const featurePath = `features/${slug}.feature`
+  const featurePath = featurePathForIr(irPath)
   const recordedIrPath = posixRelative(cwd, resolve(irPath))
 
   const entrypoint: GeneratedFile = {
-    path: posixRelative(cwd, resolve(outputDir, `${slug}.acceptance.ts`)),
+    path: posixRelative(cwd, resolve(outputDir, entrypointFileName(irPath))),
     content: entrypointSource({
       featureName,
       irPath: recordedIrPath,
@@ -105,7 +105,7 @@ export function featureArtifacts(request: ArtifactRequest): FeatureArtifacts {
   return {
     entrypoint,
     metadata: {
-      path: posixRelative(cwd, resolve(outputDir, 'metadata', metadataFileName(featurePath))),
+      path: posixRelative(cwd, resolve(outputDir, METADATA_DIR, metadataFileName(featurePath))),
       content: `${JSON.stringify(document, null, 2)}\n`,
     },
   }

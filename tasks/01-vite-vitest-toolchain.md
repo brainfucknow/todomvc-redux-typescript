@@ -628,6 +628,213 @@ Also noted: the Cleaner's removal of the dead `resolutions` and `browserslist` k
 
 ### Architect
 
+Done. Boundary rules and the property tier. `src/`, `features/` and `qa/` untouched; nothing committed.
+
+**What I changed**
+
+Dependency rule, made checkable:
+
+- `acceptance/layering.ts` (new, pure) declares which acceptance modules are **core**
+  (`generator`, `inspection`, `layering`, `layout`, `runtime`) and which are **shell**
+  (`commands`, `fixtures`, `generate-entrypoints`, `project-files`, `steps`), plus the pure
+  dependencies a core module may import (`node:crypto`, `node:path`). `layerViolations` and
+  `importCycles` evaluate an import graph against that map; both are data in, strings out.
+- `acceptance/layering.spec.ts` reads the package with the TypeScript compiler API and asserts
+  zero violations and zero cycles. It fails on: a core module importing a shell module, a core
+  module importing an impure dependency, any module importing outside the package, an
+  undeclared module, and a declared module that no longer exists - so adding a file to
+  `acceptance/` forces a core-or-shell decision rather than silently landing on either side.
+  It also asserts no module under `src/` imports anything outside `src/`, which is the other
+  half of the same rule: the application does not depend on its own test pipeline.
+- The rules were already satisfied; nothing had to move to make them pass. The check is the
+  intent written down. Verified it bites: adding `import { readFileSync } from 'node:fs'` to
+  `runtime.ts` turns it red with `core module runtime.ts imports node:fs, which is not a pure
+  dependency`.
+
+Information hiding - one owner for the pipeline's path convention:
+
+- `acceptance/layout.ts` (new, pure) owns `features/`, `build/acceptance/ir`,
+  `build/acceptance/generated`, `metadata/`, the `.feature` -> `.json` -> `.acceptance.ts`
+  name chain, and the glob the acceptance runner includes.
+- That knowledge was in three places. `scripts/acceptance.ts` spelled out the directories and
+  built `<slug>.json` from a feature name; `acceptance/generator.ts` reversed the same
+  convention with an inline `` `features/${slug}.feature` ``; `vitest.acceptance.config.ts`
+  restated the generated-file glob. The two halves of a round trip were separately written
+  in a shell module and a core module, so nested feature directories would have recorded a
+  wrong `feature_path` from one side while the other side kept working. All three now read
+  the convention from `layout.ts`, and a property test asserts the round trip closes.
+- `scripts/acceptance.ts` also recomputed `projectRoot` instead of importing the one
+  `acceptance/project-files.ts` already exports. It imports it now.
+- The APS generator command takes exactly two arguments, so the generator genuinely cannot be
+  told its feature path and must recover it from the IR slug. `layout.ts` names that constraint
+  where the code depends on it.
+
+Property tests (`npm run test:property`, PLAN section 4's tier and its named tool):
+
+- `fast-check@4.9.0` added as a devDependency, `vitest.property.config.ts` added, and
+  `property/` holds **6 files, 60 properties**. Files run only under the property command; the
+  unit tier's `include` is untouched, and `property/` is outside the coverage `include`, so no
+  CRAP number moves because of them.
+- Pipeline core: `expandScenarios` (one execution per row, background prepended to every one,
+  one-based naming in written order), `resolveArgument` (the value comes back exactly, a value
+  that looks like a placeholder is not rescanned, non-placeholders pass through, a missing name
+  is named in the error), `matchStep` (single match, ambiguity, unsupported), `runExecution`
+  (every step once, in order, arguments resolved), `implementationHash` (order-independent,
+  changes on any rewrite or rename), `metadataFileName` (shape and case-insensitivity),
+  `relativeImportPath` (resolves back to the target; never reads as a package),
+  `entrypointSource` (deterministic, escaped literals, never names the `.feature` file),
+  `featureArtifacts` (hash covers exactly the emitted entry point, paths stay
+  working-directory-relative, metadata parses back), and the feature/IR round trip.
+- Application core, which had the worst coverage in the tree: `todos.ts` (append-with-a-fresh-id,
+  ids never reused, delete is idempotent, edit and complete touch one todo, complete-all makes
+  every todo agree on the opposite of what they agreed on, clear-completed keeps the active ones
+  in order, and the four `*_SUCCESS` results), `apis.ts` (a request marks, either answer clears,
+  one todo's mark does not disturb another's, unhandled actions return the same state),
+  `selectors` (SHOW_ALL is the list itself, the two filters partition it, order is preserved,
+  an unknown filter is refused, asking twice gives the same answer).
+- `README.md` documents the new command.
+
+**What I verified**
+
+- `npx tsc --noEmit` exits 0 with no output.
+- `npm test`: **15 files, 119 tests**, 0 failing, 0 skipped. `npx vitest run src`: **10 files,
+  54 tests** - the Specifier's D2a floor, untouched. `npx vitest run acceptance`: **5 files,
+  65 tests** (was 3 / 45).
+- `npm run test:property`: 6 files, 60 properties. Ran the tier **20 times** (2000 random cases
+  per property) with no failure. One property was flaky when written - it looked a scenario up
+  by name, and fast-check found a feature with two scenarios of the same name; it is positional
+  now. That was a defect in my test, not in `expandScenarios`.
+- `npm run test:acceptance` from the existing tree: 5 features parse, 5 entry points generate,
+  **21 scenario executions pass**. The generated entry points and metadata are **byte-identical**
+  to the Cleaner's output (`diff -r` against a copy taken before I started), implementation
+  hashes included, so the layout refactor changed no artifact.
+- `npm run build` exits 0 and emits the same content hashes as the Cleaner recorded
+  (`index-BPxiUVWS.js`, `index-xAQXB6NR.css`). `npm ci` from the regenerated lockfile exits 0.
+- `node scripts/crap.mjs acceptance`: 5 files, **50 functions, 0 over the gate**; the core
+  modules are at 100% statement coverage and the worst function is `resolveArgument` at 4.0.
+- `git status --short src features qa` is empty.
+
+**The gate reads one tier, and that now understates the application core**
+
+`node scripts/crap.mjs` still reports the same 5 functions over the gate that the Cleaner
+recorded, because it runs the unit tier and the property tier is a separate command. Measured
+against property-tier coverage instead, the same functions read:
+
+| Function | CRAP on unit coverage | CRAP on property coverage |
+| --- | --- | --- |
+| `src/reducers/apis.ts` `executing` | 182.0 | 13.0 (100% covered; cc 13 is the single `switch` the exception permits) |
+| `src/reducers/apis.ts` `errorMessage` | 20.0 | 4.0 |
+| `src/selectors/index.ts` `getVisibleTodos` | 20.0 | 4.0 |
+| `src/reducers/todos.ts` `todoApiResults` | 12.4 | 5.0 |
+| `src/middlewares/callapimiddleware.ts` | 30.0 | 30.0 - untouched, it is IO |
+
+The code is tested; the gate cannot see it. Merging the tiers is a change to `scripts/crap.mjs`,
+whose shape PLAN section 4 gives to the Cleaner and whose numbers later tasks are measured
+against, so I left the tool alone and recorded the measurement. See open question 1.
+
+**Findings I did not fix, and who owns them**
+
+1. **`src/selectors/index.ts` and `src/middlewares/callapimiddleware.ts` import `RootState`
+   from `src/containers/index.ts`.** Domain policy and an IO adapter both depend on the UI
+   container barrel; the arrow points outward. `tasks/04-hooks-replace-connect.md` already owns
+   it - its scope derives `RootState` from the root reducer and deletes `src/containers/` - so
+   the fix belongs there and the boundary check is scoped to `acceptance/` and to "src imports
+   nothing outside src", which passes today. When task 04 lands, extend the layer map to `src/`.
+2. **The UI re-walks facts the domain already knows.** `containers/MainSection.ts` passes
+   `todosCount` and `completedCount`, and `components/MainSection.tsx` derives
+   `activeCount = todosCount - completedCount` and "all complete" as
+   `completedCount === todosCount`. `reducers/todos.ts` answers the same "are they all marked?"
+   question itself, for `COMPLETE_ALL_TODOS`. No selector owns either observable. Task 04 is
+   where components start asking for what they need; that is the moment to add the selectors.
+   Task 01's Out of scope bars me from all of it.
+3. **`errorMessage`'s state parameter is inferred `null`** from its `state = null` default, so
+   the reducer's own signature says it can never be handed back the message it just stored.
+   `property/apis.property.ts` carries one cast and a comment for it. Task 06 or whoever types
+   the store; it is a type defect, not a behavior one.
+4. **`implementationHash` hashes `` `${path}\0${content}\0` ``.** A generated file whose content
+   contained a NUL byte could collide with a two-file set. Unreachable for generated TypeScript,
+   and any fix changes every recorded hash, so I left it. Worth knowing before the format is
+   reused for something with arbitrary content.
+5. `resolveArgument` and `matchStep` are exported but used in production only by `runExecution`.
+   I judged them part of the runtime contract the APS spec names, not accidental API, and the
+   property tests exercise them directly. Left as they are.
+
+**Left for the next role**
+
+- **Test counts moved, as procedure D permits when a handoff records it: D1 -> 15 files /
+  119 tests, D2's list gains `acceptance/layering.spec.ts` and `acceptance/layout.spec.ts`,
+  D2b -> 5 files / 65 tests. D2a is unchanged at 10 / 54 and D2's real point still holds - no
+  generated file appears in the unit run.** This is the record the PM's ruling asks for; the
+  Specifier pass scheduled between the Hardener and QA reconciles it.
+- **`test:property` is a new npm script.** `toolchain dependencies 2` asserts only that the
+  scripts it lists exist, so it stays green, and PM ruling 3 was about `typecheck`, which task 06
+  owns. This one is PLAN section 4's own tier and `tasks/04-hooks-replace-connect.md` already
+  requires it in its done criteria. The same Specifier pass should add a `test:property` row to
+  `toolchain dependencies 2` and name it in QA step E3, which currently lists five commands.
+- Hardener: `acceptance/steps.ts` is still the one place a wrong assertion goes unnoticed by
+  anything but the acceptance tier, and it is excluded from coverage as wiring. The property
+  tier runs on fast-check's default random seed and prints the seed and the shrunk counterexample
+  on failure; if a run ever goes red, reproduce with that seed before changing anything.
+- Everything earlier roles left standing still stands: the Vitest isolation hint, the
+  third-party lightningcss warning, CI wiring for `test:acceptance` (task 06), the missing
+  Playwright driver for `qa/todo-app-regression.md`, and the `console.log` in `src/reducers/apis.ts`
+  (task 06 by PM ruling; the property tier silences it locally rather than working around it).
+
+**Open questions**
+
+1. **Should `scripts/crap.mjs` merge coverage across tiers?** As it stands the gate reports 182.0
+   for a function the property tier covers completely, which invites either a false alarm or a
+   habit of ignoring the number. Merging is a change to the Cleaner's tool and to the baseline
+   later tasks are measured against, so I did not make it.
+2. **Does the `RootState` relocation wait for task 04?** I assumed yes, on the precedent of the
+   `console.log` ruling: it is a real dependency-direction violation, but task 04's scope names
+   the fix, and moving a type out of `src/containers/` now would collide with the task that
+   deletes that directory. If task 01's Architect was meant to take it, say so and it is a
+   type-only move with no behavior change.
+
+### Project manager rulings on the Architect handoff
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 15 files / 119 tests;
+`npx vitest run src` holds the D2a floor at 10 / 54; `npm run test:property` 6 files / 60
+properties; `npm run test:acceptance` 21 scenario executions; `src/`, `features/` and `qa/`
+untouched. Accepted.
+
+For the avoidance of doubt: adding `test:property` is not a breach of the earlier ruling that
+fixed this task's script surface. That ruling refused a `typecheck` script because `PLAN.md`
+section 5 assigns it to task 06. `test:property` is mandated by `PLAN.md` section 4 and by the
+Architect brief's requirement to run properties as a separate command, and the Specifier's
+`toolchain dependencies 2` already anticipates it being added by a later task.
+
+The Architect's two open questions are settled as follows.
+
+1. **Yes, `scripts/crap.mjs` must merge coverage across the deterministic tiers.** A gate that
+   reads only the unit tier reports 182.0 for `executing`, which the property tier in fact covers
+   completely. That is a false signal, and the next role to act on it is the Hardener, whose brief
+   ends with a CRAP gate on changed files; left uncorrected it would push the Hardener into writing
+   redundant unit tests to satisfy an instrument that is measuring the wrong thing. The Architect
+   was right not to change another role's tool. A fresh Cleaner is being spawned to fix it, since
+   `scripts/crap.mjs` is the Cleaner's.
+
+   The Architect is not re-run afterwards. `scripts/crap.mjs` is a measurement instrument, not
+   production code; nothing the Architect produced imports it or depends on its output, and the
+   Architect's own verification (typecheck, four test tiers, byte-identical generated artifacts)
+   is unaffected by how coverage is aggregated. Re-running it would buy nothing.
+
+2. **Yes, the `RootState` relocation waits for task 04.** `tasks/04-hooks-replace-connect.md`
+   already names it in scope. The Architect's reading was right, and the precedent it cited holds.
+
+Two further findings from the Architect are dispositioned here rather than left loose:
+
+- **`errorMessage`'s state parameter infers as `null` from its default,** so the reducer cannot be
+  handed back the message it stored. Task 04 must derive `RootState` from the real root reducer, so
+  it would inherit this defect into the derived type. `tasks/04-hooks-replace-connect.md` is amended
+  to name it.
+- **`implementationHash`'s `path\0content\0` separator is ambiguous for NUL-bearing content.**
+  Accepted as a known limitation and deliberately not fixed: the input is project source files, the
+  case is unreachable in practice, and any change rewrites every recorded hash. Recorded here so a
+  later role does not rediscover it and "fix" it at that cost.
+
+
 ### Hardener
 
 ### QA

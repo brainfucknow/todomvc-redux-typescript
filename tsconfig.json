@@ -28,8 +28,10 @@
   "include": [
     "src",
     "acceptance",
+    "property",
     "scripts",
     "vite.config.ts",
-    "vitest.acceptance.config.ts"
+    "vitest.acceptance.config.ts",
+    "vitest.property.config.ts"
   ]
 }

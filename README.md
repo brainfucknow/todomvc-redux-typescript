@@ -31,6 +31,11 @@ Run `npm run build` first.
 
 Runs the unit tests once with Vitest in a jsdom environment.
 
+### `npm run test:property`
+
+Runs the property tests in `property/` with [fast-check](https://fast-check.dev),
+against the pure parts of the application and the acceptance pipeline.
+
 ### `npm run test:acceptance`
 
 Runs the acceptance pipeline: parses `features/*.feature` into JSON IR with the
