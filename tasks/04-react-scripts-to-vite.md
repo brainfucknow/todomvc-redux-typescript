@@ -5,7 +5,7 @@
 
 The architect is in this chain because Vite forces file moves and import-path changes. The architect's job here is narrowed: review only the moves and boundary changes the tooling forced, and record extraction candidates in the note rather than acting on them.
 
-**Status:** pending
+**Status:** in progress
 
 ## Goal
 
@@ -30,8 +30,9 @@ Things `react-scripts` does today that must keep working:
 - Move `public/index.html` to the project root and add the module script tag pointing at `src/index.tsx`. Keep the `<div class="todoapp" id="root">` element and the page title exactly as they are.
 - Replace `src/react-app-env.d.ts` with a Vite equivalent.
 - Move the dev proxy from the `package.json` `proxy` field into the Vite server proxy config, preserving the same target and the same set of proxied paths.
+- Note that `npm start` does not currently run in this container at all: `react-scripts` fails with `options.allowedHosts[0] should be a non-empty string` before it compiles. That is pre-existing and environmental, a CRA 5 quirk with the `proxy` field and no LAN address, confirmed by task 03's QA against an earlier commit. It is not a regression you introduced, and moving off `react-scripts` is expected to resolve it. Confirm that the Vite dev server does start.
 - Add `npm run build`, `npm start` or `npm run dev`, and `npm run preview` scripts.
-- Add `npm run typecheck` running `tsc --noEmit`, since Vite does not typecheck during build and `react-scripts` did.
+- Add `npm run typecheck`, since Vite does not typecheck during build and `react-scripts` did. It cannot be a bare `tsc --noEmit` that exits zero: TypeScript 3.9 cannot parse the `.d.ts` files its modern dependencies ship, so `npx tsc --noEmit` currently reports around 1800 parse errors, every one of them inside `node_modules` and none under `src/`. Task 05 clears that by bumping the compiler; you cannot, because `react-scripts` 5.0.1 declares a `typescript` peer of `^3.2.1 || ^4` and would refuse to install TypeScript 5 while it is still here. So make the script gate on what is meaningful today and achievable: no error in the project's own sources. Say plainly in your handoff how you scoped it and what it currently reports.
 - Remove `react-scripts` and any dependency that only existed to serve it.
 - Update `.gitignore` for Vite's output directory if it differs from `build/`.
 - Confirm `npm run test:e2e` still runs. The E2E stub serves the built app from `build/`, falling back to `dist/`, and honours a `QA_APP_DIR` override, so the command is expected to survive the output-directory change. Confirm that; do not assume it. The stub and the tests belong to QA: if the command needs a change, QA makes it, not the coder.
@@ -50,7 +51,7 @@ Things `react-scripts` does today that must keep working:
 - `npm run build` produces a production bundle with no `react-scripts` involved.
 - `npm run preview` serves that bundle and the app works in it.
 - `npm run dev` serves the app and its proxy reaches a backend on port 4000.
-- `npm run typecheck` passes.
+- `npm run typecheck` passes, gating on the project's own sources. Zero errors under `src/`. The `node_modules` parse errors are task 05's to clear.
 - `npm test` passes with the same test count as before.
 - The regression suite from `qa/procedures/` passes against the dev server and against the preview server.
 - No occurrence of `react-scripts` remains in the repository.

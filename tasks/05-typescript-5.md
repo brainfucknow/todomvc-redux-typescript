@@ -29,7 +29,7 @@ Known type debt that the bump will surface:
 - With `react-jsx`, the default `React` import is no longer required for JSX. Removing those now-unused imports is in scope for this task; it is a mechanical consequence of the compiler option and moves no logic.
 - Fix type errors the bump surfaces, with the narrowest change that keeps behavior identical.
 - Remove the ineffective `resolutions` field.
-- Remove `@types/react-redux` if react-redux's own types suffice. Leave `@types/node` alone: task 03 raised it from `^13.13.6` to `^22.19.1` because every Vite version declares it as an optional peer with a floor far above 13, and `npm ci` failed with `ERESOLVE` until it moved. It is excluded from automatic inclusion by the `types` array and no source imports it, but removing it breaks install resolution.
+- Remove `@types/react-redux` if react-redux's own types suffice. Leave `@types/node` alone: task 03 raised it from `^13.13.6` to `^22.19.1` and `npm ci` fails with `ERESOLVE` below that. Task 03's QA reproduced the range from scratch and established that the binding floor is **Vitest**'s peer range of `^22.0.0 || >=24.0.0`, not Vite's `^20.19.0 || >=22.12.0`; Vite alone would have accepted `^20`. It is excluded from automatic inclusion by the `types` array and no source imports it, but removing it breaks install resolution.
 - `qa/` sits outside `tsconfig.json`'s `include` because TypeScript 3.9 cannot parse Playwright's type definitions, and Playwright transpiles the specs without typechecking them. TypeScript 5 can. Bring `qa/tests/` under a typecheck, in its own project reference or its own config rather than by widening the app's `include`, so the app's compilation stays free of test types. Fix any type error this surfaces in the test sources. Do not change what any test asserts; if a type error can only be resolved by changing an assertion, stop and report it.
 
 ## Out of scope
@@ -41,6 +41,7 @@ Known type debt that the bump will surface:
 
 ## Done criteria
 
+- `npm run typecheck` passes with zero errors everywhere, not merely under `src/`. Task 04 had to scope its gate to the project's own sources because TypeScript 3.9 cannot parse the `.d.ts` files that `@reduxjs/toolkit`, `react-redux`, `vitest`, `@types/react` and `@types/node` ship; that is around 1800 parse errors inside `node_modules`, and clearing them is the main reason this task exists. Widen the gate back to everything once the compiler can read them.
 - `npm run typecheck` passes on TypeScript 5.x with `strict` on and no new `any`, no `@ts-ignore`, and no `@ts-expect-error` introduced. If one is unavoidable, it carries a comment naming the reason and appears in the handoff.
 - `npm test` passes with the same test count.
 - `npm run build` compiles.
