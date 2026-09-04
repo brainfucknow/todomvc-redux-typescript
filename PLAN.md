@@ -52,6 +52,8 @@ Every role in every task works to these. They are project-manager decisions, not
 - **Tooling picks, to be introduced by whichever role first needs them.** Language mutation: Stryker (`@stryker-mutator/core` with its Vitest runner). Property tests: `fast-check`. E2E: `@playwright/test`, using the preinstalled Chromium at `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH` is already set; never run `playwright install`). CRAP has no off-the-shelf JS tool: a small `scripts/crap.mjs` computing cyclomatic complexity against Vitest coverage is expected, first written by the task 01 cleaner and reused thereafter.
 - **Project self-checks live under `scripts/`,** as tested packages (`scripts/crap/`, `scripts/architecture/`), alongside the CLI shells that invoke them. `scripts/` means the project's own tooling; a checker is tooling, not application code.
 - **CRAP gate is <= 10** on changed files, per the shared definitions handed to each role.
+- **A server started through `npm run <script>` releases its port after the `npm` process exits, not with it.** Anything asserting a port is free must wait for it, bounded, rather than sampling once. Found in task 01 as an intermittent E2E failure that passed on isolated re-runs.
+- **Vite decides production-ness from `process.env.NODE_ENV`, not from `mode`,** and Vitest sets `NODE_ENV=test`. Driving a Vite build from inside a test runner silently produces a development bundle.
 - **Test every instrument in the failing direction.** Three times in task 01 the defect was in a check rather than in the product: a coverage tier that measured but was never merged, `PACKAGES = []` making a spec pass vacuously, and a mutation manifest whose `implementation_hash` did not cover the implementation. A check that cannot fail is worth less than no check, because it also suppresses the search for one. Before trusting a green result, break the thing under test and confirm the check goes red.
 - **Carried work:** `scripts/acceptance-mutation.ts` and the language-mutation runner both hold stamp logic that no test tier judges, the same gap that was closed for `scripts/crap.mjs`. Owned by the task 02 Cleaner.
 - **Mutation manifests** live under `.mutation/` and are committed. Never hand-edit them; preserve them across file splits.
@@ -61,7 +63,7 @@ Every role in every task works to these. They are project-manager decisions, not
 
 | # | Task | File | Status |
 | --- | --- | --- | --- |
-| 01 | Replace CRA with Vite and Vitest | `tasks/01-vite-vitest-toolchain.md` | in progress |
+| 01 | Replace CRA with Vite and Vitest | done |
 | 02 | Replace shallow-renderer tests with Testing Library | `tasks/02-testing-library-suite.md` | pending |
 | 03 | Upgrade to React 19 | `tasks/03-react-19.md` | pending |
 | 04 | Replace connect() containers with hooks | `tasks/04-hooks-replace-connect.md` | pending |

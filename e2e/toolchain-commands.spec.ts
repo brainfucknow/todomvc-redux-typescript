@@ -5,7 +5,8 @@
 // command, or a request to a server one of them started. Nothing imports a
 // project module.
 import { expect, test, type Page } from '@playwright/test'
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isPortBound, npm, projectRoot, run, startBackendStub, startServer } from './harness.ts'
@@ -43,6 +44,55 @@ const filesUnder = (directory: string, matching: RegExp): string[] =>
     .map((entry) => `${directory}/${entry.split('\\').join('/')}`)
     .filter((entry) => matching.test(entry))
     .sort()
+
+// "the port is released", polled rather than sampled once. Killing the process
+// group ends `npm run <script>`, but the server it spawned releases its
+// listening socket a beat later - measured at ~20ms, and the single sample this
+// replaces failed on it. Bounded, so a port a leaked child is still holding
+// fails B8/C7 the way those rows intend.
+const expectPortReleased = async (port: number): Promise<void> => {
+  await expect.poll(() => isPortBound(port), { message: `port ${port} is still bound` }).toBe(false)
+}
+
+// `grep -c PATTERN FILE`, as C3a and C3b write it: matching lines, as a number.
+// grep exits 1 when there are none and still prints `0`, which is the answer
+// those rows want, so the exit code is not consulted.
+const matchingLines = (marker: string, file: string): number =>
+  Number(plain(run('grep', ['-c', '-F', marker, file]).output).trim())
+
+// What C1 emitted, named and hashed, so procedure C's closing paragraph can say
+// whether D3 left the same artifact behind.
+const distFingerprint = (): string =>
+  filesUnder('dist', /./)
+    .filter((entry) => statSync(join(projectRoot, entry)).isFile())
+    .map((file) => `${file} ${createHash('sha256').update(readFileSync(join(projectRoot, file))).digest('hex')}`)
+    .join('\n')
+
+// React's production entry carries both of these and its development entry
+// carries neither, so their presence is what tells the two builds apart.
+const PRODUCTION_MARKERS = ['Minified React error', 'act(...) is not supported in production builds of React.']
+const DEVELOPMENT_MARKER = 'Invalid hook call'
+
+// C3a's reading and C3b's, each taken in two places: on the artifact C1
+// emitted, and again after D3 has rebuilt it.
+const expectProductionEntry = (files: string[]): void => {
+  for (const file of files) {
+    for (const marker of PRODUCTION_MARKERS) {
+      expect(matchingLines(marker, file), `${marker} in ${file}`).toBe(1)
+    }
+  }
+}
+
+const expectNoDevelopmentEntry = (files: string[]): void => {
+  for (const file of files) {
+    expect(matchingLines(DEVELOPMENT_MARKER, file), `${DEVELOPMENT_MARKER} in ${file}`).toBe(0)
+  }
+}
+
+// The JavaScript C2 listed and the fingerprint C1's output hashed to, both read
+// again in D once the acceptance tier has rebuilt `dist/`.
+let bundles: string[] = []
+let builtDist = ''
 
 // What procedures A-D leave behind, recorded as they create it. E1 reads this
 // rather than a list of directory names, so output a later task generates is
@@ -153,7 +203,7 @@ test('Procedure B: development server and API proxy', async ({ page }) => {
       await expect(page.locator('h1')).toHaveText('todos')
       expect(readFileSync(headerSource, 'utf8')).toBe(header)
       await dev.stop()
-      expect(await isPortBound(dev.port)).toBe(false)
+      await expectPortReleased(dev.port)
     })
   } finally {
     writeFileSync(headerSource, header)
@@ -168,19 +218,32 @@ test('Procedure C: production build and preview', async ({ page }) => {
     const built = npm('run', 'build')
     expect(built.code, built.output).toBe(0)
     expect(plain(built.output)).toContain('dist/index.html')
+    builtDist = distFingerprint()
     generatedPaths.push('dist')
   })
 
   await test.step('C2 the build output', async () => {
     const emitted = filesUnder('dist', /./)
     expect(emitted).toContain('dist/index.html')
-    expect(emitted.filter((file) => file.endsWith('.js')).length).toBeGreaterThan(0)
+    bundles = emitted.filter((file) => file.endsWith('.js'))
+    expect(bundles.length).toBeGreaterThan(0)
     expect(emitted.filter((file) => file.endsWith('.css')).length).toBeGreaterThan(0)
   })
 
   await test.step('C3 the built page references no TypeScript source', async () => {
     const counted = run('grep', ['-c', 'src/index.tsx', 'dist/index.html'])
     expect(plain(counted.output).trim()).toBe('0')
+  })
+
+  await test.step('C3a the bundle carries React\'s production entry', async () => {
+    // An empty `bundles` would make the reading pass by arithmetic, so C2's own
+    // count is asserted above and named again here.
+    expect(bundles.length, 'C2 listed no JavaScript file for C3a to read').toBeGreaterThan(0)
+    expectProductionEntry(bundles)
+  })
+
+  await test.step('C3b no development-mode React warning text is in the bundle', async () => {
+    expectNoDevelopmentEntry(bundles)
   })
 
   const preview = await startServer('preview')
@@ -210,7 +273,7 @@ test('Procedure C: production build and preview', async ({ page }) => {
 
     await test.step('C7 stop the preview server', async () => {
       await preview.stop()
-      expect(await isPortBound(preview.port)).toBe(false)
+      await expectPortReleased(preview.port)
     })
   } finally {
     await preview.stop()
@@ -223,13 +286,14 @@ test('Procedure D: test tiers', async () => {
 
   await test.step('D1 npm test', async () => {
     expect(unit.code, unit.output).toBe(0)
-    expect(testFiles(unit.output)).toBe('22 passed (22)')
-    expect(testCases(unit.output)).toBe('214 passed (214)')
+    expect(testFiles(unit.output)).toBe('23 passed (23)')
+    expect(testCases(unit.output)).toBe('228 passed (228)')
   })
 
   await test.step('D2 the D1 file list', async () => {
     expect(reportedFiles(unit.output)).toEqual([
       ...filesUnder('src', /\.spec\.tsx?$/),
+      'acceptance/assertions.spec.ts',
       'acceptance/generator.spec.ts',
       'acceptance/inspection.spec.ts',
       'acceptance/layout.spec.ts',
@@ -258,8 +322,8 @@ test('Procedure D: test tiers', async () => {
   await test.step('D2b the acceptance-pipeline unit tests', async () => {
     const suite = run('npx', ['vitest', 'run', 'acceptance'])
     expect(suite.code, suite.output).toBe(0)
-    expect(testFiles(suite.output)).toBe('4 passed (4)')
-    expect(testCases(suite.output)).toBe('49 passed (49)')
+    expect(testFiles(suite.output)).toBe('5 passed (5)')
+    expect(testCases(suite.output)).toBe('63 passed (63)')
   })
 
   await test.step('D2c the project tooling unit tests, and the sum', async () => {
@@ -267,8 +331,8 @@ test('Procedure D: test tiers', async () => {
     expect(suite.code, suite.output).toBe(0)
     expect(testFiles(suite.output)).toBe('8 passed (8)')
     expect(testCases(suite.output)).toBe('111 passed (111)')
-    expect(54 + 49 + 111).toBe(214)
-    expect(10 + 4 + 8).toBe(22)
+    expect(54 + 63 + 111).toBe(228)
+    expect(10 + 5 + 8).toBe(23)
   })
 
   const acceptance = npm('run', 'test:acceptance')
@@ -281,8 +345,19 @@ test('Procedure D: test tiers', async () => {
       expect(printed).toContain(`generated build/acceptance/generated/${feature.split('/')[1].replace('.feature', '.acceptance.ts')}`)
     }
     expect(testFiles(acceptance.output)).toBe('5 passed (5)')
-    expect(testCases(acceptance.output)).toBe('24 passed (24)')
+    expect(testCases(acceptance.output)).toBe('27 passed (27)')
     generatedPaths.push('build/acceptance')
+  })
+
+  // Procedure C's closing paragraph: D3 rebuilds `dist/` by running the
+  // project's own `build` script, so it has to leave the artifact C1 emitted.
+  // A difference here is a finding - the acceptance tier would be building
+  // something other than what this project ships - not a reason to re-run C1.
+  await test.step('C3a/C3b re-read after D3, and dist/ compared with what C1 emitted', async () => {
+    expect(builtDist, 'procedure C has to run before this').not.toBe('')
+    expect(distFingerprint(), 'D3 left a different artifact in dist/ than C1 emitted').toBe(builtDist)
+    expectProductionEntry(bundles)
+    expectNoDevelopmentEntry(bundles)
   })
 
   await test.step('D4 the pipeline output', async () => {
@@ -301,16 +376,17 @@ test('Procedure D: test tiers', async () => {
       'production build 1': 3,
       'production build 2': 1,
       'production build 3': 1,
+      'production build 4': 2,
       'toolchain dependencies 1': 3,
-      'toolchain dependencies 2': 8,
+      'toolchain dependencies 2': 9,
       'typescript compilation 1': 1,
       'typescript compilation 2': 1,
     }
     for (const [scenario, expected] of Object.entries(counted)) {
       expect(scenarioExecutions(executions.output, scenario), scenario).toBe(expected)
     }
-    expect(Object.values(counted).reduce((total, count) => total + count, 0)).toBe(24)
-    expect(testCases(executions.output)).toBe('24 passed (24)')
+    expect(Object.values(counted).reduce((total, count) => total + count, 0)).toBe(27)
+    expect(testCases(executions.output)).toBe('27 passed (27)')
   })
 
   await test.step('D6 the TypeScript compiler checks the project', async () => {
@@ -330,8 +406,8 @@ test('Procedure D: test tiers', async () => {
 
   await test.step('D8 npm run test:property', async () => {
     expect(property.code, property.output).toBe(0)
-    expect(testFiles(property.output)).toBe('11 passed (11)')
-    expect(testCases(property.output)).toBe('95 passed (95)')
+    expect(testFiles(property.output)).toBe('14 passed (14)')
+    expect(testCases(property.output)).toBe('141 passed (141)')
   })
 
   await test.step('D9 npm run test:hardening', async () => {
@@ -344,7 +420,7 @@ test('Procedure D: test tiers', async () => {
     const inUnit = reportedFiles(unit.output)
     const inProperty = reportedFiles(property.output)
     const inHardening = reportedFiles(hardening.output)
-    expect(inProperty.length).toBe(11)
+    expect(inProperty.length).toBe(14)
     expect(inHardening.length).toBe(12)
     expect(inUnit.filter((file) => inProperty.includes(file) || inHardening.includes(file))).toEqual([])
     expect(inProperty.every((file) => file.startsWith('property/'))).toBe(true)
