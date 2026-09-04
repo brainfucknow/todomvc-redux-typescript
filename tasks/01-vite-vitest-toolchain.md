@@ -596,6 +596,125 @@ coverage is 123/196 = 63%.
   brief bars mutation runs and Gherkin mutation; I applied the mixed-job hint by reading the
   changed sources and splitting `fixtures.ts`, which was the only one doing more than one job.
 
+#### Second pass: correction under Architect-handoff ruling 1
+
+Done. `scripts/crap.mjs` merges coverage across the tiers that measure it. Nothing else
+changed; nothing committed. `src/`, `features/` and `qa/` untouched.
+
+**What I changed**
+
+Five files, all tooling:
+
+- `vitest.coverage.ts` (new) owns what the gate measures: provider, reporters, the
+  `include` of `src/**` and `acceptance/**`, and the adapter-shell `exclude`. That block used
+  to sit inside `vite.config.ts`, where only the unit tier could see it, so the property tier
+  had no coverage settings at all and could not report against the same sources. One owner now,
+  imported by both tier configs. `tsconfig.json` gains the file.
+- `vite.config.ts` and `vitest.property.config.ts` both read `measuredCoverage` from it. The
+  unit tier's `include`, environment and setup are untouched; the property tier gains only the
+  coverage block, so `npm test` and `npm run test:property` behave exactly as before (coverage
+  stays off unless asked for).
+- `scripts/crap.mjs`:
+  - A `TIERS` table names the tiers the gate runs and merges - `unit` (`vite.config.ts`) and
+    `property` (`vitest.property.config.ts`). Each runs with `--coverage.enabled` and its own
+    `--coverage.reportsDirectory`, so one tier's report can no longer overwrite another's; the
+    tool owns the `coverage/<tier>/` convention, and a manual `vitest run --coverage` still
+    lands in the default `coverage/` and is ignored.
+  - `mergeTiers` unions the reports before scoring. Statements are keyed by source location
+    rather than by istanbul's per-report statement id, and hit counts are summed, so **a
+    statement is covered when any tier covered it**. `measureFile` now takes merged
+    `{ start, end, hits }` records instead of a raw istanbul file entry, which also drops the
+    `statementMap`/`s` index-chasing it used to do.
+  - A missing tier report fails loudly and names the tier
+    (`no property-tier coverage report at ...`), exit 2, rather than scoring a partial union.
+  - `--reuse` now reuses both tier reports; `--max`, `--all` and the path filter are unchanged.
+    The summary line names the tiers it merged:
+    `gate CRAP <= 10 | tiers: unit + property | files: 31 | functions: 144 | over the gate: 2`.
+
+**Why the acceptance tier is not merged**
+
+It is the only other tier that runs today, and I measured it rather than assuming. Run with
+coverage over the same sources, it covers `inspection.ts` 20/21 and `runtime.ts` 25/29 - both
+strict subsets of the unit tier's 21/21 and 29/29 - and nothing at all in `generator.ts`,
+`layering.ts`, `layout.ts` or `src/`. Everything else it exercises (`steps.ts`, `fixtures.ts`,
+`commands.ts`, `project-files.ts`) is an excluded adapter shell. So merging it moves no number,
+while making the gate depend on the bootstrapped Go binaries and a parse-and-generate cycle.
+The reason is recorded in the comment above `TIERS`; if a later task moves logic out of the
+shells into measured modules, add the tier there.
+
+**What the gate now reports**
+
+`node scripts/crap.mjs`: 31 files, 144 functions, **2 over the gate** (was 5). The five the
+Architect tabulated read as predicted:
+
+| Function | before (unit only) | now (unit + property) |
+| --- | --- | --- |
+| `src/reducers/apis.ts:4` `executing` | 182.0 | **13.0** - cc 13, 100% covered |
+| `src/middlewares/callapimiddleware.ts:18` | 30.0 | **30.0** - cc 5, 0% covered, it is IO |
+| `src/reducers/apis.ts:47` `errorMessage` | 20.0 | 4.0 |
+| `src/selectors/index.ts:10` `getVisibleTodos` | 20.0 | 4.0 |
+| `src/reducers/todos.ts:23` `todoApiResults` | 12.4 | 5.0 |
+
+Merged statement coverage: `src` **156/196 = 80%** (was 123/196 = 63%), the testable
+`acceptance` modules **131/131 = 100%**.
+
+The two that remain are both pre-existing `src/` application code this task's Out of scope bars
+me from, and neither is a coverage gap I could close without adding `src` test cases, which the
+Specifier's D2a floor forbids. `executing` at 13.0 is the CRAP exception verbatim - one `switch`
+answering one question, now fully covered - so its number is a report, not a finding. See open
+question 1.
+
+**What I verified**
+
+- `npx tsc --noEmit` exits 0 with no output.
+- `npm test`: **15 files, 119 tests**, 0 failing, 0 skipped. `npx vitest run src`: **10 files,
+  54 tests** - D2a intact. `npx vitest run acceptance`: **5 files, 65 tests**.
+  `npm run test:property`: **6 files, 60 properties**. Every count is exactly what the Architect
+  handed over: **I added no test and removed none, so QA procedure D needs nothing from this
+  pass.**
+- `npm run test:acceptance`: 5 features parse, 5 entry points generate, **21 scenario executions
+  pass**. The generated entry points and metadata are **byte-identical** to the Architect's
+  output (`diff -r` against a copy taken before I started), implementation hashes included.
+- `npm run build` exits 0 and emits the same content hashes again - `index-BPxiUVWS.js`,
+  `index-xAQXB6NR.css`.
+- The tool itself: `--reuse` scores without re-running; a path filter (`... acceptance`) reports
+  5 files / 50 functions / 0 over the gate; an unknown option and an unmatched path both exit 2;
+  deleting `coverage/property/` makes the next `--reuse` fail naming the tier instead of scoring
+  half the union.
+- Cross-tier statement maps agree: for every file in both reports the `statementMap` is
+  identical, so the location-keyed union adds no phantom statements. The one file that differed
+  during a trial was a stale report, and it agreed once both tiers were re-run.
+- `git status --short src features qa` is empty.
+
+**Left for the next role**
+
+- Hardener: the gate is the instrument the ruling asked for - run `node scripts/crap.mjs
+  <changed paths>`. It runs both tiers itself (about 8s); `--reuse` skips that when the reports
+  are current. If you add a tier that measures the same sources, add it to `TIERS` and give it
+  `measuredCoverage`; that is the whole wiring.
+- Everything earlier roles left standing still stands: the Vitest isolation hint, the
+  third-party lightningcss warning, CI wiring for `test:acceptance` (task 06), the missing
+  Playwright driver for `qa/todo-app-regression.md`, and the `console.log` in
+  `src/reducers/apis.ts` (task 06 by PM ruling).
+- No mutation tooling ran; my brief bars mutation runs and Gherkin mutation. I applied the
+  mixed-job hint by reading the changed sources: `vitest.coverage.ts` has one job (what is
+  measured), and `crap.mjs` still has one (score the code and gate it), with the tier-running
+  shell and the pure merge/measure functions separated inside it.
+
+**Open questions**
+
+1. **The gate cannot apply the CRAP exception, and `executing` is the case that shows it.**
+   At cc 13 and 100% coverage it scores 13.0 and the run exits 1, though the shared definition
+   exempts exactly this shape - a single `switch` answering one question. Detecting that
+   mechanically (a function whose complexity comes entirely from one flat `switch`) is possible
+   but it is new behaviour in the instrument and it would let real offenders pass quietly, so I
+   did not add it on a targeted correction. Until it is settled, a whole-project run exits 1 on
+   a function no role is allowed to change; scope the gate to changed paths, or say the word and
+   I will add the detection.
+2. **Coverage reports moved to `coverage/<tier>/`.** Nothing in `qa/`, `README.md` or any
+   feature file mentions coverage paths, and `coverage` stays gitignored, so I believe this is
+   invisible outside the tool. Flagging it in case a later task wants a single canonical report.
+
 ### Project manager rulings on the Cleaner handoff
 
 Verified independently: `npx tsc --noEmit` exits 0, `npm test` passes 13 files / 99 tests,
@@ -833,6 +952,38 @@ Two further findings from the Architect are dispositioned here rather than left 
   Accepted as a known limitation and deliberately not fixed: the input is project source files, the
   case is unreachable in practice, and any change rewrites every recorded hash. Recorded here so a
   later role does not rediscover it and "fix" it at that cost.
+
+
+### Project manager rulings on the Cleaner CRAP correction
+
+Verified independently: `node scripts/crap.mjs --reuse --all` reports 2 functions over the gate,
+down from 5; `node scripts/crap.mjs acceptance` (the files this task changed) reports 0 over the
+gate across 50 functions; `npm test` 15 files / 119 tests and `npx vitest run src` 10 / 54 are
+both unmoved, so QA procedure D needs nothing from this pass. Accepted.
+
+Declining to merge the acceptance tier is accepted, and accepted specifically because it was
+measured rather than assumed: that tier's covered statements are a strict subset of the unit
+tier's, so merging it would move no number while making the gate depend on the bootstrapped Go
+binaries.
+
+The two open questions are settled as follows, both without a further Cleaner pass.
+
+1. **The gate does not need to mechanize the CRAP exception, and must not try on a targeted
+   correction.** The Hardener and QA briefs both run the gate on *changed files*. `src/reducers/apis.ts`
+   is not a file this task changes, and the changed-file run is already clean at 0 over the gate, so
+   `executing` reading 13.0 blocks nothing here. The exception in the shared definitions is a judgment
+   about whether a function is a single `cond`/`case` answering one question; the role reading the
+   report applies it and records that it did so in its handoff note. Inferring it mechanically is new
+   instrument behavior, and the Cleaner was right not to add it under a narrow correction.
+
+   `tasks/04-hooks-replace-connect.md` is the first task that changes `src/reducers/apis.ts`. If the
+   gate's inability to record an exception actually obstructs that task, its Cleaner may add an
+   explicit waiver list carrying a named function and a written reason. A waiver that has to be
+   justified in the file is reviewable; a heuristic that silently forgives a switch statement is not.
+
+2. **The move to `coverage/<tier>/` needs no follow-up.** `.gitignore` already ignores `coverage`,
+   which covers the per-tier subdirectories, and nothing in `qa/`, `README.md` or `features/` names a
+   coverage path. Recorded so the observation is not rediscovered.
 
 
 ### Hardener

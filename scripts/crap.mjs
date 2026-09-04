@@ -2,10 +2,11 @@
 //
 //   node scripts/crap.mjs [--max <n>] [--reuse] [--all] [<path> ...]
 //
-// Paths restrict the gate to the files under them; without any, every covered
-// file is gated. Only functions over the gate are listed unless --all is given.
-// --reuse reads the existing coverage/coverage-final.json instead of running
-// the unit tier again.
+// Coverage is the union of every tier that measures it, so a function scores on
+// all the tests that exercise it, not on whichever tier happened to run. Paths
+// restrict the gate to the files under them; without any, every measured file
+// is gated. Only functions over the gate are listed unless --all is given.
+// --reuse reads the reports the tiers left behind instead of running them again.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -14,7 +15,22 @@ import ts from 'typescript'
 
 const DEFAULT_GATE = 10
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const coverageFile = join(projectRoot, 'coverage', 'coverage-final.json')
+const vitest = join(projectRoot, 'node_modules', 'vitest', 'vitest.mjs')
+
+// The tiers the gate merges. Both import the project's own modules and report
+// over the sources vitest.coverage.ts names; each is told where to write so one
+// tier's report cannot overwrite another's. The acceptance tier is deliberately
+// absent: it drives the built application through servers and step handlers
+// that are excluded adapter shells, so every statement it reaches inside a
+// measured module is one the unit tier reaches too (checked, not assumed), and
+// running it would cost a parse-and-generate cycle and the bootstrapped Go
+// binaries for no change in any number.
+const TIERS = [
+  { name: 'unit', config: 'vite.config.ts' },
+  { name: 'property', config: 'vitest.property.config.ts' },
+]
+
+const reportDirectory = (tier) => join(projectRoot, 'coverage', tier.name)
 
 const DECISION_KINDS = new Set([
   ts.SyntaxKind.IfStatement,
@@ -116,21 +132,18 @@ const innermostContaining = (functions, position) => functions
   .filter((candidate) => contains(candidate.span, position))
   .sort((left, right) => spanLength(left.span) - spanLength(right.span))[0]
 
-function measureFile(filePath, fileCoverage) {
+function measureFile(filePath, statements) {
   const functions = complexityByFunction(parseSource(filePath))
   const tally = new Map(functions.map((entry) => [entry, { total: 0, covered: 0 }]))
 
-  for (const [id, location] of Object.entries(fileCoverage.statementMap)) {
-    const owner = innermostContaining(functions, {
-      line: location.start.line,
-      column: location.start.column,
-    })
+  for (const { start, hits } of statements) {
+    const owner = innermostContaining(functions, start)
     if (!owner) {
       continue
     }
     const counts = tally.get(owner)
     counts.total += 1
-    counts.covered += fileCoverage.s[id] > 0 ? 1 : 0
+    counts.covered += hits > 0 ? 1 : 0
   }
 
   return functions.map((entry) => {
@@ -146,12 +159,58 @@ function measureFile(filePath, fileCoverage) {
   })
 }
 
-function runCoverage() {
+function runTier(tier) {
   execFileSync(
     process.execPath,
-    [join(projectRoot, 'node_modules', 'vitest', 'vitest.mjs'), 'run', '--coverage'],
+    [
+      vitest,
+      'run',
+      '--config',
+      tier.config,
+      '--coverage.enabled',
+      `--coverage.reportsDirectory=${reportDirectory(tier)}`,
+    ],
     { cwd: projectRoot, stdio: 'inherit' },
   )
+}
+
+function tierStatements(tier) {
+  const reportFile = join(reportDirectory(tier), 'coverage-final.json')
+  if (!existsSync(reportFile)) {
+    throw new Error(`no ${tier.name}-tier coverage report at ${reportFile}`)
+  }
+  return Object.entries(JSON.parse(readFileSync(reportFile, 'utf8')))
+    .map(([filePath, fileCoverage]) => ({
+      filePath,
+      statements: Object.entries(fileCoverage.statementMap).map(([id, location]) => ({
+        start: location.start,
+        end: location.end,
+        hits: fileCoverage.s[id],
+      })),
+    }))
+}
+
+const statementKey = ({ start, end }) =>
+  `${start.line}:${start.column}-${end.line}:${end.column}`
+
+// A statement is covered when any tier covered it, so a function the property
+// tier exercises completely does not read as untested because the unit tier
+// never called it.
+function mergeTiers(tiers) {
+  const files = new Map()
+  for (const { filePath, statements } of tiers.flatMap(tierStatements)) {
+    const merged = files.get(filePath) ?? new Map()
+    files.set(filePath, merged)
+    for (const statement of statements) {
+      const key = statementKey(statement)
+      const hits = (merged.get(key)?.hits ?? 0) + statement.hits
+      merged.set(key, { ...statement, hits })
+    }
+  }
+  return [...files].map(([filePath, merged]) => ({
+    filePath,
+    statements: [...merged.values()],
+  }))
 }
 
 function readOptions(argv) {
@@ -190,23 +249,19 @@ const formatRow = (file, entry) => [
 
 function report(options) {
   if (!options.reuse) {
-    runCoverage()
-  }
-  if (!existsSync(coverageFile)) {
-    throw new Error(`no coverage report at ${coverageFile}`)
+    TIERS.forEach(runTier)
   }
 
-  const coverage = JSON.parse(readFileSync(coverageFile, 'utf8'))
-  const measured = Object.entries(coverage)
-    .map(([absolutePath, fileCoverage]) => ({
-      file: relative(projectRoot, absolutePath),
-      functions: measureFile(absolutePath, fileCoverage),
+  const measured = mergeTiers(TIERS)
+    .map(({ filePath, statements }) => ({
+      file: relative(projectRoot, filePath),
+      functions: measureFile(filePath, statements),
     }))
     .filter((entry) => isGated(entry.file, options.paths))
     .sort((left, right) => left.file.localeCompare(right.file))
 
   if (measured.length === 0) {
-    throw new Error(`no covered files under ${options.paths.join(', ') || 'the project'}`)
+    throw new Error(`no measured files under ${options.paths.join(', ') || 'the project'}`)
   }
 
   const offenders = []
@@ -220,8 +275,9 @@ function report(options) {
 
   const functionCount = measured.reduce((total, entry) => total + entry.functions.length, 0)
   process.stdout.write(
-    `\ngate CRAP <= ${options.max} | files: ${measured.length} | ` +
-    `functions: ${functionCount} | over the gate: ${offenders.length}\n`,
+    `\ngate CRAP <= ${options.max} | tiers: ${TIERS.map((tier) => tier.name).join(' + ')} | ` +
+    `files: ${measured.length} | functions: ${functionCount} | ` +
+    `over the gate: ${offenders.length}\n`,
   )
   return offenders.length === 0 ? 0 : 1
 }
