@@ -49,11 +49,5 @@
     "test:e2e": "npm run build && playwright test --config qa/playwright.config.ts",
     "test:e2e:dev": "npm run build && playwright test --config qa/playwright.dev.config.ts",
     "test:e2e:preview": "npm run build && playwright test --config qa/playwright.preview.config.ts"
-  },
-  "browserslist": [
-    ">0.2%",
-    "not dead",
-    "not ie <= 11",
-    "not op_mini all"
-  ]
+  }
 }
