@@ -31,7 +31,7 @@ Four containers exist under `src/containers/`:
 - Specifier: Gherkin for the load-on-mount behavior, since it is the one piece of logic in this task that is easy to break invisibly. The rest is wiring.
 - Coder: replace each container with hooks used directly in its component. Delete `src/containers/`.
 - Coder: derive `RootState` from the configured store's `getState`, and export it alongside the store. Add the typed `useAppSelector` and `useAppDispatch` hooks Redux Toolkit recommends.
-- Coder: remove the `any` on `TodoList`'s actions prop.
+- `TodoList`'s `actions` prop no longer needs the `any` removed: task 06 already changed it to `typeof TodoActions`, because `no-explicit-any` forced the issue when lint was introduced. Confirm it survived and is still the right type once the containers are gone; `TodoActions` may no longer be what the component should depend on.
 - Architect: the dependency direction changes here. Selectors currently depend on a type declared in a container barrel; after this task they should depend on the state shape the store owns. Fix the direction and add a check that prevents it regressing.
 
 ## Out of scope
@@ -46,7 +46,7 @@ Four containers exist under `src/containers/`:
 - `src/containers/` no longer exists and nothing imports from it.
 - `RootState` is derived from the store and includes every combined reducer's state.
 - No `connect`, no `mapStateToProps`, no `bindActionCreators` remains.
-- No `any` remains in the touched component props.
+- No `any` remains in the touched component props. Task 06 already cleared `TodoList`; do not let it regress.
 - The list still loads exactly once on mount, proven by a test that counts requests.
 - Acceptance tests generated from the Gherkin pass.
 - Property tests pass, per the architect's assessment.

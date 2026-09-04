@@ -39,6 +39,7 @@ Dependency debt still standing after tasks 02 through 07:
 
 - Adding a hosting deployment. The repository has none today and adding one is new behavior.
 - Upgrading dependencies that are merely not-newest. This task removes the unused; it does not chase versions.
+- Bumping ESLint to 10. Task 06 established with evidence that two plugins cap at 9 today: `eslint-plugin-react` 7.37.5 declares `^9.7` and `eslint-plugin-jsx-a11y` 6.10.2 declares `^9`, both at their latest published versions, and neither has a usable prerelease. The other four lint packages already accept `^10`. Reaching 10 now would need `--legacy-peer-deps` or an `overrides` entry, which bakes an untested claim into every `npm ci`, and a plugin that fails to load leaves `npm run lint` exiting 0. If you find on this task that both plugins have published support, say so; the bump then wants its own task with its own falsification pass, not a quiet version edit here.
 - Any change under `src/` beyond deleting imports of removed dependencies.
 
 ## Done criteria

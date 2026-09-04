@@ -35,6 +35,17 @@ Behavior that must survive, in detail:
 - Coder: keep the existing unit tests meaningful. `src/reducers/todos.spec.ts` asserts behavior that must still hold; adapt its dispatches to the new action creators without weakening its assertions.
 - Architect: the store shape is now inferrable. Note whether `RootState` should be derived from it, for task 12.
 
+## Inherited thread: floating promises
+
+Task 06 considered type-aware linting and declined it, on the grounds that it
+costs time on every run and largely overlaps the now-genuine typecheck. It named
+one place the decision gives up something real: `callapimiddleware.ts` returns a
+`fetch` chain and `no-floating-promises` is the rule that would have watched it.
+
+You are replacing that middleware with thunks. If the rewrite leaves promises
+whose rejection nobody observes, nothing in this project will tell you. Check by
+hand, and say what you found.
+
 ## Out of scope
 
 - Changing what the user sees. Same todos, same filters, same counts, same moment of update.

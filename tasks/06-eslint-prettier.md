@@ -204,4 +204,78 @@ captured):
 4. Type-aware linting is off. See the reasoning above; it is a task, not a
    config flag.
 
+#### Follow-up: the project manager's answers, and the ESLint 10 bump
+
+**ESLint 10: attempted, and it does not install. Stopping here, as asked.**
+
+Two of the six lint packages do not declare support for ESLint 10 at their
+latest published versions:
+
+| Package | Latest | Declared `eslint` peer range | ESLint 10? |
+| --- | --- | --- | --- |
+| `eslint-plugin-react` | 7.37.5 (2025-04-03) | `^3 \|\| ^4 \|\| ^5 \|\| ^6 \|\| ^7 \|\| ^8 \|\| ^9.7` | no |
+| `eslint-plugin-jsx-a11y` | 6.10.2 (2024-10-26) | `^3 \|\| ^4 \|\| ^5 \|\| ^6 \|\| ^7 \|\| ^8 \|\| ^9` | no |
+| `eslint-plugin-react-hooks` | 7.1.1 | `... \|\| ^9.0.0 \|\| ^10.0.0` | yes |
+| `typescript-eslint` | 8.69.0 | `^8.57.0 \|\| ^9.0.0 \|\| ^10.0.0` | yes |
+| `eslint-config-prettier` | 10.1.8 | `>=7.0.0` | yes |
+| `@eslint/js` | 10.0.1 | `^10.0.0` | yes (and requires it) |
+
+How that was established, rather than read off a cached memory:
+
+- `npm install --save-dev eslint@^10 @eslint/js@^10 --dry-run` in this
+  repository exits 1 with `ERESOLVE`, and npm's own advice is `--force` or
+  `--legacy-peer-deps`, which is the override you told me not to reach for.
+- To find out which packages are actually the blockers rather than guessing
+  from that one entangled report, each package was installed on its own against
+  `eslint@10.10.0` in a throwaway project. `eslint-plugin-react` and
+  `eslint-plugin-jsx-a11y` exit 1; the report names the peer range in the table
+  above. The other four exit 0.
+- Neither blocker has a prerelease that would help: `eslint-plugin-react`'s
+  `next` tag is `7.8.0-rc.0`, which is older than `latest`, and
+  `eslint-plugin-jsx-a11y` has no tag but `latest` and a `v5-backport`.
+
+So the setup stays on `eslint` 9.39.5 and `@eslint/js` 9.39.5. 9.39.5 is the
+current `maintenance` release and the newest 9.x, not an abandoned pin. Nothing
+was forced, no `overrides` block was added, and `package.json` is unchanged
+from what you committed.
+
+Worth separating two things before this is decided: a peer range is a
+declaration, not a test. Both blockers are rule-only plugins and may well run
+fine under ESLint 10. But making that true in this repository today requires
+`--legacy-peer-deps` or an `overrides` entry, which turns every future
+`npm ci` into a claim nobody has checked - and a plugin that fails to load is
+exactly the failure mode where `npm run lint` still exits 0. If you want the
+bump before upstream moves, it needs to be a task with its own falsification
+pass, not a version edit.
+
+**Type-aware linting: considered and declined.** Recorded here so the next
+person does not have to re-derive it. It costs real time on every run, both
+tsconfig projects plus the loose root files would need parser wiring, and the
+diagnostics it would add most credibly overlap with `npm run typecheck`, which
+now checks both projects whole-program. The one place it might genuinely earn
+its keep is `src/middlewares/callapimiddleware.ts`: its `fetch` promise chain is
+returned in one branch and dispatched-and-forgotten in another, which is what
+`@typescript-eslint/no-floating-promises` exists to catch. Task 10 replaces that
+middleware with RTK thunks, so whoever takes that task has the thread.
+
+**`.prettierignore` excluding `qa/` and Markdown: kept**, per your ruling. No
+change.
+
+**Re-verified after your commit `18801c1`**, on a clean tree, exit codes
+captured directly:
+
+- `npm run lint` 0, `npm run format:check` 0, `npm run typecheck` 0,
+  `npm test` 0 (10 files, 55 tests), `npm run build` 0.
+- All eight config-block probes still fail on a planted violation:
+  `src/probe.tsx`, `qa/tests/probe.spec.ts`, `qa/probe.ts`, `qa/stub/probe.js`,
+  `vite.config.mts`, `scripts/probe.mjs`, `eslint.config.js`,
+  `prettier.config.js` - every one exits 1.
+- `--max-warnings=0` is still load-bearing: the same `exhaustive-deps`
+  violation exits 0 without the flag and 1 with it.
+- Deleting the `Link.tsx` disable line still fails the lint run (exit 1) and
+  restoring it returns 0; a formatting violation still fails `format:check`
+  (exit 1) and reverting returns 0.
+
+Only this note is uncommitted; nothing else in the tree changed.
+
 ### QA
