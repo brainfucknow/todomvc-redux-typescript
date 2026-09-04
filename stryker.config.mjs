@@ -54,7 +54,7 @@ export default {
   // healthy run under concurrency that a mutant can be recorded as Timeout when
   // an assertion is what really killed it. A Timeout counts as detected either
   // way, which is what makes it dangerous: a mutant that would have survived is
-  // scored as killed if it happens to run slow. The tier takes about four
+  // scored as killed if it happens to run slow. The tier takes about seven
   // seconds, so 60s catches only a mutant that genuinely does not terminate.
   timeoutMS: 60_000,
 

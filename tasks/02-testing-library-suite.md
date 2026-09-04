@@ -1047,6 +1047,186 @@ them into a dependency that would point the wrong way.
 
 ### Hardener
 
+Owned `hardening/`, `.mutation/`, the mutation and hardening configs
+(`stryker.config.mjs`, `vitest.mutation.config.ts`, `vitest.hardening.config.ts`,
+`vitest.rendering.ts`, `tsconfig.json`), `scripts/mutation.ts`, and - carried
+from the checkpoint - `src/test-render.tsx` with the one spec file that reads a
+helper moved into it, `src/components/TodoItem.spec.tsx`. `features/`, `qa/`,
+`e2e/`, `acceptance/`, every `src/components/*.tsx`, the reducers, actions,
+selectors and middleware are untouched. No application behaviour changed, and
+the ids on the tests under `src/` are the same ids on the same tests.
+
+**The interrupted checkpoint `31a8af5` was re-derived, not trusted.** I held its
+six `hardening/*.hardening.tsx` files aside and re-ran the evidence from the
+accepted tier before deciding anything. Most of it survives that check and is
+argued below on my own evidence; what I changed is named where it changed.
+
+**Language mutation now covers `src/components`, and it earned its place.** The
+task left that judgement open. Held the checkpoint's hardening files aside, then
+mutated the eight components one file at a time against the tier as the
+Architect left it: 110 mutants, **7 survivors**, in code the CRAP gate reports at
+100% coverage.
+
+| Survivor | What survived says |
+| --- | --- |
+| `Footer.tsx` `Footer.propTypes` -> `{}` | the declared prop contract is enforced by nothing |
+| `TodoItem.tsx` `static propTypes` -> `{}` | the same |
+| `TodoTextInput.tsx` `static propTypes` -> `{}` | the same |
+| `TodoList.tsx` `[loadTodos]` -> `[]` | nothing says the effect follows a *changed* loader |
+| `TodoTextInput.tsx` `.trim()` dropped | nothing says the field trims before it saves |
+| `TodoTextInput.tsx` `e.which === 13` -> `true` | nothing says only Enter submits |
+| `TodoTextInput.tsx` `autoFocus={true}` -> `false` | nothing says the field takes the focus |
+
+Coverage said the rewritten suite ran this code. Mutation says seven decisions
+inside it could be reversed with every test in the project still green. That is
+the answer: extend the set. `stryker.config.mjs` says why at the declaration,
+and says why the rest of `src/` stays out.
+
+**Hardening written against those seven, and against the recorded gaps.** The
+checkpoint's six files each close one of the five behaviours
+`qa/component-behaviour-inventory.md` lists under "Gaps in the baseline" for this
+role, and between them they kill three of the seven survivors. **All five gaps
+are now closed** - Footer's plural branch, `Link` inactive, `TodoItem` completed,
+`TodoTextInput` trimming, `Header` rejecting whitespace-only input - and the
+inventory's list can be read as discharged rather than standing.
+
+What the checkpoint did not reach, and I added:
+
+- `which keystroke submits the field` in `hardening/TodoTextInput.hardening.tsx`.
+  The spec suite only ever presses Enter, so a field that saved on every
+  keystroke passed all of it. The test types, presses a key that is not Enter,
+  and requires nothing saved - then presses Enter and requires the save, so the
+  negative half cannot pass by being unreachable.
+- `hardening/prop-contracts.hardening.tsx`, for the three prop-contract
+  survivors. Each renders a component with one wrong value the render never
+  dereferences and requires the complaint that names the prop.
+
+Two of the checkpoint's cases went the other way: a second Footer count case at
+11 that could not distinguish anything the case at 2 already did, and a
+`typed.length > 0` guard in `Header.hardening.tsx` that is true for both callers.
+
+**On killing the three `propTypes` survivors rather than filtering them.** The
+mutant is not equivalent: emptying a declaration stops the component complaining
+about a wrong prop, which is behaviour, and the project has refused a skip list
+twice. So they are killed. It is worth saying plainly that these three tests pin
+something already scheduled for removal - PLAN.md section 3 takes `prop-types`
+out in task 05 - and they go with it; the file says so at the top. The
+alternative was to leave `src/components` out of the mutate set, which would have
+cost the other four findings.
+
+**A defect in the stamp that guards the manifest, found and closed.** The
+mutation tier now holds tests that render, and `vitest.mutation.config.ts` gets
+how those are run from a new `vitest.rendering.ts`; two of the tier's own tests
+also read `vitest.coverage.ts` as data. None of the three is mutated, so Stryker
+sees nothing move when they change, and `scripts/mutation.ts` fingerprinted only
+`vitest.mutation.config.ts`. A rewritten rendering config would have left every
+recorded result reading as still earned - the same defect task 01 found, in a
+stamp that had just been widened. `TIER_CONFIGS` now names all three.
+
+Demonstrated in the failing direction, as PLAN section 4 requires, each reverted
+and `.mutation/` restored from git afterwards: with the old code, touching
+`vitest.rendering.ts` or `vitest.coverage.ts` leaves the runner reporting the
+tier **unchanged**; with the new code each of the three configs makes it report
+the tier has changed, and reverting brings "unchanged" back.
+
+**Verified.**
+
+- **`npm run test:mutation` exits 0.** The runner reported the tier had moved and
+  forced a full run, as the Cleaner and the Architect said it would. 27 source
+  files, **1023 mutants: 736 killed, 0 survived, 0 timed out**, 278 rejected by
+  the TypeScript checker, 9 ignored. Score 100.00 against a break threshold of
+  100, in 27 minutes. Every mutated file is at 100.00, `src/components` included
+  (100 killed / 10 compile errors). `.mutation/stryker-incremental.json` and
+  `.mutation/test-tier.json` are written by that run; nothing under `.mutation/`
+  was hand-edited, and re-running the runner afterwards reports the tier
+  unchanged, so the manifest is differential again.
+- **0 timed out matters here.** Task 01 ruled that Stryker scores a `Timeout` as
+  detected, so a tight ceiling converts survivors into kills. The ceiling is
+  60s with the reason in the config; the tier takes about seven seconds now that
+  it renders, and the comment was corrected from four to seven.
+- **`node scripts/acceptance-mutation.ts` exits 0 with zero survivors.** The
+  implementation fingerprint has not moved, so the stored records were reused and
+  only the new scenario was tested: `toolchain-dependencies` 3 tested / 3 killed,
+  12 reused, **15 candidates and no survivors** - the six the project manager
+  found are gone with the column that made them unkillable. The other four
+  features: 0 tested, 0 survived, records reused. Per-scenario results in the
+  manifests are unchanged; only the outer `tested_at` moved.
+- **CRAP gate.** On the files I changed that it measures (`src/test-render.tsx`):
+  15 functions, 0 over the gate. Whole tree: 47 files, 286 functions, 2 over -
+  the same two every role since the Coder has reported, untouched:
+  `src/middlewares/callapimiddleware.ts:25` (cc 5, cov 0%, CRAP 30.0), which this
+  task's Out of scope bars from testing, and `src/reducers/apis.ts:4` `executing`
+  (cc 13, cov 100%), the single-switch exception the shared definition names.
+- **DRY.** `gherkin-ir-dry-checker --include-exact` over all five feature IRs:
+  the only finding is the medium `possible-synonym` at 0.571 that the Specifier
+  reviewed and the project manager accepted, unchanged and in the same feature.
+  Nothing in `features/` moved. In the hardening tier the shared readings come
+  from `src/test-queries.ts` and the shared mount from `src/test-render.tsx`, so
+  no hardening file re-spells either; `insideList` moved into `test-render.tsx`
+  because a `<li>` needs a list in two tiers now, and `pressEnter` became one of
+  two named keystrokes over a private `pressKey`, so what a browser sends is
+  still spelled once.
+- **Mixed-job scan on the new sources**, by mutant count: the eight components
+  are 1, 5, 5, 7, 15, 20, 24 and 24 candidates, against 60-64 for this project's
+  single-job reference modules. Nothing indicates a component doing more than one
+  job, and nothing was split.
+- `npm test` 28 files / 277 tests. `npx vitest run src` 10 / 55 with all 41
+  inventory ids (`C01`-`C40`, `N01`) on passing tests, checked by hand.
+  `npm run test:acceptance` 5 / 30. `npm run test:property` 18 / 168.
+  `npm run test:hardening` 19 / 148. `npx tsc --noEmit` clean. `npm run build`
+  succeeds. Buckets: `src` 10 / 55, `acceptance` 5 / 63, `scripts` 13 / 159;
+  10+5+13 = 28 and 55+63+159 = 277, so D2c's sum check holds.
+- **D2a3-D2a5 against the tree as I leave it**, one at a time, each reverted and
+  `git status --porcelain` clean on the file after: `Footer`'s item word forced
+  to `items` fails C05 (and C03); `deleteTodo(todo.id + 1)` fails C25 and nothing
+  else; dropping `selected` in `Link` fails C13 and nothing else.
+
+**Floors that moved, which the D2b/D2c/D8/D9 floor rule asks me to record.**
+
+- **D9 rises from 12 files / 129 tests to 19 files / 148 tests.** Seven new
+  files: the six component hardening files and `prop-contracts.hardening.tsx`.
+  Every one of them was written against a mutant that was alive when it was
+  written and is dead now, or against a behaviour the inventory records as
+  uncovered.
+- D1 (28 / 277), D2a (10 / 55), D2b (5 / 63), D2c (13 / 159), D8 (18 / 168) and
+  D3 (30) are unmoved.
+
+**Left for QA.** The numbers procedure D wants: D2a 10 files / 55 tests, D2b
+5 / 63, D2c 13 / 159, D1 28 / 277, D8 18 / 168, D9 **19 / 148**, D3 30 with the
+breakdown 3 / 9 / 3 for `toolchain dependencies 1/2/3`.
+`e2e/toolchain-commands.spec.ts` is still yours to move and still carries the
+pre-task figures; for this pass it needs D9 at `19 passed (19)` /
+`148 passed (148)` and `inHardening.length` 19. One thing checked so you do not
+have to discover it: the hardening tier now runs as two Vitest projects, so a
+verbose line reads `✓ |rendering| hardening/Footer.hardening.tsx > ...`. I ran
+`e2e/reports.ts`'s own `reportedFiles`, `testFiles` and `testCases` over the real
+output - they read it correctly, 19 files all under `hardening/`, so only the
+three numbers move. D10's "no `hardening/` file in the D1 list" still holds:
+`npm test` includes only `src/**/*.spec.{ts,tsx}`, `acceptance/*.spec.ts` and
+`scripts/**/*.spec.ts`.
+
+**Findings I am recording rather than acting on.**
+
+- **The stamp covers the tier, not the mutator.** `stryker.config.mjs` and
+  `tsconfig.json` are both read for every run and neither is fingerprinted, so a
+  changed `timeoutMS`, a changed checker, or a `tsconfig` edit that changes which
+  mutants compile would leave recorded verdicts reading as still earned. I stopped
+  at "the tier" because that is what the stamp says it covers and widening it to
+  the mutator's own configuration changes what the record means - and would make
+  every task 06 `tsconfig` edit force a 27-minute run. It is the same defect class
+  as the one I closed, and it is a decision about the record rather than a fix, so
+  it is stated here.
+- **The rendering tests judge every mutant, including the ~900 they cannot
+  reach.** The command runner runs the whole tier per mutant, and no test under
+  `src/` or `hardening/*.tsx` can kill a mutant in `acceptance/` or `scripts/`.
+  It costs about two and a half seconds of the tier's seven, on every core
+  mutant. Splitting the run in two would need two manifests and two stamps, which
+  is a design change rather than a hardening one.
+- **Task 05 inherits three tests with `prop-types`.** `hardening/prop-contracts.hardening.tsx`
+  goes when the declarations do, and the file says so.
+
+**Open questions.** None that block.
+
 ### QA
 
 
@@ -1226,4 +1406,44 @@ to that task rather than fixing them here, is the right handling.
 Floors moved as recorded: D1 28 / 277, D2c 13 / 159, D8 18 / 168. D2a, D2b, D9 and D3 unmoved, and
 `.mutation/`, `acceptance/`, `features/`, `qa/` and `e2e/` untouched, so the acceptance fingerprint
 has not moved and the stored gherkin manifests stay reusable.
+
+
+### Project manager rulings on the Hardener handoff
+
+Verified independently: `npx tsc --noEmit` exits 0; `npm test` 277; `npx vitest run src` 10 / 55 with
+all 41 ids on passing tests; hardening 19 / 148; property 168; acceptance tier 30 / 30;
+`node scripts/acceptance-mutation.ts` exits 0 with zero survivors. I also spot-checked that a
+component mutant now dies: dropping `.trim()` from `TodoTextInput` fails four hardening tests, where
+before this pass it survived. Accepted.
+
+**Extending language mutation to `src/components` was the right judgment, and the result is the
+strongest evidence this project has produced for why coverage is not assertion.** 110 mutants over
+eight components the CRAP gate reports at 100% covered produced **7 survivors**: three `propTypes`
+declarations enforced by nothing, `TodoList`'s effect dependency, `TodoTextInput`'s `.trim()`, its
+`e.which === 13` guard, and its `autoFocus`. Every one of those is behaviour a reader would assume
+the suite protected. The components had been fully covered and partly unasserted for the whole life
+of this project, and only mutation said so.
+
+**Re-deriving the interrupted checkpoint rather than trusting it is exactly what was asked**, and it
+paid: it kept the six hardening files that close the inventory's recorded gaps and kill three
+survivors, and dropped two constructs that could not distinguish anything - a duplicate Footer case
+and an always-true guard. An unverified tree was treated as material, not as work already done.
+
+**The stamp defect is a fourth instance of the same class and was found by the role, not by me.** The
+tier now holds rendering tests configured by `vitest.rendering.ts`, and two tier tests read
+`vitest.coverage.ts` as data, but `scripts/mutation.ts` fingerprinted neither - so rewriting either
+would have left recorded results reading as still earned. That is task 01's manifest defect in a new
+place, caught this time by a role looking for it, and demonstrated in the failing direction rather
+than argued.
+
+**No Specifier reconciliation pass is needed before QA.** D9 rises to 19 / 148 and the floors read
+"at least", so the procedure needs no edit. That is the recorded-rise rule the task 02 Specifier
+introduced doing the work it was introduced for; task 01 paid for three separate reconciliation
+passes on exactly this churn.
+
+Three items are recorded rather than acted on, correctly: the stamp covers the tier but not the
+mutator's own config, the rendering tests run against mutants they cannot reach, and task 05 inherits
+three tests that go when `prop-types` does. The last is already consistent with that task's scope.
+
+**Next: QA.** It owns `e2e/toolchain-commands.spec.ts`, which carries the moved counts as literals.
 

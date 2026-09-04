@@ -1,4 +1,4 @@
 # mutation-stamp: sha256=fd759f82a21b4b8f991889fbf59b857dd210e06c547d2b3838e2b867b389248b
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-09-04T16:11:56Z","feature_name":"TypeScript compilation","feature_path":"build/acceptance-mutation/features/typescript-compilation.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"sha256:f8bfe78d74e2a4be26d5962d81c393ab9fc5ed0f3ba0c542886856d26ee7cee8","scenarios":[]}
+# {"version":1,"tested_at":"2026-09-04T21:27:03Z","feature_name":"TypeScript compilation","feature_path":"build/acceptance-mutation/features/typescript-compilation.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"sha256:f8bfe78d74e2a4be26d5962d81c393ab9fc5ed0f3ba0c542886856d26ee7cee8","scenarios":[]}
 # acceptance-mutation-manifest-end

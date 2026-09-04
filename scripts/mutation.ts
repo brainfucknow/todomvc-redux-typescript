@@ -32,9 +32,18 @@ const tierStamp = join(projectRoot, MUTATION_TIER_STAMP)
 
 const stryker = join(projectRoot, 'node_modules', '.bin', 'stryker')
 
-// What the tier is made of: the config naming the tests that judge the mutants,
-// and every test file the directories it names hold.
-const TIER_CONFIG = 'vitest.mutation.config.ts'
+// What the tier is made of: the project-root configs it is built from, and
+// every test file the directories those name hold. `vitest.mutation.config.ts`
+// names the tests, `vitest.rendering.ts` decides how a test that renders a
+// component is run - a DOM, the JSX transform, the setup file - and
+// `vitest.coverage.ts` is read as data by two of the tier's own tests. None of
+// the three is mutated, so a rewrite of any of them changes what a recorded
+// result was earned against while Stryker sees nothing move.
+const TIER_CONFIGS = [
+  'vitest.mutation.config.ts',
+  'vitest.rendering.ts',
+  'vitest.coverage.ts',
+]
 
 const entriesIn = (directory: string): string[] => {
   const root = join(projectRoot, directory)
@@ -42,7 +51,7 @@ const entriesIn = (directory: string): string[] => {
 }
 
 const tierFingerprint = (): string =>
-  fingerprint(readFiles(projectRoot, [TIER_CONFIG, ...selectedFiles(mutationTierFiles, entriesIn)]))
+  fingerprint(readFiles(projectRoot, [...TIER_CONFIGS, ...selectedFiles(mutationTierFiles, entriesIn)]))
 
 // Spelled here rather than shared with `scripts/acceptance-mutation.ts`, which
 // takes its own from `acceptance/pipeline.ts`: the only module with one to

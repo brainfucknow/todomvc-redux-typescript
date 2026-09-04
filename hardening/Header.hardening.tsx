@@ -11,9 +11,7 @@ const submit = async (typed: string) => {
   const addTodo = vi.fn()
   const { user } = renderComponent(<Header addTodo={addTodo} />)
   const field = screen.getByPlaceholderText('What needs to be done?')
-  if (typed.length > 0) {
-    await user.type(field, typed)
-  }
+  await user.type(field, typed)
   pressEnter(field)
   return addTodo
 }

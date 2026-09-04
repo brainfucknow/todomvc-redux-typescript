@@ -79,9 +79,13 @@ export const mockTodoActions = () => ({
   setVisibilityFilter: vi.fn(),
 }) satisfies Record<keyof typeof TodoActions, Mock>
 
-// A real browser sets `keyCode` 13 on Enter, and React's synthetic `which` on
-// keydown reads that back - which is the property `TodoTextInput` submits on.
+// A real browser sets `keyCode` on a keydown, and React's synthetic `which`
+// reads that back - which is the property `TodoTextInput` submits on.
 // `@testing-library/user-event` sends `key` and `code` and never `keyCode`, so
-// its Enter misses the branch. This sends what a browser sends.
-export const pressEnter = (field: HTMLElement) =>
-  fireEvent.keyDown(field, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 })
+// its keystrokes miss the branch. These send what a browser sends.
+const pressKey = (field: HTMLElement, key: string, keyCode: number) =>
+  fireEvent.keyDown(field, { key, code: key, keyCode, which: keyCode })
+
+export const pressEnter = (field: HTMLElement) => pressKey(field, 'Enter', 13)
+
+export const pressEscape = (field: HTMLElement) => pressKey(field, 'Escape', 27)
