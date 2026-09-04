@@ -6,7 +6,7 @@ const setup = (propOverrides?:Partial<LinkProps>) => {
   const props:LinkProps= Object.assign({
     active: false,
     children: 'All',
-    setFilter: jest.fn()
+    setFilter: vi.fn()
   }, propOverrides)
 
   const renderer = createRenderer();

@@ -17,13 +17,13 @@ const setup = () => {
       }
     ],
     actions: {
-      addTodo: jest.fn(),
-      editTodo: jest.fn(),
-      deleteTodo: jest.fn(),
-      completeTodo: jest.fn(),
-      completeAllTodos: jest.fn(),
-      clearCompleted: jest.fn(),
-      setVisibilityFilter: jest.fn()
+      addTodo: vi.fn(),
+      editTodo: vi.fn(),
+      deleteTodo: vi.fn(),
+      completeTodo: vi.fn(),
+      completeAllTodos: vi.fn(),
+      clearCompleted: vi.fn(),
+      setVisibilityFilter: vi.fn()
     }
   }
 

@@ -9,11 +9,11 @@ const setup = (propOverrides?:Partial<MainSectionProps>) => {
     todosCount: 2,
     completedCount: 1,
     actions: {
-      editTodo: jest.fn(),
-      deleteTodo: jest.fn(),
-      completeTodo: jest.fn(),
-      completeAllTodos: jest.fn(),
-      clearCompleted: jest.fn()
+      editTodo: vi.fn(),
+      deleteTodo: vi.fn(),
+      completeTodo: vi.fn(),
+      completeAllTodos: vi.fn(),
+      clearCompleted: vi.fn()
     }
   }, propOverrides)
 

@@ -5,7 +5,7 @@ import TodoTextInput from '../components/TodoTextInput'
 
 const setup = () => {
   const props = {
-    addTodo: jest.fn()
+    addTodo: vi.fn()
   }
 
   const renderer = createRenderer();

@@ -104,3 +104,11 @@ dist
 .tern-port
 
 build/
+
+# Vite build output
+dist/
+
+# Acceptance pipeline: parser IR, generated entry points, mutation output,
+# and the APS Go binaries built by scripts/bootstrap-aps.sh
+build/acceptance*/
+bin/

@@ -168,6 +168,137 @@ These are now part of the task, not open items.
 
 ### Coder
 
+Done. Toolchain swapped, acceptance pipeline stood up, nothing committed.
+
+**What I changed**
+
+Toolchain:
+
+- `package.json`: `react-scripts`, `@types/jest` and the CRA `proxy` key removed; `vite` 8,
+  `@vitejs/plugin-react` 6, `vitest` 5 and `jsdom` added; `@types/node` 13 -> 22;
+  `typescript` 3.9 -> 7.0.2 (npm `latest`, satisfies `typescript compilation 2`);
+  `"type": "module"` added so the `.ts` tooling scripts load as ESM. Scripts are exactly
+  `dev`, `build`, `preview`, `test`, `test:acceptance`. Lockfile regenerated.
+- `public/index.html` -> root `index.html` with `<script type="module" src="/src/index.tsx">`;
+  `public/` is gone (it held nothing else). `src/react-app-env.d.ts` -> `src/vite-env.d.ts`
+  referencing `vite/client`.
+- `vite.config.ts`: react plugin, `server.proxy` `'/api' -> http://localhost:4000`, the same target
+  the CRA `proxy` key named, and the Vitest block (jsdom, `globals`, `setupFiles`,
+  `include: ['src/**/*.spec.{ts,tsx}', 'acceptance/**/*.spec.ts']`).
+- `src/setupTests.ts`: registers Testing Library `cleanup` in `afterEach`.
+- `tsconfig.json`: `target`/`lib` es2022, `moduleResolution: bundler`,
+  `jsx: react-jsx`, `allowImportingTsExtensions`, `types: [node, vite/client, vitest/globals]`,
+  `allowJs` dropped. `isolatedModules` and `strict` were already on and stay on.
+- Spec files: `jest.fn(` -> `vi.fn(` in the seven component specs. Nothing else in the
+  suite needed converting; no `jest.mock`, no timers, no `jest` globals elsewhere.
+- `.gitignore`: `dist/`, `build/acceptance*/`, `bin/` (`build/` was already ignored, which
+  also covers the APS checkout under `build/aps-source/`).
+- `README.md` rewritten around `dev`/`build`/`preview`/`test`/`test:acceptance`; no
+  mention of CRA, `npm start` or `npm run eject` survives.
+
+Acceptance pipeline (APS):
+
+- `scripts/bootstrap-aps.sh`: clones the APS repo into `build/aps-source/` and builds
+  `gherkin-parser`, `gherkin-ir-dry-checker` and `gherkin-mutator` into `bin/` with the Go
+  toolchain. Idempotent; no-ops when all three binaries are present. `GO_BIN`, `APS_REPO`
+  and `APS_REF` are overridable.
+- `acceptance/runtime.ts`: the portable half. `expandScenarios` (background prepended,
+  one execution per example row, `<scenario>/example_<n>`, scenarios without examples run
+  once with `{}`), `resolveArgument`, `matchStep`, `runExecution`. Framework-free and
+  project-free; no filesystem, network or Vitest dependency.
+- `acceptance/generator.ts` + `acceptance/generate-entrypoints.ts`: the pure source/hash/
+  metadata-name functions, and the `<json-ir> <generated-test-output>` CLI around them
+  (exit 0/1/2 per the APS generator spec). Emits one `<slug>.acceptance.ts` per feature plus
+  `metadata/<mapped-name>.json` with `schema_version`, `feature_path`, `ir_path`,
+  `implementation_hash` (sha256 over generated files only) and `hash_scope`.
+- `acceptance/steps.ts`: 16 regex step handlers covering all 18 unique step texts the
+  specifier listed. `acceptance/fixtures.ts` owns the servers and child processes,
+  `acceptance/repository.ts` the file reads, `acceptance/inspection.ts` the pure text
+  parsing (referenced assets, `tsc` version banner, declared npm scripts).
+- `vitest.acceptance.config.ts`: runs only `build/acceptance/generated/*.acceptance.ts`,
+  node environment, no file parallelism (port 4000 is a shared fixture), 120s timeouts.
+  Generated tests never enter the unit-test include.
+- `scripts/acceptance.ts` (`npm run test:acceptance`): bootstrap if needed -> parse every
+  `features/*.feature` into `build/acceptance/ir/` -> generate into
+  `build/acceptance/generated/` -> execute. It prints each parse and each generated file,
+  so QA step D3 has something to read.
+
+**Step handler decisions**
+
+- Handlers match the *raw* step text and capture `<placeholder>` tokens; the runtime then
+  resolves each capture against the example object (`<name>` -> value, anything else is a
+  literal). This is one substitution per capture with no rescan of the substituted text, so
+  the JSON bodies and `class="todoapp"` survive intact, and a capture group can never
+  swallow a value's punctuation.
+- One handler covers `a client requests /`, `a client requests <path>` and
+  `a client has requested /` — same behavior, different tense and example source.
+  `matchStep` fails loudly on ambiguity rather than picking the first match, so the
+  narrower `a client requests every script and stylesheet...` handler cannot collide.
+- Dev server, preview server, production build and the port-4000 backend stub are
+  memoized per generated entry point and released in that file's `afterAll`. Dev and
+  preview run on an ephemeral port via Vite's Node API.
+
+**What I verified**
+
+- `rm -rf bin build dist node_modules && npm ci` then `npm run test:acceptance` from
+  scratch: bootstrap builds the three Go binaries, 5 feature files parse, 5 entry points
+  generate, **21 scenario executions pass** — 4 / 2 / 3+1+1 / 3+5 / 1+1, matching QA D5
+  exactly.
+- `npm test`: **13 files, 92 tests, 0 failing, 0 skipped** (see the open question below).
+- `npx tsc --noEmit` exits 0 with no output; `npx tsc --version` prints `Version 7.0.2`.
+- `npm run build` emits `dist/index.html` + hashed JS and CSS; `grep -c 'src/index.tsx'
+  dist/index.html` is 0. `npm run preview` serves the index and the emitted bundle 200.
+- `npm run dev` serves the transformed index page containing `class="todoapp"`, `id="root"`,
+  `/src/index.tsx` and `Redux TodoMVC Example`.
+- `react-scripts` count is 0 in `package.json`, `package-lock.json` and `src`;
+  `npm ls react-scripts` reports an empty tree.
+- `git status --porcelain --ignored` shows `dist/`, `build/`, `bin/` and `node_modules/`
+  ignored after a full run; no build output is untracked-but-unignored.
+- Negative check that the acceptance tests are actually wired to the app: deleting
+  `server.proxy` from `vite.config.ts` turns both `api proxy 1` rows red; restoring it
+  turns them green again.
+- Not verified by me: the E2E QA procedures in `qa/`. They are QA's to execute.
+
+**Left for the next role**
+
+- Cleaner: `scripts/crap.mjs` is not written yet (PLAN section 4 assigns it to this task's
+  cleaner). Nothing else in `scripts/` presumes its shape.
+- Vitest prints a perf hint that jsdom is created once per file and suggests
+  `isolate: false`. I left isolation on — a shared jsdom across 13 files is a behavior
+  change to the unit tier, not a task-01 concern.
+- `vite build` prints a lightningcss warning about `input::input-placeholder` inside
+  `todomvc-app-css`. It is a warning from a third-party stylesheet, the build succeeds, and
+  the emitted CSS is unchanged in effect.
+- `.github/workflows/nodejs.yml` still runs `npm ci && npm run build && npm test` and still
+  works, but it never runs `test:acceptance` and `npm ci` alone does not build `bin/`.
+  Wiring acceptance into CI belongs to task 06 (`PLAN.md` section 5), so I left it.
+- QA's `qa/todo-app-regression.md` needs a browser driver. `@playwright/test` is not
+  installed; PLAN section 4 says the role that first needs a tool introduces it, and no
+  task-01 done criterion requires it, so I did not add it or a `test:e2e` script.
+- I added no `typecheck` script, per PM ruling 3.
+
+**Open questions**
+
+1. **QA step D1's counts are now stale, and I could not fix them because `qa/` is the
+   specifier's.** `npm test` reports **13 test files and 92 tests**, not 10 and 54. The 10
+   original `src/**/*.spec.{ts,tsx}` files and their 54 cases are all still there and all
+   pass, unchanged except `jest.fn` -> `vi.fn`. The extra three files are the unit tests
+   for the acceptance pipeline code this task introduced — `acceptance/runtime.spec.ts`
+   (15), `acceptance/generator.spec.ts` (13), `acceptance/inspection.spec.ts` (10) — which
+   my role brief requires and which are unit tests, not generated acceptance tests, so
+   `PLAN.md` section 4 puts them in the `npm test` tier. D2's "exactly the 10
+   `src/**/*.spec.{ts,tsx}` files" needs the same amendment; its real point — that no
+   *generated* acceptance file appears in the unit run — still holds, and
+   `build/acceptance/generated/` is outside the unit include.
+2. **TypeScript major version.** The task says "current stable" and the feature file says
+   "at least 5"; npm `latest` is 7.0.2, so that is what I pinned. It compiles the project
+   clean. If the project would rather sit on the 5.x line for tooling-ecosystem reasons,
+   say so and I will move it — nothing else depends on the major.
+3. I did **not** enable `verbatimModuleSyntax`, although it is the modern default for a
+   Vite ESM project. Turning it on surfaced 33 `TS1484` errors across 20 `src` files that
+   tasks 02-05 are about to rewrite, and the task says to fix only the errors the upgrade
+   surfaces. Flag it if you would rather absorb that churn here.
+
 ### Cleaner
 
 ### Architect

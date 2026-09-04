@@ -8,7 +8,7 @@ const setup = (propOverrides?:Partial<FooterProps>) => {
   const props:FooterProps = Object.assign({
     completedCount: 0,
     activeCount: 0,
-    onClearCompleted: jest.fn(),
+    onClearCompleted: vi.fn(),
   }, propOverrides)
 
   const renderer = createRenderer()

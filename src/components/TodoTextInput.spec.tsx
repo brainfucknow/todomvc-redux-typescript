@@ -4,7 +4,7 @@ import TodoTextInput, { TodoTextInputProps } from './TodoTextInput'
 
 const setup = (propOverrides?:Partial<TodoTextInputProps>) => {
   const props = Object.assign({
-    onSave: jest.fn(),
+    onSave: vi.fn(),
     text: 'Use Redux',
     placeholder: 'What needs to be done?',
     editing: false,
