@@ -111,7 +111,11 @@ CommonJS files, almost all implicit-any, and recorded it as its own work rather
 than smuggling it into another task. Task 08 was the last task scheduled to look
 at tooling and did not take it, so it is numbered here instead of being lost.
 
-Task 09 added two more items: whether `npm run acceptance` belongs in CI, and whether the `@vitest/coverage-v8` provider should be a persisted devDependency. Both are "what does CI install" decisions.
+Task 09 added three more: whether `npm run acceptance` belongs in CI, whether
+`npm run properties` does, and whether the `@vitest/coverage-v8` provider should
+be persisted. They are not equivalent. Properties is unblocked and should simply
+go in: it needs nothing `npm ci` does not already install. Acceptance needs Go
+and a pinned third-party clone inside the gate first.
 Running it there means installing Go and cloning a third-party repository inside
 the gate, so it needs the APS clone pinned to a commit at minimum. Until then
 every QA role on tasks 10 through 13 runs it as a release check.

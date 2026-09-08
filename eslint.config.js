@@ -7,14 +7,20 @@
  * module system in its extension (`vite.config.mts`, `scripts/*.mjs`), and this
  * one does the same by not having one.
  *
- * The repository holds four kinds of code and each gets its own block, because
+ * The repository holds five kinds of code and each gets its own block, because
  * a single set of globals would be wrong for all of them:
  *
  *   src/                 browser + React + the Vitest globals the specs use
  *   qa/tests, qa/*.ts    Node, Playwright specs, no React and no JSX a11y
  *   qa/stub/             plain CommonJS JavaScript, Node, no TypeScript rules
+ *   acceptance/,         Node, no React: the harnesses that drive src/ through
+ *   properties/          its own module boundary
  *   root loose files     Node, ESM (vite.config.mts, scripts/*.mjs) or CJS
  *                        (eslint.config.js, prettier.config.js)
+ *
+ * One block is not about a kind of code but about one file: the todo API policy
+ * module, which is forbidden the environment. See it below for why lint is the
+ * only tool in this repository that can say so.
  *
  * Formatting is Prettier's job alone: `eslint-config-prettier` comes last and
  * switches off every ESLint rule that has an opinion about layout, so the two
@@ -84,6 +90,68 @@ module.exports = tseslint.config(
     },
   },
 
+  /**
+   * The todo API policy module, and the one thing lint can say about it that
+   * nothing else can.
+   *
+   * `src/todo-api/client.ts` is the module the acceptance and property suites
+   * drive directly, on the promise that it has no environment: no network, no
+   * console, no DOM, no clock. That promise was prose in a handoff note until
+   * this block, and it is not implied by the type gate - `@types/node` declares
+   * global `fetch`, `Response` and `console`, so `fetch(...)` inside this file
+   * compiles clean under every project in the repository, DOM lib or not.
+   *
+   * What it imports is a different question with a different answer:
+   * scripts/architecture/boundaries.mjs holds the dependency rules, because a
+   * layer's allowed-dependency list is data other rules are written against,
+   * not a lint setting.
+   */
+  {
+    files: ['src/todo-api/client.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...[
+          'fetch',
+          'XMLHttpRequest',
+          'WebSocket',
+          'console',
+          'window',
+          'document',
+          'navigator',
+          'location',
+          'history',
+          'localStorage',
+          'sessionStorage',
+          'indexedDB',
+          'caches',
+          'alert',
+          'process',
+          'Date',
+          'performance',
+        ].map((name) => ({
+          name,
+          message:
+            'src/todo-api/client.ts answers domain questions and must run with no environment. Take what you need as an argument and let the caller supply it, as SendRequest does.',
+        })),
+      ],
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'globalThis',
+          message:
+            'Reaching through globalThis is the same environment dependency spelled differently.',
+        },
+        {
+          object: 'Math',
+          property: 'random',
+          message:
+            'A module the property suite generates inputs for cannot generate its own.',
+        },
+      ],
+    },
+  },
+
   // Playwright specs and their support code. Node, never a browser bundle.
   {
     files: ['qa/**/*.ts'],
@@ -106,10 +174,11 @@ module.exports = tseslint.config(
     },
   },
 
-  // The acceptance pipeline's runtime and step handlers. Node, never a browser
-  // bundle, and no React: they drive src/ through its own module boundary.
+  // The acceptance pipeline's runtime and step handlers, and the property
+  // suite. Node, never a browser bundle, and no React: both drive src/ through
+  // its own module boundary.
   {
-    files: ['acceptance/**/*.ts'],
+    files: ['acceptance/**/*.ts', 'properties/**/*.ts'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,

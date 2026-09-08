@@ -10,7 +10,8 @@ import { ROOT } from './aps.mjs'
  * APS supplies the parser, this supplies the entry points.
  *
  * What it writes is deliberately thin - one Vitest file per feature that loads
- * JSON IR and hands it to `acceptance/runtime.ts`. It contains no step
+ * JSON IR and hands it to `acceptance/run-feature.ts`, the one module that
+ * knows both the runtime and this project's step vocabulary. It contains no step
  * behavior and no application binding, so a mutated IR runs through the same
  * generated file without regenerating anything.
  *
@@ -92,7 +93,7 @@ function generate(irPath, outputDir) {
 function entrypoint(featurePath, irPath, outputDir) {
   const runtime = importSpecifier(
     outputDir,
-    join(ROOT, 'acceptance/runtime.ts'),
+    join(ROOT, 'acceptance/run-feature.ts'),
   )
   const ir = importSpecifier(outputDir, irPath)
 

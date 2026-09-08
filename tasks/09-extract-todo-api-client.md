@@ -716,6 +716,293 @@ did not put it in code.
 
 ### Architect
 
+Reviewed in the brief's order: UI/core separation, dependency rule, information
+hiding, then local clarity. Two source changes, one acceptance-pipeline change,
+and the two things this pass owed the project: boundary checks and property
+tests. Nothing in `features/` or `qa/` was edited; both were run.
+
+**Task 04's finding: the direction is fixed, not moved**
+
+Task 04's architect found that every action creator returned `ApiActionMessage`,
+imported from the middleware, whose `callAPI` field was typed
+`[RequestInfo, RequestInit]` - DOM `fetch` types - so the transport's shape
+reached into policy and the arrow pointed from the creators *to* the adapter. It
+judged that the direction, not the duplication, was the real problem.
+
+The extraction fixed the direction. `src/todo-api/client.ts` declares
+`TodoApiRequest`, `TodoApiAnswer` and `SendRequest` itself, in its own
+vocabulary - a method, a path, a header map, a body string, a status - and
+`fetchTransport.ts` imports that interface and implements it. The high-level
+module owns the interface; the low-level module points inward at it. The client
+imports nothing at all, which is now asserted rather than asserted-in-prose.
+
+Two qualifications, because "fixed" should not be read wider than it is.
+
+1. **The proof the coder cited does not exist.** Its note says an accidental
+   import of the transport from a step handler "fails the type gate rather than
+   passing quietly", because `acceptance/tsconfig.json` has no DOM lib. I
+   checked, and it does not: `@types/node` declares global `fetch`, `Response`
+   and `RequestInit`, so importing `src/todo-api/fetchTransport.ts` from
+   `acceptance/steps/todo-api.ts` compiles clean, and so does writing
+   `fetch(...)`, `console.log(...)` or `process.env` directly inside
+   `client.ts`. Only DOM-*only* names such as `document` are caught. Reproduce
+   by appending `export const p = () => fetch('x')` to `client.ts` and running
+   `npx tsc -p acceptance/tsconfig.json`: exit 0. The boundary was real, the
+   mechanism named for it was not. That is what the lint block and the import
+   check below are for.
+
+2. **One residue of the old direction is still there, and belongs to task 10.**
+   `ApiActionMessage` is gone, but the request itself still travels through
+   Redux: `addTodo('Buy milk')` returns a `TodoApiCall` that holds a method, a
+   path, headers and a body string, and that object is what the UI dispatches.
+   No DOM type reaches policy any more - the finding is answered - but an HTTP
+   request shape still rides in an action, because in a middleware design the
+   action *is* the command. Task 10 replaces the middleware with thunks and the
+   creators stop returning requests at all. I did not pull it forward: doing so
+   means changing what is dispatched, which this task's scope forbids twice
+   over.
+
+**Changed: the middleware stopped re-deriving what the client knows**
+
+`isApiCall` lived in `callapimiddleware.ts` as `Boolean((action as
+Partial<TodoApiCall>).outcomeNames)` - an adapter casting into the policy
+module's type to answer a question about that type. It is now
+`isTodoApiCall(message)`, exported from `client.ts`, and the middleware asks it.
+Behavior is identical, down to the parts that are accidents: an empty
+`outcomeNames` array is truthy and is still recognised, then refused by
+`executeCall`; `dispatch(null)` still throws a `TypeError` reading the field off
+`null`. Both are now unit-tested rather than implied - four tests in
+`client.spec.ts` and one in `callapimiddleware.spec.ts`, which is where the
+`null` throw is observable. My first draft of that test asserted an empty array
+was *not* recognised; it went red, which is the test doing its job on me.
+
+The middleware is now what its own doc comment claims: discriminate, run, log a
+failure, dispatch. It holds no knowledge of how a call is shaped.
+
+**Changed: an import cycle in the acceptance pipeline**
+
+`acceptance/runtime.ts` imported `./steps` to wire `runGeneratedFeature`;
+`acceptance/steps/todo-api.ts` imports the runtime's types. Runtime -> steps ->
+runtime. It erases at run time, being type-only in one direction, but it is
+still a generic engine importing one project's vocabulary, which is the same
+direction error as the one above.
+
+`runGeneratedFeature` moved to a new `acceptance/run-feature.ts`, the only
+module that knows both, and `generate-entrypoints.mjs` now points generated
+entry points at it. The runtime imports `node:fs` and `vitest` and nothing else.
+`npm run acceptance` is unchanged at 3 files / 24 executions, and the mutation
+path still works: I drove the runner adapter by hand with a baseline job
+(`test_success`, 10 tests) and an IR with the trailing slash mutated out
+(`test_failure`, 10 of 10) against `build/acceptance-mutation/generated`.
+
+**Boundary checks: which four are worth encoding, and which is not**
+
+The brief named four boundaries this project now holds by convention. My
+judgment on each, and where it landed:
+
+- **`client.ts` must not touch the network or the console** - encoded, in
+  `eslint.config.js`. `no-restricted-globals` over `fetch`, `console`, `window`,
+  `document`, `process`, `Date` and the rest, plus `no-restricted-properties`
+  for `globalThis.*` and `Math.random`. Lint is the only tool in this repository
+  that can say this: as shown above, the type gate cannot. Verified by planting
+  five leaks in one function and getting five errors.
+- **`client.ts` must depend on nothing, and `fetchTransport.ts` only on it** -
+  encoded, as allowed-dependency lists in `scripts/architecture/boundaries.mjs`.
+- **`src/test-support/` must not be reachable from shipped code** - encoded,
+  same place. This one was live: `src/test-support/fetch.ts` calls `vi`, which
+  does not exist in a bundle, so a shipped module importing it would lint,
+  typecheck and build and then fail in the browser.
+- **`qa/` and `features/` are owned by other roles** - *not* encoded, and I do
+  not think it should be. Ownership is a process rule about who edits a file,
+  and no lint rule or import check can express it; a `CODEOWNERS` file that no
+  review process reads would be a gate that cannot fail, which is the thing this
+  project keeps finding and removing. The task chain is the enforcement. What I
+  did encode is the direction that *is* mechanical: `src/**` may not import from
+  `qa/`, `acceptance/`, `properties/`, `scripts/`, `build/` or `features/`.
+
+One boundary is not checkable and I want to be plain about it. **"The transport
+re-decides no domain question" cannot be mechanically enforced.** The nearest
+proxies are the allow-list (it may import only `client.ts`) and the fact that
+the acceptance and property suites both measure `fetchTransport.ts` at 0%
+coverage while covering `client.ts` fully - the suites reach the policy without
+touching the shell. Neither proves it. A reviewer reading `fetchTransport.ts`
+for a path, a verb, a header or an outcome name is still the check.
+
+*How it is wired.* `scripts/architecture/imports.mjs` reads a module's import
+targets; `scripts/architecture/boundaries.mjs` holds `BOUNDARY_RULES` and
+decides, reading no files;
+`scripts/architecture/boundaries.spec.mjs` proves the checker can say no, then
+runs the real rules over `src/`, `acceptance/`, `properties/` and `scripts/`.
+It is a spec in the existing `scripts` project rather than a new command, so
+`npm test` runs it and CI runs `npm test`; a new command is a new thing to
+forget. Rules are data with a `reason` each: when a later task's correct inward
+call changes the graph, widen the list in the same change - that is the point of
+keeping intent as data - but do not let the graph change while the list still
+claims otherwise.
+
+Verified falsifiable five ways, each planted and then removed: policy importing
+`redux`; the transport importing a reducer; a component importing
+`test-support`; the property suite importing the transport; and the acceptance
+cycle above put back. All five went red, and the cycle case red on the cycle
+test specifically.
+
+One trap worth recording, because I fell into it. The first import regex read
+`'Counterexample: 37 (shrunk from'` in a test file as an import and invented an
+edge. The patterns now require an import or export clause, and the spec asserts
+the exact edge list of the modules whose boundaries this task drew - so an
+over-reading pattern fails there rather than passing everywhere.
+
+**Property tests: a tiny runner, not a dependency**
+
+No framework was installed and installing one would have decided a question this
+project has twice routed elsewhere: the coverage provider and the acceptance
+toolchain both went to task 14 as "what does CI install". A property suite that
+only runs after an unrecorded `npm install` is a gate nobody can run, so I built
+the runner instead. `package-lock.json` is byte-unchanged; `package.json` gained
+one script.
+
+`properties/tiny-check.ts` is about 280 lines: a seeded PRNG, `forAll` with
+shrinking, and arbitraries for integers, booleans, text, elements, tuples and
+arrays. Failures are reproducible - the seed is fixed unless `$PROPERTY_SEED`
+says otherwise - and the cost of that, a fixed sample, is stated in its own doc
+comment. `properties/tiny-check.property.test.ts` is the runner's own
+falsifiability: known-false properties asserted to fail, and the shrinker
+asserted to arrive at exactly `37`, `"\""`, `[0,0]` and `[5,true]`. A property
+runner that cannot report a counterexample is the most expensive kind of green.
+
+`properties/todo-api-client.property.test.ts` covers the categories the brief
+lists: round trips (a body parses back to the text it was given, for every
+text), input ranges (every status 100-599; every unusable outcome-names array),
+conservation (the call's fields ride unchanged on both outcomes), idempotence
+(building twice gives the same call), ordering (exactly two outcomes, started
+first), invariants (`readsResponseBody` iff not DELETE; a body iff POST or
+PATCH; `Accept` always JSON), and parse/format stability.
+
+Falsifiable against a plausible wrong implementation, not just the right one.
+Planting a concatenating body builder failed the round trip and shrank to
+`"\n"` - a case no table in `features/` has, since the feature's escaping row
+uses a quote. Planting the `response.ok` check failed four properties and shrank
+the status to exactly `400`.
+
+*Where they run.* `npm run properties`, its own Vitest config, its own tsconfig
+project (the typecheck gate is now five projects, and
+`scripts/typecheck-gate.spec.mjs` went red on its project-list assertion exactly
+as written, as it did in the coder's pass). No property test joined `npm test`.
+
+*Coverage assessment beyond this module.* The strongest remaining candidate is
+`src/reducers/todos.ts`: "ADD_TODO allocates an id no todo holds" is an
+invariant that task 10's done criteria already singles out, and a property over
+it would be a real net for that rewrite. I did not write it. This task's scope
+says reducers are out of scope, and a property suite reaching into a module task
+10 is about to replace would be written against the wrong side of that change. I
+would give it to task 10's architect, with this runner already in place.
+
+**The `response.ok` defect: louder, and deliberately so**
+
+More visible than before, in three ways, and none of them fixed. The status is
+now a named field on `TodoApiAnswer` that arrives on every answer and is read by
+nothing, so a reader sees it go nowhere. The property named "the status never
+decides success or failure" says so over the whole range, which is a stronger
+statement of the defect than the 200/500 rows in `features/todo-api-outcomes`.
+And planting the fix is now a one-line experiment whose failure output names
+`400`.
+
+That is the right level of visibility and it is a trap for the next role: the
+one-line `if` is more tempting than it has ever been. It stays. Fixing it
+changes what `qa/procedures/21` records, which by `PLAN.md`'s rule means the
+specifier rewrites the procedure first and the task stops and asks. The property
+that pins it says this in a comment above itself, and deleting that property is
+part of any future fix rather than a tidy-up.
+
+The other preserved defects are untouched and now pinned harder too: the
+trailing slash is asserted for every id and every text, `json: false` on delete
+is asserted at every status and every body, and the loose `== null` guard is
+asserted for `null` and `undefined` at every id.
+
+**Not mine to change, recorded**
+
+1. `src/selectors/index.ts` imports `RootState` from `src/containers/index.ts` -
+   the domain asking the UI adapter layer for the shape of state. This is task
+   04's architect's finding, `PLAN.md` records the defect it causes, and task 12
+   owns it. My boundary rules deliberately do not cover `src/containers/**` or
+   `src/selectors/**`; writing a rule that the next three tasks must violate on
+   their way to fixing it would be noise. Task 12's architect should add the
+   rule once the arrow is turned.
+2. The outcome names are written twice. `client.ts` holds all twelve;
+   `src/constants/ActionTypes.ts` holds four of them and `src/reducers/apis.ts`
+   holds the other eight as bare literals in a switch. The client owns those
+   names - it produces them - so the reducers should ask it. I did not do it:
+   the only way to remove the duplication is to make the constants module import
+   from the client, which needs literal types in `OutcomeNames` and touches
+   reducers, and task 10 rewrites both sides.
+3. `TodoApiOutcome.carried` names its key `json`, which is a legacy DTO name for
+   "the parsed body". Preserved, since the reducers key off it. Task 10.
+4. `scripts/acceptance/aps.mjs`, `run-acceptance.mjs`, `install-aps.mjs` and
+   `generate-entrypoints.mjs` are still shells with no spec, as the cleaner and
+   the repair coder left them. None is over the CRAP gate.
+
+**Verified, after the last edit**
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in five projects.
+- `npm test`: 16 files / 139 tests, up from 15 / 116. `test:unit` 13 files / 83
+  tests (up from 78: four for `isTodoApiCall`, one for the `null` throw);
+  `scripts` 3 files / 56 tests (up from 42: 14 for the boundary checker). No
+  acceptance test and no property test joined the count.
+- `npm run acceptance`: 3 files / 24 executions, unchanged.
+- `npm run properties`: 2 files / 26 tests. New command.
+- Runner adapter after the generator change: baseline job -> `test_success`
+  (10 tests), trailing-slash-mutated IR -> `test_failure` (10 of 10).
+- `npm run test:e2e`: 22 passed. `test:e2e:dev`, `test:e2e:preview`: 21 passed,
+  1 skipped each. No procedure was edited or needed editing.
+- Coverage, measured with the provider that is already in `node_modules` as a
+  vitest optional peer (`package.json` and `package-lock.json` unchanged, checked
+  after): `scripts/architecture/` 100% statements, 100% functions, 87.5%
+  branches. The property suite alone reaches `src/todo-api/client.ts` at 96%
+  and `fetchTransport.ts` at 0%, which is the adapter working as intended.
+
+**Left for the hardener**
+
+- The mutation procedure is unchanged; only the generated entry points' import
+  specifier moved, from `acceptance/runtime.ts` to `acceptance/run-feature.ts`.
+  The command in the coder's note still applies verbatim. Run the baseline job
+  first, as the repair coder's note requires.
+- `npm run properties` is a second suite that can kill a Gherkin mutant nobody
+  intended - it is not wired into the mutator and should not be. If a mutation
+  survives the acceptance run but a property already covers it, that is worth
+  saying in your note rather than treating as a gap in `features/`.
+- `scripts/architecture/boundaries.spec.mjs` is unit tests in the `scripts`
+  project, in scope for mutation like the rest of that project. Its own
+  falsifiability is proved by five planted violations, above.
+
+**Left for QA**
+
+- One new release check: `npm run properties`. It needs no Go, no clone and no
+  network - only what `npm ci` already installs - so it is not in the same
+  position as `npm run acceptance`.
+- `npm test` is now 16 files / 139 tests and covers the boundary checker, so a
+  red `scripts` project may now mean an architecture violation rather than a
+  tooling bug. The failure names the rule and its reason.
+
+**Open questions for the project manager**
+
+1. **Should `npm run properties` go into CI?** I did not touch
+   `.github/workflows/nodejs.yml`. The argument that kept `npm run acceptance`
+   out - installing Go and cloning a third-party repository inside the gate -
+   does not apply here: the runner is in-repository and the command needs
+   nothing `npm ci` does not already install. Against it: one more job step, and
+   CI content has consistently been your call rather than a structural task's.
+   My recommendation is to add it, and I have left it out rather than assume.
+2. **`npm test` moved again, to 16 files / 139 tests.** Read against your
+   standing ruling the shape is right - no acceptance test and no property test
+   in the count, and the growth is 5 unit tests plus 14 tooling tests - but it is
+   the third task in a row to move that number and the third role to name it.
+3. **The reducer property tests, above.** I judged them task 10's, not mine, on
+   scope. If you would rather have them now as a net *before* the rewrite rather
+   than after, say so and they are a short addition to `properties/` - the
+   runner is already there. Note this cuts against the out-of-scope line in this
+   task's own file, which is why I am asking rather than doing.
+
 ### Hardener
 
 ### QA
@@ -795,3 +1082,34 @@ untouched. Added to task 14 with the acceptance-in-CI question, since both are
 pin was always that acceptance tests stay out of that count, not that the number
 holds. `test:unit` at 13 files / 78 tests and the new protocol tests in the
 `scripts` project is exactly the separation the two projects exist for.
+
+## Project manager notes, fourth round
+
+**On the architect falsifying the coder's boundary proof.** I had accepted that
+claim, so I checked this myself. The architect is right: with `fetch()` planted
+in `client.ts`, `npm run typecheck` exits 0. `@types/node` declares `fetch`,
+`Response` and `RequestInit` as globals, so a DOM-free tsconfig catches only
+DOM-*only* names like `document`. The architect's new lint rule does catch it,
+exit 1.
+
+This is the second time a role's stated proof has turned out not to prove what
+it claimed, and both times the next role caught it. Worth stating the general
+form: a boundary is only enforced by the tool that can actually see it. The
+coder reached for the type gate because it was the gate at hand.
+
+**On `npm run properties` in CI.** It should go in, and the reason acceptance
+was deferred does not apply to it: properties needs nothing `npm ci` does not
+already install, no Go, no third-party clone. Recorded in task 14 as the
+unblocked half of that question. Until it lands, QA runs it as a release check
+on tasks 10 through 13, as with acceptance.
+
+**On `npm test` moving to 16 files / 139 tests.** Fine, same reading as before:
+the pin is that acceptance and property tests stay out of that count, not that
+the number holds. `test:unit` at 13/83 and the architecture and protocol tests
+in the `scripts` project is the separation working.
+
+**On pulling reducer property tests forward from task 10.** No. Task 10 rewrites
+those reducers into slices, so properties written now would be written against
+code that is about to be replaced, and the task file already asks that task to
+keep the id-allocation and toggle-all invariants under dedicated tests. Task 10
+inherits the runner.

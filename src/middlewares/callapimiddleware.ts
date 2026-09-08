@@ -1,7 +1,7 @@
 import { Middleware, MiddlewareAPI } from 'redux'
 import {
   executeCall,
-  type TodoApiCall,
+  isTodoApiCall,
   type TodoApiOutcome,
 } from '../todo-api/client'
 import { sendWithFetch } from '../todo-api/fetchTransport'
@@ -16,16 +16,12 @@ import { sendWithFetch } from '../todo-api/fetchTransport'
  */
 export const callAPIMiddleware: Middleware =
   (api: MiddlewareAPI) => (next) => (action: unknown) => {
-    if (!isApiCall(action)) return next(action)
+    if (!isTodoApiCall(action)) return next(action)
 
     return executeCall(action, sendWithFetch, (outcome) =>
       dispatchOutcome(api, outcome),
     )
   }
-
-function isApiCall(action: unknown): action is TodoApiCall {
-  return Boolean((action as Partial<TodoApiCall>).outcomeNames)
-}
 
 function dispatchOutcome(api: MiddlewareAPI, outcome: TodoApiOutcome) {
   if (outcome.kind === 'failed') {

@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs'
 import { describe, test } from 'vitest'
-import { projectSteps } from './steps'
 
 /**
  * The acceptance runtime: it expands parser JSON IR into scenario executions
@@ -8,8 +7,12 @@ import { projectSteps } from './steps'
  * file - the IR is the only input - and it holds no knowledge of what any step
  * means, which is `acceptance/steps/`.
  *
- * The IR shape is APS parser-spec.md. Generated entry points under
- * `build/acceptance/generated/` call `runGeneratedFeature`; nothing else should.
+ * It does not know which vocabulary it will run, either. `runFeature` is given
+ * one, and `acceptance/run-feature.ts` is the single place that picks this
+ * project's - which is what keeps the engine from importing the steps that
+ * import the engine.
+ *
+ * The IR shape is APS parser-spec.md.
  */
 
 export interface IrStep {
@@ -61,10 +64,6 @@ export interface StepSuite<W> {
 }
 
 const PLACEHOLDER = /<([A-Za-z0-9_]+)>/g
-
-export function runGeneratedFeature(irPath: string): void {
-  runFeature(readFeature(irPath), projectSteps)
-}
 
 export function readFeature(irPath: string): IrFeature {
   const feature: unknown = JSON.parse(readFileSync(irPath, 'utf8'))

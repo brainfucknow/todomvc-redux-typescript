@@ -1,0 +1,28 @@
+{
+  // The property suite: the small runner in tiny-check.ts and the properties
+  // themselves. A fifth project rather than part of "src" for the reason
+  // acceptance/ is a fourth - it needs Node's globals for $PROPERTY_SEED, and
+  // the app must never see them.
+  //
+  // No DOM lib, deliberately. The suite may only reach
+  // src/todo-api/client.ts, which is the policy module; a property that
+  // reached the fetch transport would stop compiling here, and
+  // scripts/architecture/boundaries.spec.mjs states the same rule as an
+  // import rule.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["."]
+}

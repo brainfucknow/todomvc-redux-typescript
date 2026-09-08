@@ -3,6 +3,7 @@ import {
   completeTodoCall,
   editTodoCall,
   executeCall,
+  isTodoApiCall,
   loadTodosCall,
   removeTodoCall,
   type SendRequest,
@@ -151,6 +152,36 @@ describe('building todo API requests', () => {
     ])
     expect(call.fields).toStrictEqual({ id: 42 })
     expect(call.readsResponseBody).toBe(false)
+  })
+})
+
+describe('recognizing a todo API call', () => {
+  it('recognizes every call this module builds', () => {
+    const calls = [
+      loadTodosCall(),
+      addTodoCall('Buy milk'),
+      editTodoCall(1, 'Buy milk'),
+      completeTodoCall(1, true),
+      removeTodoCall(1),
+    ]
+
+    expect(calls.every(isTodoApiCall)).toBe(true)
+  })
+
+  it('does not recognize a message that carries no outcome names', () => {
+    expect(isTodoApiCall({ type: 'ADD_TODO', text: 'Buy milk' })).toBe(false)
+    expect(isTodoApiCall({})).toBe(false)
+    expect(isTodoApiCall({ outcomeNames: undefined })).toBe(false)
+  })
+
+  it('asks nothing about whether the names are usable, which executeCall owns', () => {
+    expect(isTodoApiCall({ outcomeNames: 'LOAD_TODO_REQUEST' })).toBe(true)
+    expect(isTodoApiCall({ outcomeNames: ['one', 'two'] })).toBe(true)
+    expect(isTodoApiCall({ outcomeNames: [] })).toBe(true)
+  })
+
+  it('throws on null, as reading the field off null always has', () => {
+    expect(() => isTodoApiCall(null)).toThrow(TypeError)
   })
 })
 

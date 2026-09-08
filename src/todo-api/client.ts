@@ -157,6 +157,22 @@ export function removeTodoCall(id: number): TodoApiCall {
 }
 
 /**
+ * Whether an arbitrary value is one of this module's calls. The caller that
+ * asks is a dispatcher deciding whether a message is ours; the answer is a
+ * question about `TodoApiCall`, which is this module's, so the answer is here
+ * rather than in a cast at the boundary.
+ *
+ * A truthy `outcomeNames` and nothing more, deliberately: whether the names are
+ * usable is `executeCall`'s question and a different answer, and widening this
+ * one would change what reaches the rest of a dispatch chain. Reading the field
+ * off `null` throws, as it did while this predicate lived inline in the
+ * middleware.
+ */
+export function isTodoApiCall(message: unknown): message is TodoApiCall {
+  return Boolean((message as Partial<TodoApiCall>).outcomeNames)
+}
+
+/**
  * Runs one call: reports that it started, sends it, and reports what became of
  * it. The started outcome is reported before the request is sent, and a call
  * that never completes is reported rather than thrown. The one thing this does

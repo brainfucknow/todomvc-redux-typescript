@@ -50,6 +50,14 @@ describe('the todo API middleware', () => {
     expect(dispatched).toStrictEqual([])
   })
 
+  it('throws on a dispatched null before anything of this task runs, as it always has', () => {
+    const { dispatched, nexted, run } = spyingStore()
+
+    expect(() => run(null)).toThrow(TypeError)
+    expect(nexted).toStrictEqual([])
+    expect(dispatched).toStrictEqual([])
+  })
+
   it('dispatches the request action, then the success action with the parsed body', async () => {
     stubFetch({ status: 200, text: () => Promise.resolve('{"id":7}') })
     const { dispatched, nexted, run } = spyingStore()

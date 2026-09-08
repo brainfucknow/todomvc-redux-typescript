@@ -12,11 +12,11 @@ import {
  * decides without exiting so it can be tested; this file supplies the
  * projects, the process, and the exit code.
  *
- * Four projects, because no file in this repository should sit outside all of
+ * Five projects, because no file in this repository should sit outside all of
  * them: the app, the QA suite, the acceptance pipeline's runtime and step
- * handlers, and the tooling - which includes this script and the gate module it
- * imports, so the thing deciding whether the project typechecks is itself
- * typechecked.
+ * handlers, the property suite, and the tooling - which includes this script
+ * and the gate module it imports, so the thing deciding whether the project
+ * typechecks is itself typechecked.
  *
  * The projects are absolute paths anchored to this script rather than found by
  * ancestor search, so the verdict is the same from any working directory. Do
@@ -28,6 +28,7 @@ const PROJECTS = [
   resolve(ROOT, 'tsconfig.json'),
   resolve(ROOT, 'qa/tsconfig.json'),
   resolve(ROOT, 'acceptance/tsconfig.json'),
+  resolve(ROOT, 'properties/tsconfig.json'),
   resolve(ROOT, 'tsconfig.tools.json'),
 ]
 
