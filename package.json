@@ -40,6 +40,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "acceptance": "node scripts/acceptance/run-acceptance.mjs",
+    "acceptance:install": "node scripts/acceptance/install-aps.mjs",
     "test:unit": "vitest run --project unit",
     "test:scripts": "vitest run --project scripts",
     "lint": "eslint . --max-warnings=0",

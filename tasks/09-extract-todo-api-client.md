@@ -235,6 +235,166 @@ the shared definitions. I built no pipeline and added no runner.
 
 ### Coder
 
+Two jobs: the acceptance pipeline, which this repository did not have, and the
+extraction. Nothing in `features/` or `qa/` was edited; both were run.
+
+**The acceptance pipeline (APS)**
+
+APS supplies the parser and the mutator and this project ships neither. What it
+now ships is the project-specific half the specification names: the entrypoint
+generator, the runtime, the step handlers, the runner adapter, and the scripts.
+
+- `scripts/acceptance/aps.mjs` finds the APS commands: `$GHERKIN_PARSER`, then
+  `$APS_BIN_DIR`, then `.aps/bin/`, then PATH. It never falls back to a
+  substitute; a missing tool is an error that names `npm run acceptance:install`.
+- `scripts/acceptance/install-aps.mjs` (`npm run acceptance:install`) builds the
+  APS Go commands from a clone of the specification repository into `.aps/bin/`,
+  which is gitignored. Babashka is absent here, so this is the documented Go
+  fallback route. `$APS_SOURCE` skips the clone; `$GO_BIN` names a Go off PATH.
+  Verified both ways: against the specifier's existing checkout, and by cloning
+  `unclebob/Acceptance-Pipeline-Specification` fresh over the network.
+- `scripts/acceptance/generate-entrypoints.mjs` is the APS
+  `acceptance-entrypoint-generator`: exactly two positional arguments, exit 0/1/2,
+  one thin Vitest entry point per feature plus
+  `metadata/<feature-metadata-name>.json` with `schema_version`, `feature_path`,
+  `ir_path`, `hash_scope: generated_files` and an `implementation_hash` computed
+  over the generated file alone. The IR does not record which feature it came
+  from, so `feature_path` is derived as `features/<ir-basename>.feature`;
+  `$ACCEPTANCE_FEATURE_PATH` overrides.
+- `acceptance/runtime.ts` expands IR into scenario executions - one per example
+  row, one for a scenario with no examples, background prepended, fresh world
+  each - resolves placeholders, and routes each step to exactly one handler.
+  Unsupported step text, ambiguous step text and a placeholder the row has no
+  value for each fail the execution.
+- `acceptance/steps/todo-api.ts` is the step vocabulary of the three features,
+  bound to `src/todo-api/client.ts` through a stand-in transport. Handlers match
+  the unexpanded step text and capture, so one handler serves every row of an
+  outline. They honour the two conventions the features declare: a `completed`
+  cell reading `null` or `undefined` is that JavaScript value, and an
+  outcome-names cell is JSON.
+- `scripts/acceptance/run-acceptance.mjs` (`npm run acceptance`) is parse ->
+  generate -> execute, rebuilding `build/acceptance/ir/` and
+  `build/acceptance/generated/` from scratch each run so a deleted feature
+  cannot leave a passing entry point behind.
+- `scripts/acceptance/runner-worker.mjs` is the runner adapter the mutator
+  drives: newline-delimited JSON jobs in, one response line out,
+  `test_success` / `test_failure` / `infrastructure_error`, stdout reserved for
+  the protocol. It runs the already-generated entry points against the IR the
+  job names via `$ACCEPTANCE_IR`; nothing is regenerated per mutation.
+
+Generated acceptance tests are separate from the unit tests by construction:
+they live under `build/acceptance/generated/` (gitignored), run through
+`vitest.acceptance.config.mts`, and are matched by neither Vitest project in
+`vite.config.mts`. `npm test` gained no acceptance file.
+
+**The extraction**
+
+- `src/todo-api/client.ts` is the testable module: it builds the five requests
+  and interprets the answers. No fetch, no console, no Redux, no DOM. A call is
+  `{ outcomeNames, fields, request, readsResponseBody }`; an outcome is
+  `{ kind, name, fields, carried }`, where `carried` is `{}`, `{ json }` or
+  `{ error }`. `executeCall(call, send, report)` reports started, sends, and
+  reports what became of it.
+- `src/todo-api/fetchTransport.ts` is the adapter and the only `fetch`. It
+  translates a request into `fetch` arguments and an answer into a status and,
+  when the call asked for it, the body as text. It re-decides nothing: whether
+  the body is read is the call's decision, and what it means is the client's.
+- `src/middlewares/callapimiddleware.ts` is now the seam only: it discriminates
+  API calls, runs them, logs a failure to the console, and dispatches
+  `{ ...fields, ...carried, type: name }`.
+- `src/actions/api.ts` is now five one-line creators over the module.
+  `ApiActionMessage` is the call, so the action creators and the middleware no
+  longer each hold half the request.
+
+Every defect the task names is preserved and specified, not fixed: the trailing
+slash on load and add against no slash per id, `json: false` on delete,
+`Expected completed to be non null` on a loose `== null`, both PATCHes sharing
+one triple, and `response.ok` never checked - the status now reaches the client
+on every answer and nothing reads it, so a 500 whose body parses still succeeds.
+
+The three behaviors the specifier flagged as outside the Gherkin all survive and
+now have unit tests of their own in `src/middlewares/callapimiddleware.spec.ts`:
+an action with no call passes to `next`, `console.error` runs before the failure
+action is dispatched, and a delete's success action still carries a `json` key
+set to `undefined` (asserted with `toStrictEqual`).
+
+One shape change worth naming: the discriminator moved from `types` to
+`outcomeNames`, because the message is now the call. Behavior is unchanged -
+anything that is not an API call still passes through - and nothing outside
+`src/actions/api.ts` and the middleware ever read `ApiActionMessage`.
+
+**Verified**
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in four projects. `acceptance/tsconfig.json` is
+  new and is now in `scripts/typecheck.mjs`; proved falsifiable by planting a
+  type error in `acceptance/steps/todo-api.ts` and watching the gate go red.
+- `npm test`: 14 files / 94 tests, up from 11 / 71. All 23 new tests are unit
+  tests, in the `unit` project: 15 for the client, 4 for the transport, 4 for
+  the middleware. No acceptance test joined this count.
+- `scripts/typecheck-gate.spec.mjs` had one test asserting the gate's exact
+  project list. Adding the fourth project turned it red, as it was written to;
+  the expected line was updated and its comment with it. That file is the
+  tooling's own test, not a QA procedure.
+- `npm run acceptance`: 3 files / 24 executions, matching the features
+  (10 + 8 + 6). Proved falsifiable four ways: a mutated example cell in the IR,
+  an unsupported step, a placeholder with no value, and two deliberate breaks in
+  `src/todo-api/client.ts` (dropping the trailing slash; never parsing a body),
+  each of which failed the run. The module was restored and re-verified.
+- Runner adapter: driven by hand over its protocol with three jobs - base IR,
+  mutated IR, malformed line - returning `test_success`, `test_failure` and
+  `infrastructure_error`, with nothing but protocol lines on stdout.
+- Generator: deterministic (two runs, identical bytes), and exits 2 on wrong
+  argument counts, 1 on a missing or non-IR input.
+- `npm run test:e2e`: 22 passed, before and after, unchanged. `test:e2e:dev` and
+  `test:e2e:preview`: 21 passed, 1 skipped each. No procedure was edited or
+  needed editing.
+
+**Left for the next roles**
+
+- Cleaner: `src/actions/api.ts` is now a thin naming layer over the client. It
+  is kept because task 10 owns the action-creator surface and deleting it would
+  move imports for every container; collapse it only if that stays true.
+- Architect: the new module boundary is `src/todo-api/` - `client.ts` (no
+  environment) and `fetchTransport.ts` (the only `fetch`). `acceptance/` imports
+  `client.ts` only, and its tsconfig has no DOM lib, so an accidental import of
+  the transport from a step handler fails the type gate rather than passing
+  quietly.
+- Hardener: for Gherkin mutation, generate into the mutation work tree first,
+  then run the mutator against it, so a job runs only the feature under
+  mutation:
+
+      node scripts/acceptance/generate-entrypoints.mjs \
+        build/acceptance/ir/todo-api-requests.json \
+        build/acceptance-mutation/generated
+      .aps/bin/gherkin-mutator --feature features/todo-api-requests.feature \
+        --generated-dir build/acceptance-mutation/generated \
+        --runner-worker "node scripts/acceptance/runner-worker.mjs"
+
+  Give the worker the `node` command directly, never `npm run`: npm writes a
+  banner to stdout and that would corrupt the protocol. Two things to expect
+  before reading them as gaps. The specifier's declared survivors (the `status`
+  columns, and the `body` columns of outcomes 2 and 3) are the specification of
+  an ignored input and must survive. Separately, in outcomes 4 the `id`, `text`
+  and `error` columns each feed both the When and the Then, so mutating one
+  changes the input and the expectation together; that scenario may have no
+  killable cell as written, which is a question for the specifier and the
+  project manager, not something to fix in a step handler.
+- QA: `npm run acceptance` needs `npm run acceptance:install` once first, and
+  that needs Go plus network. Nothing else in the repository depends on it.
+
+**Open questions for the project manager**
+
+1. Acceptance is not a CI step. `.github/workflows/nodejs.yml`'s own comment
+   argues a gate nobody runs automatically barely exists, and I agree, but
+   adding it means installing Go and cloning the APS repository on every CI run
+   - a third-party fetch inside the gate. That is a call about this project's
+   supply chain rather than about this task, so I left CI alone and recorded it
+   here.
+2. `npm test` is now 14 files / 94 tests. The pin I was given covers acceptance
+   tests staying out of that count, which they do; the growth is entirely new
+   unit tests for new code. Say the word if the number itself was meant to hold.
+
 ### Cleaner
 
 ### Architect
@@ -262,3 +422,36 @@ being run for form.
 The same route is available to the coder for the runner adapter this task
 requires: Babashka is absent, but Go is at `/usr/local/go/bin/go` and the APS
 commands build with `go build ./cmd/...`.
+
+## Project manager notes, second round
+
+**On the "11 files / 71 tests" pin.** It was the principle, not the number. What
+had to hold is that generated acceptance tests stay out of `npm test`, so the
+unit suite keeps meaning what it meant. 14 files / 94 tests is a good outcome:
+23 new unit tests, no acceptance test in the count. Later roles should read the
+pin the same way. Adding unit tests is welcome; moving acceptance tests into
+`npm test` is not.
+
+**On whether acceptance belongs in CI.** Not now, and recorded rather than
+dropped. Running it there means installing Go and cloning a third-party
+repository inside the gate, which is both a fragility and a supply-chain surface
+that the rest of this project's CI does not have. Pinning the APS clone to a
+commit would be the minimum before it could be considered.
+
+I am aware this sits badly with a line I have used repeatedly: a gate nobody
+runs automatically is close to one that cannot fail. So it does not rest on
+nothing. **Every QA role on tasks 10 through 13 runs `npm run acceptance` as part
+of its release checks**, and their briefs already name generated acceptance
+tests. It is added to task 14's scope so the CI question is numbered rather than
+forgotten.
+
+**On outcome 4 possibly having no killable cell.** Noted for the hardener. Its
+brief already says to prefer deleting a step that exposes a no-op over adding
+example columns that only assert the no-op. If it turns out the scenario cannot
+be mutated as written, that is a specifier question and I will route it, not the
+hardener's to fix by editing `features/`.
+
+**On the typecheck-gate spec expectation.** Updating it was right. That file is
+tooling's own test and its project-list assertion was written to go red exactly
+when a project is added or dropped, which is what it did. That is the test
+working, not the test being in the way.

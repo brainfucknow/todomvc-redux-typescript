@@ -102,6 +102,15 @@ typings/
 # TernJS port file
 .tern-port
 
+# Generated acceptance tests, their IR, and the mutation work tree. Derived
+# from features/ by `npm run acceptance`; never edited by hand.
+build/acceptance/
+build/acceptance-mutation/
+
+# The APS commands, built from the specification repository by
+# `npm run acceptance:install`. Platform-specific binaries, so not vendored.
+.aps/
+
 # Vite build output
 dist/
 

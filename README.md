@@ -9,9 +9,10 @@ A TodoMVC client written in TypeScript with React and Redux, built and served by
 | Build and dev server | Vite 8 (`vite.config.mts`) |
 | UI | React 19 with `createRoot` and `StrictMode` |
 | State | Redux 5 with `@reduxjs/toolkit`'s `configureStore`; `connect()` containers |
-| Data | `fetch` through a middleware, against `api/todos/` |
-| Types | TypeScript 5.9, `strict`, three projects: `tsconfig.json` for the app, `qa/tsconfig.json` for the E2E specs, `tsconfig.tools.json` for the config files and scripts |
+| Data | `src/todo-api/` builds the requests and reads the answers; `fetch` lives in one adapter, and a middleware runs the calls against `api/todos/` |
+| Types | TypeScript 5.9, `strict`, four projects: `tsconfig.json` for the app, `qa/tsconfig.json` for the E2E specs, `acceptance/tsconfig.json` for the acceptance runtime and step handlers, `tsconfig.tools.json` for the config files and scripts |
 | Unit tests | Vitest, jsdom, `@testing-library/react` |
+| Acceptance tests | Gherkin in `features/`, parsed and run through the [Acceptance Pipeline Specification](https://github.com/unclebob/Acceptance-Pipeline-Specification) |
 | End-to-end tests | Playwright against a stub backend in `qa/` |
 | Lint and format | ESLint 9 flat config (`eslint.config.js`) and Prettier (`prettier.config.js`) |
 
@@ -63,15 +64,40 @@ E2E suite under `qa/` and the Markdown documents are excluded; see
 
 ### `npm run typecheck`
 
-Type-checks all three TypeScript projects with the compiler: the application sources under `src/`, the end-to-end specs under `qa/`, and the repository's own tooling — `vite.config.mts`, the two `*.config.js` files, and `scripts/*.mjs`, which are JavaScript type-checked through their JSDoc. A diagnostic in any of them fails the check. Vite itself does not type-check while building.
+Type-checks all four TypeScript projects with the compiler: the application sources under `src/`, the end-to-end specs under `qa/`, the acceptance runtime and step handlers under `acceptance/`, and the repository's own tooling — `vite.config.mts`, `vitest.acceptance.config.mts`, the two `*.config.js` files, and `scripts/*.mjs`, which are JavaScript type-checked through their JSDoc. A diagnostic in any of them fails the check. Vite itself does not type-check while building.
 
-The three are separate projects rather than one because their environments
+The four are separate projects rather than one because their environments
 disagree: only the tooling gets `"types": ["node"]`, so Node's globals never
 reach the app's compilation.
 
 The gate is `scripts/typecheck.mjs`, and `npm run test:scripts` is what keeps it
 honest: it has reported success without checking anything three times in this
 repository's history, and there is a test for each way it did.
+
+### `npm run acceptance`
+
+Runs the Gherkin in `features/` against the code: parse, generate, execute.
+
+    features/*.feature -> gherkin-parser -> build/acceptance/ir/*.json
+                       -> scripts/acceptance/generate-entrypoints.mjs
+                       -> build/acceptance/generated/*.acceptance.test.mjs
+                       -> vitest --config vitest.acceptance.config.mts
+
+The parser is APS's, not this repository's; `acceptance/runtime.ts` and
+`acceptance/steps/` are this repository's, and both derived directories are
+rebuilt from scratch on every run. Acceptance tests are their own Vitest
+configuration and never join `npm test`: they answer a different question and
+are counted separately.
+
+### `npm run acceptance:install`
+
+Puts the APS commands where `npm run acceptance` looks for them, by building
+them from the specification repository into `.aps/bin/` (gitignored). Needs Go
+and, the first time, network access to clone. `$APS_SOURCE` points at a
+checkout that already exists; `$APS_BIN_DIR` points at commands already built.
+
+Run it once before the first acceptance run. Nothing else in this repository
+needs it.
 
 ### `npm run test:e2e`
 
@@ -95,3 +121,6 @@ cannot be delivered through an HTTP proxy.
 build, a grep that fails if `propTypes` returns to `src/`, and the end-to-end
 suite against the built app. Every step is one of the commands above, so a red
 job reproduces locally by name.
+
+`npm run acceptance` is not a CI step today: it needs a Go toolchain and a
+clone of the APS repository, neither of which the workflow sets up.

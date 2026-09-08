@@ -1,58 +1,42 @@
 import { Middleware, MiddlewareAPI } from 'redux'
+import {
+  executeCall,
+  type TodoApiCall,
+  type TodoApiOutcome,
+} from '../todo-api/client'
+import { sendWithFetch } from '../todo-api/fetchTransport'
 
-/* API action */
-export interface ApiActionMessage {
-  // Types of actions to emit before and after
-  types: [string, string, string]
-  // API request parameters:
-  callAPI: [RequestInfo, RequestInit]
-  // Arguments to inject in begin/end actions
-  payload: Record<string, unknown>
-  json: boolean
-}
+/** An API call, dispatched as an action. The action creators in `../actions/api` build them. */
+export type ApiActionMessage = TodoApiCall
 
+/**
+ * The seam between Redux and the todo API client. It runs the call the action
+ * carries, turns each outcome the client reports into an action, and does the
+ * one thing the client must not do itself: write a failure to the console.
+ *
+ * Anything that is not an API call is somebody else's action and passes
+ * through untouched.
+ */
 export const callAPIMiddleware: Middleware =
   (api: MiddlewareAPI) => (next) => (action: unknown) => {
     const message = action as Partial<ApiActionMessage>
-    if (!message.types) {
+    if (!message.outcomeNames) {
       // Normal action: pass it on
       return next(action)
     }
 
-    const { types, callAPI, payload = {}, json } = message as ApiActionMessage
-
-    if (
-      !Array.isArray(types) ||
-      types.length !== 3 ||
-      !types.every((type) => typeof type === 'string')
-    ) {
-      throw new Error('Expected an array of three string types.')
-    }
-    const [requestType, successType, failureType] = types
-    api.dispatch(
-      Object.assign({}, payload, {
-        type: requestType,
-      }),
+    return executeCall(message as ApiActionMessage, sendWithFetch, (outcome) =>
+      dispatchOutcome(api, outcome),
     )
-    return fetch(callAPI[0], callAPI[1])
-      .then((response: Response) => {
-        return json ? response.json() : undefined
-      })
-      .then((body: unknown) => {
-        return api.dispatch(
-          Object.assign({}, payload, {
-            json: body,
-            type: successType,
-          }),
-        )
-      })
-      .catch((error: unknown) => {
-        console.error(error)
-        api.dispatch(
-          Object.assign({}, payload, {
-            error,
-            type: failureType,
-          }),
-        )
-      })
   }
+
+function dispatchOutcome(api: MiddlewareAPI, outcome: TodoApiOutcome) {
+  if (outcome.kind === 'failed') {
+    console.error(outcome.carried.error)
+  }
+  api.dispatch({
+    ...outcome.fields,
+    ...outcome.carried,
+    type: outcome.name,
+  })
+}

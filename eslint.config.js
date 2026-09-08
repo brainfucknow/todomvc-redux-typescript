@@ -57,7 +57,7 @@ const vitestGlobals = Object.fromEntries(
 
 module.exports = tseslint.config(
   {
-    ignores: ['dist/', 'coverage/', 'qa/.artifacts/'],
+    ignores: ['dist/', 'coverage/', 'qa/.artifacts/', 'build/', '.aps/'],
   },
 
   // The application.
@@ -106,9 +106,21 @@ module.exports = tseslint.config(
     },
   },
 
+  // The acceptance pipeline's runtime and step handlers. Node, never a browser
+  // bundle, and no React: they drive src/ through its own module boundary.
+  {
+    files: ['acceptance/**/*.ts'],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: globals.node,
+    },
+  },
+
   // Loose files at the root that belong to no tsconfig project.
   {
-    files: ['vite.config.mts', 'scripts/**/*.mjs'],
+    files: ['*.mts', 'scripts/**/*.mjs'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,

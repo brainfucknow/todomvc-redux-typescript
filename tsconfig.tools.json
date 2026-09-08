@@ -28,6 +28,7 @@
   },
   "include": [
     "vite.config.mts",
+    "vitest.acceptance.config.mts",
     "eslint.config.js",
     "prettier.config.js",
     "scripts/**/*.mjs"
