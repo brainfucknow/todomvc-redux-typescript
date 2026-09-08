@@ -581,6 +581,139 @@ apart from these changes.
    project, and no acceptance test joined the count - but it is the second task
    in a row to move that number, so I am naming it rather than assuming.
 
+### Coder (repair: runner false kill)
+
+The false kill the cleaner recorded is fixed. `scripts/acceptance/` only; no
+`src/`, `qa/` or `features/` file was touched, and no acceptance test's
+assertions changed.
+
+**Reproduced first, on the unrepaired adapter**
+
+Driven over the protocol exactly as the mutator drives it - three jobs on
+stdin, three responses on stdout:
+
+    id=baseline   outcome=test_success
+    id=empty-dir  outcome=test_failure   | No test files found, exiting with code 1
+    id=typo-dir   outcome=test_failure   | No test files found, exiting with code 1
+
+`empty-dir` pointed `generated_dir` at an empty directory, `typo-dir` at
+`build/acceptance/generatd`. Both reported the outcome that kills a mutation
+while running nothing, so a whole run against a mis-spelled directory would
+have scored 100%.
+
+Two more ways to reach the same false kill, both found while fixing it and both
+of which the mutator can produce on its own:
+
+- an IR mutated down to `"scenarios": []` - valid IR, three generated files
+  load, zero tests are declared, Vitest exits 1;
+- a generated file that throws while being collected - one file, zero tests,
+  exit 1.
+
+**The fix**
+
+Vitest's exit code cannot answer "did a test fail", because 1 covers both a
+failing test and no test file at all. So the worker now asks the run what it
+ran: it passes `--reporter=default --reporter=json --outputFile.json=<scratch>`
+and reads the JSON report back, and `classifyRun(run, report)` classifies on
+both. The rule is one sentence - **a kill requires a test that ran and
+failed**:
+
+- no readable report, or an exit code that is neither 0 nor 1 -> infrastructure
+- `ran === 0` -> infrastructure, whatever the exit code, worded by what
+  happened: `no test files matched, so nothing ran` when nothing was collected,
+  `N test files matched, but no test ran` when files loaded and declared none
+- exit 0 with tests -> `test_success`
+- exit 1 with a failing test -> `test_failure`
+- exit 1 with no failing test -> infrastructure
+
+`readRunReport(json)` (new, in `runner-protocol.mjs`) reads the reporter's
+`numTotalTests`, `numFailedTests` and `testResults` into `{ran, failed, files}`
+and returns `undefined` for anything it cannot read whole - a half-read report
+is treated as no report, not as a result. The report path is per worker process
+and per job, and the file is deleted after it is read, so parallel workers do
+not share one and none is left behind.
+
+The split the cleaner made is kept: `runner-protocol.mjs` decides and spawns
+nothing, `runner-worker.mjs` is stdin, `spawnSync`, a file read, stdout.
+
+**TDD**
+
+Tests first: eight new assertions in `scripts/acceptance/runner-protocol.spec.mjs`
+went red against the old adapter (the false-kill case failed with
+`test_failure` where `infrastructure_error` was expected), then the protocol
+change turned them green. The spec is 22 tests, up from 14; the existing
+success/failure cases now pass a report alongside the exit code, which is the
+only change to what they assert.
+
+**Verified, after the last edit**
+
+- The four outcomes the brief asks for, driven over the protocol end to end:
+  baseline IR -> `test_success` (3 files, 30 tests); empty `generated_dir` and
+  mis-spelled `generated_dir` -> `infrastructure_error`, `no test files
+  matched, so nothing ran`; IR with the trailing slash mutated out ->
+  `test_failure` (3 of 30 tests failed); `"scenarios": []` ->
+  `infrastructure_error`, `3 test files matched, but no test ran`; an
+  uncollectable generated file -> `infrastructure_error`, `1 test file
+  matched, but no test ran`; a `feature_json` that does not exist ->
+  `infrastructure_error`. Nothing but protocol lines on stdout; no scratch
+  report left in the temp directory.
+
+  Reproduce the first two with:
+
+      mkdir -p /tmp/empty-gen
+      printf '%s\n' \
+        '{"id":"empty","feature_json":"build/acceptance/ir/todo-api-requests.json","generated_dir":"/tmp/empty-gen"}' \
+        '{"id":"base","feature_json":"build/acceptance/ir/todo-api-requests.json"}' \
+        | node scripts/acceptance/runner-worker.mjs
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in four projects.
+- `npm test`: 15 files / 116 tests, up from 15 / 108. The 8 new tests are all
+  in the `scripts` project; `npm run test:unit` is 13 files / 78 tests,
+  unchanged, and no acceptance test joined the count.
+- `npm run acceptance`: 3 files / 24 executions, unchanged.
+- `npm run test:e2e`: 22 passed. `test:e2e:dev`, `test:e2e:preview`: 21 passed,
+  1 skipped each.
+
+**The baseline safeguard: the hardener's procedure, not this adapter**
+
+The cleaner's second suggestion - that a run's first job must report
+`test_success` against unmutated IR - belongs in the mutation procedure, and I
+did not put it in code.
+
+- Not the adapter. It is told one job at a time and is never told which IR is
+  the original, so enforcing this would mean holding run-level state and
+  guessing which job is the baseline - an adapter re-deciding a question that
+  is not its own. The nearest thing it could do instead, comparing each job's
+  test count against the first job's, would be wrong: a mutation that drops an
+  example row legitimately lowers the count.
+- Not a run script, because this repository has none for mutation. The
+  hardener drives `gherkin-mutator --runner-worker ...` itself; writing a run
+  script now would be writing the hardener's procedure for it, ahead of the
+  role that owns it.
+- So: the hardener's procedure. It is the role that configures a run, and the
+  baseline claim is about a run's configuration. The check is one job over the
+  same worker, exactly the `id=base` line in the command above, and it must
+  answer `test_success` before any kill count from that run is believed. That
+  requirement is now written into the worker's own doc comment, next to the
+  protocol it implements, so the next person to drive it reads it there.
+
+**Left for the next roles**
+
+- Hardener: run the baseline job above before the mutation run, and treat any
+  `infrastructure_error` in a run's responses as a run to investigate rather
+  than a mutant to score. `infrastructure_error` now appears for real
+  misconfiguration where a kill used to appear silently, so a first run may
+  surface configuration this project has never had to notice.
+- One thing I considered and did not do: refusing a job whose `feature_json`
+  does not exist before spawning Vitest. It already reports
+  `infrastructure_error` (verified above), so this is diagnostics, not
+  correctness - the message would name the missing IR instead of saying no test
+  ran. Cheap if a later role wants it; out of scope for a repair.
+- `scripts/acceptance/aps.mjs`, `run-acceptance.mjs`, `install-aps.mjs` and
+  `generate-entrypoints.mjs` are still shells with no spec, as the cleaner left
+  them.
+
 ### Architect
 
 ### Hardener

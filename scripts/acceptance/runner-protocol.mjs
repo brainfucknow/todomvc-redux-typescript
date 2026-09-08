@@ -12,7 +12,10 @@
  *
  * The mutator reads the outcome, not the exit code: `test_failure` is what
  * kills a mutation, so mistaking one outcome for another is how a mutation run
- * reports a score it never measured.
+ * reports a score it never measured. Vitest's exit code cannot answer that on
+ * its own - it exits 1 both for a failing test and for finding no test file to
+ * run - so the run's own report of what it ran is read alongside it, and a
+ * kill requires a test that ran and failed.
  */
 
 /** @typedef {'test_success' | 'test_failure' | 'infrastructure_error'} Outcome */
@@ -42,6 +45,16 @@ export const INFRASTRUCTURE_ERROR = 'infrastructure_error'
  * @property {number | null} [status]
  * @property {NodeJS.Signals | null} [signal]
  * @property {Error} [error]
+ */
+
+/**
+ * What a run reported having run, from Vitest's JSON reporter. A mutation is
+ * killed by a test, so how many there were is part of what the run means.
+ *
+ * @typedef {object} RunReport
+ * @property {number} ran tests that executed
+ * @property {number} failed of those, how many failed
+ * @property {number} files test files the run collected
  */
 
 /**
@@ -81,23 +94,75 @@ export function readJob(line) {
 }
 
 /**
- * What a finished run means. Only the two exit codes Vitest uses to report on
- * tests are read as a test result; anything else is infrastructure, including
- * a run that was killed before it could report.
+ * What Vitest's JSON reporter wrote, as counts. A report missing any of the
+ * three counts is no report: reading a run needs all of them, and guessing at
+ * a missing one is how a run that never happened reads as a result.
+ *
+ * @param {string} json
+ * @returns {RunReport | undefined}
+ */
+export function readRunReport(json) {
+  let report
+  try {
+    report = JSON.parse(json)
+  } catch {
+    return undefined
+  }
+
+  const ran = report?.numTotalTests
+  const failed = report?.numFailedTests
+  const files = report?.testResults
+  if (typeof ran !== 'number') return undefined
+  if (typeof failed !== 'number') return undefined
+  if (!Array.isArray(files)) return undefined
+
+  return { ran, failed, files: files.length }
+}
+
+/**
+ * What a finished run means. A run is a test result only when it says which
+ * tests it ran: a run that matched no test file, or matched files that
+ * declared no test, exits 1 exactly as a failing test run does, and calling
+ * that a `test_failure` would report every mutant killed while executing
+ * nothing.
  *
  * @param {FinishedRun} run
+ * @param {RunReport | undefined} report what the run said it ran
  * @returns {{outcome: Outcome, error: string}}
  */
-export function classifyRun(run) {
-  if (run.error) {
-    return { outcome: INFRASTRUCTURE_ERROR, error: run.error.message }
+export function classifyRun(run, report) {
+  if (run.error) return infrastructure(run.error.message)
+  if (run.signal) return infrastructure(`killed by ${run.signal}`)
+  if (run.status !== 0 && run.status !== 1) {
+    return infrastructure(`vitest exited ${run.status}`)
   }
-  if (run.signal) {
-    return { outcome: INFRASTRUCTURE_ERROR, error: `killed by ${run.signal}` }
+  if (!report) {
+    return infrastructure(`vitest exited ${run.status} without a test report`)
   }
+  if (report.ran === 0) return infrastructure(nothingRan(report))
   if (run.status === 0) return { outcome: TEST_SUCCESS, error: '' }
-  if (run.status === 1) return { outcome: TEST_FAILURE, error: '' }
-  return { outcome: INFRASTRUCTURE_ERROR, error: `vitest exited ${run.status}` }
+  if (report.failed === 0) {
+    return infrastructure('vitest exited 1 with no failing test')
+  }
+  return { outcome: TEST_FAILURE, error: '' }
+}
+
+/**
+ * @param {RunReport} report
+ * @returns {string}
+ */
+function nothingRan({ files }) {
+  if (files === 0) return 'no test files matched, so nothing ran'
+  const plural = files === 1 ? 'file' : 'files'
+  return `${files} test ${plural} matched, but no test ran`
+}
+
+/**
+ * @param {string} error
+ * @returns {{outcome: Outcome, error: string}}
+ */
+function infrastructure(error) {
+  return { outcome: INFRASTRUCTURE_ERROR, error }
 }
 
 /**

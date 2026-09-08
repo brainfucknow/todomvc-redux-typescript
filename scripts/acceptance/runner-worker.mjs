@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { ROOT } from './aps.mjs'
@@ -7,6 +8,7 @@ import {
   INFRASTRUCTURE_ERROR,
   classifyRun,
   readJob,
+  readRunReport,
   response,
 } from './runner-protocol.mjs'
 
@@ -19,12 +21,24 @@ import {
  * A job runs the already-generated entry points against the IR the job names,
  * which is what $ACCEPTANCE_IR is for - nothing is regenerated per mutation.
  *
+ * Each run also writes a JSON report to a scratch file, because Vitest's exit
+ * code does not say whether any test ran and its code 1 covers both a failing
+ * test and no test file at all. The report is read, then deleted.
+ *
+ * Whether a whole run is configured right is not a question one job can
+ * answer: the worker is told one job at a time and never which IR is the
+ * unmutated one. The mutation procedure asks it instead, by running this
+ * worker against the original IR first and requiring `test_success` before
+ * any kill count from that run is believed.
+ *
  * Stdout carries protocol lines only. Everything else goes to stderr.
  *
  * Start it with: gherkin-mutator --runner-worker "node scripts/acceptance/runner-worker.mjs"
  */
 
 const VITEST = join(ROOT, 'node_modules/vitest/vitest.mjs')
+
+let jobsRun = 0
 
 createInterface({ input: process.stdin }).on('line', (line) => {
   if (line.trim() === '') return
@@ -54,10 +68,22 @@ function respond(line) {
     })
   }
 
+  const reportPath = join(
+    tmpdir(),
+    `aps-runner-${process.pid}-${++jobsRun}.json`,
+  )
   const started = process.hrtime.bigint()
   const run = spawnSync(
     process.execPath,
-    [VITEST, 'run', '--config', 'vitest.acceptance.config.mts'],
+    [
+      VITEST,
+      'run',
+      '--config',
+      'vitest.acceptance.config.mts',
+      '--reporter=default',
+      '--reporter=json',
+      `--outputFile.json=${reportPath}`,
+    ],
     {
       cwd: ROOT,
       encoding: 'utf8',
@@ -71,7 +97,7 @@ function respond(line) {
       },
     },
   )
-  const { outcome, error } = classifyRun(run)
+  const { outcome, error } = classifyRun(run, takeReport(reportPath))
 
   return response({
     id: job.id,
@@ -80,4 +106,19 @@ function respond(line) {
     error,
     duration: Number(process.hrtime.bigint() - started),
   })
+}
+
+/**
+ * @param {string} reportPath
+ * @returns {ReturnType<typeof readRunReport>} what the run said it ran, if it
+ *   left a readable report behind
+ */
+function takeReport(reportPath) {
+  try {
+    return readRunReport(readFileSync(reportPath, 'utf8'))
+  } catch {
+    return undefined
+  } finally {
+    rmSync(reportPath, { force: true })
+  }
 }
