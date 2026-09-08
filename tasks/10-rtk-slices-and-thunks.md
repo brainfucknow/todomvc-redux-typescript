@@ -1794,6 +1794,303 @@ None blocking. Four recorded rather than guessed at silently.
 
 ### QA
 
+Final independent verification. Every gate passes at the stated baselines and I
+changed no file in the repository: the tree is clean and nothing under `qa/`,
+`features/`, `src/`, `acceptance/`, `properties/`, `hardening/` or `scripts/`
+was edited. What follows is what I checked and the three findings it turned up,
+none of which is a failing gate and none of which I fixed.
+
+**The branch moved under me, and I left it alone**
+
+The hardener's note ends "my changes are in the working tree". They are not: the
+branch is at `9136aac`, "Mutation-harden the slices and test the architect's
+id-rule claim", which is that work committed, and the working tree was clean
+when I started. That is the fourth role in a row to report this, which is now a
+pattern rather than an accident and probably wants saying once at the plan
+level. I committed nothing and reset nothing.
+
+**1. Behavior preservation, measured independently at 320 scripts**
+
+I did not reuse the coder's harness; I rebuilt the method and widened it. The
+pre-change modules come from `git archive a268541 src` into a scratch tree, both
+stores are built in one Node process over one `globalThis.fetch` stub, and both
+therefore go through the same `sendWithFetch` - which is byte-identical across
+this change, as is `src/todo-api/client.ts`, so the wire layer is shared and any
+difference in what is sent comes from how the calls are made.
+
+Both pipelines are driven through the eight names `src/actions/index.ts`
+exports, which is the only surface the app uses. **320 scripts**: 20 written by
+hand for the cases worth naming, and 300 generated from a seeded RNG over the
+eight operations, six texts, six ids including a negative one, ten response
+bodies including `null`, `"a string"`, `{"id":0}`, unparseable bytes and the
+empty body, and four statuses including 404 and 500 - with starts and answers
+interleaved so operations overlap, answers arrive out of order, and local edits
+land while calls are in flight.
+
+After every step and again after settlement I compared: the wire requests (url,
+method, headers, body, **and whether the response body was read**), the whole
+state, the selector's output, every `console.error` argument, and every error
+thrown or rejected. Two things had to be handled before the comparison meant
+anything, and both are recorded rather than filtered away:
+
+- Redux Toolkit's two non-serializable warnings are emitted by the old store and
+  not the new one, exactly as task 07 predicted and this task accepts, so they
+  are counted apart from the pipeline's own `console.error`, which still matches
+  argument for argument in all 320.
+- The old selector throws when a load answered with a non-array leaves
+  `state.todos` un-iterable. That is pre-existing in both, so what it throws is
+  compared rather than allowed to end the run.
+
+**The surface a user can see - `todos`, `visibilityFilter`, `getVisibleTodos`
+and every wire request - is identical in all 320 scripts.** So is the app's own
+`console.error`. That is the claim this task rests on and it now has 320
+executions behind it rather than 15. The stray `console.log('action', action)`
+is loud in the old tree throughout the run and absent from the new one, which is
+the done criterion demonstrated rather than read.
+
+Six scripts disagreed, and all six are one thing. See finding 1.
+
+**2. The two accepted changes are exactly what was claimed**
+
+Both driven differentially and asserted clause by clause, not read off a note.
+
+- `state.errorMessage` on a failed load: before, an `Error` instance
+  (`value instanceof Error` true, `name` `TypeError`); after, a plain object
+  whose keys are exactly `['name','message','stack']`, same `name`, same
+  `message`, `instanceof Error` false, and it survives a JSON round trip
+  unchanged. Exactly the claim.
+- `dispatch(anApiAction)`: the old pipeline resolves to `undefined`; the new one
+  resolves to `{type:'todos/load/fulfilled', payload:[...]}` on a success and to
+  the `todos/load/rejected` action on a failure, and never rejects. Exactly the
+  claim.
+
+**I verified the "nothing reads either" claim rather than accepting it.** Across
+every tracked file: no `state.errorMessage` or `state.exec` reader exists
+outside `src/reducers/` and `combineReducers`; the containers and selectors read
+only `state.todos` and `state.visibilityFilter`; and the single grep hit for a
+dispatch result, `src/actions/index.spec.ts:62`, is `await dispatch(store)`
+where `dispatch` is that test's own parameter name for a function taking a
+store, not a dispatch result. `unwrap` appears nowhere outside this task file.
+The four component call sites all discard. The claim holds.
+
+Two smaller "nothing changed" claims I also demonstrated rather than took:
+`exec`'s key order changed in the cleaner's rewrite, and nothing anywhere
+stringifies the store's state, so it reaches nobody; and `qa/`'s only matches
+for `errorMessage` are Playwright trace artifacts under the gitignored
+`qa/.artifacts/`, not procedure text.
+
+**3. Three findings. None is a failing gate; none is mine to fix**
+
+*Finding 1 - a reducer that throws while handling a settled operation is
+recorded by the old pipeline and unobserved by the new one.* This is what all
+six disagreeing scripts are.
+
+Old: the dispatch happened inside the report callback that `executeCall` calls,
+so a throw from a reducer was caught by `executeCall` and reported as a failed
+call - `console.error`, a FAILURE action, the error in `state.errorMessage`, and
+the in-flight flag cleared. New: `runCall`'s callback only pushes to an array,
+and the dispatch happens later inside Redux Toolkit's thunk, outside that catch.
+The throw becomes a rejected thunk promise that nobody observes:
+`state.errorMessage` stays null, nothing is logged, and `state.exec` keeps the
+operation marked in flight forever.
+
+Five of the six need `state.todos` to be a non-array already. **The sixth does
+not, and it is the one that matters**: answer an add with the body `null` and
+the list is still a well-formed array with a `null` in it, because
+`addTodoOperation.fulfilled` appends `action.payload` unexamined - the coupling
+the architect recorded as "the reducer trusting the backend is the current
+specified behavior". Any settled edit, mark or delete after that throws inside
+the reducer. `state.todos` is identical in old and new throughout; what differs
+is two values nothing reads, one console line, and one unobserved rejection.
+
+**This narrows the floating-promise answer this task inherited.** The coder
+checked `unhandledRejection` with a failing *transport* and found nothing
+leaked, which is true and which I reproduce. But the conclusion drawn from it -
+that a rewrite which does not call `.unwrap()` has no unobserved rejection to
+leak - is too strong. With `process.on('unhandledRejection')` armed and every
+dispatch discarded the way the four call sites discard, the new pipeline reports
+`Cannot read properties of null (reading 'id')` as unhandled and the old
+pipeline reports nothing, because the old middleware had no way to produce one.
+Task 06 declined the lint rule that watches for this; this is the first place
+the decision has cost something concrete, and it is worth the plan knowing.
+
+Not fixed, deliberately. Every available fix is a behavior change on a path no
+feature specifies - restore the catch-and-record, validate what the backend
+sends, or leave it - and this task may not change behavior. **Owner: the project
+manager, to route.** It is the same class as the `isRejected` difference the
+architect found: latent, not live, and now written down where it can be read.
+
+*Finding 2 - a gate gap the mutation scan could not reach.* In
+`src/reducers/todos.ts`, replacing `action.meta.arg.id` with `action.payload.id`
+in `editTodoOperation.fulfilled` or `completeTodoOperation.fulfilled` **survives
+`npm test`, `npm run properties`, `npm run hardening` and `npm run acceptance`
+together** - and my differential calls it a divergence in `state.todos`, so it
+is user-visible. The old reducer keyed off `action.id`, which came from the
+call's own fields, so `meta.arg.id` is the faithful translation and
+`payload.id` is a change.
+
+It survives because every scenario and every unit test answers a PATCH with a
+todo whose `id` equals the one asked for; nobody ever answers with a different
+id. Stryker cannot generate it - swapping one property access for another is not
+one of its operators - so this is a real survivor that no tool in the chain
+would have shown. The same class is killed everywhere else I probed: a delete
+keyed off a constant, and `executing`'s per-id map keyed off a constant, both
+die. **Owner: the hardener**, as a survivor their scan could not produce; the
+cheaper fix is the specifier's, one differing `id` in a `todo-state-operations`
+answer.
+
+*Finding 3 - one clause of the architect's predicate analysis is wrong.* The
+architect wrote that under `isRejected`, "a rejected thunk carrying no error
+would record `undefined`". It does not. A `createSlice` case reducer that
+returns `undefined` leaves the state unchanged - that is immer's contract, not a
+special case - so a rejected thunk with no `error` key leaves the record exactly
+as it was. The other clause is right and I confirmed it: a hand-built action
+carrying an error but no rejected-thunk metadata is now ignored where it used to
+be recorded, which is the half the difference actually turns on and the half the
+new property drives. So the correction the architect made to the project
+manager's note stands; only this sub-clause does not.
+
+**4. The new verification code, checked for false greens**
+
+This project has found six of those, so I treated the new gates as suspect and
+tried to make each one fail.
+
+- **The two new boundary rules: all 16 denied patterns killed, one at a time.**
+  I blanked each pattern of `the state layer knows no UI and no transport` (10)
+  and `the UI reaches the state layer only through actions and selectors` (6)
+  individually and ran `npm run hardening`. Every one goes red. The hardener's
+  fix for the glob-trap survivors is real and complete, verified pattern by
+  pattern rather than accepted. `boundaries.spec.mjs` survives all 16, which is
+  correct and is exactly why the planted violations have to exist: a conforming
+  repository cannot fail a weakened rule.
+- **The widened acceptance allow list: all five new entries killed.** Blanking
+  `src/store`, `src/actions/*`, `src/selectors`, `src/models/*` or
+  `src/constants/*` turns `npm run hardening` red. The coder offered this as an
+  untested gap and the architect said they closed it; they did.
+- **The properties can fail, and on the case that is their reason for
+  existing.** I reproduced the hardener's decisive row rather than reading it:
+  `nextId` correct below three todos and `max + 2` from three up leaves `npm
+  test` green and `npm run acceptance` green and turns `npm run properties` red.
+  The architect's argument for keeping the four uncalled branches rests on that,
+  and it holds.
+- **The acceptance runner really awaits settlement.** Dropping `await
+  operation.done` from `settle` turns the suite red, so the two-phase lifecycle
+  scenarios are not vacuous - the operation is genuinely in flight between `the
+  app starts` and `the backend answers`.
+- **The E2E suite catches the one thing only it can see.** Adding an optimistic
+  `completeTodoOperation.pending` case to the todos slice turns
+  `qa/tests/19-toggle-failure.spec.ts` red. "Same moment of update" is gated
+  through the UI, not only by prose.
+- **The declared equivalent mutant is equivalent.** Seeding `runCall`'s
+  `reported` accumulator with a junk outcome leaves the unit suite, the
+  acceptance suite and my 320-script differential all green. The hardener's
+  declaration is correct.
+- Other source mutations I tried, all killed: `resetErrorMessage` returning the
+  held record, `visibilityFilter` starting on active, `createTodoStore` ignoring
+  `preloadedState`.
+- **One probe of mine was wrong-headed and I am recording it so nobody repeats
+  it.** I first mutated the acceptance *assertions* to no-ops and read the green
+  suite as a false green. It is not: removing an assertion from a passing suite
+  keeps it passing by construction. Assertion mutation says nothing; only source
+  mutation does. The one assertion-side mutation that is meaningful is the
+  sequencing one above, because it changes when the assertion runs rather than
+  whether it asserts.
+
+**5. The refusals and corrections, judged**
+
+- *The architect keeping the four uncalled branches:* right, and for the right
+  reason. `src/actions/index.ts` is a switchboard that picks a decider per name;
+  the branches are the other implementation behind a seam that exists, not dead
+  code, and `nextId` has no other caller - I checked - so deleting them deletes
+  the only id allocation in the codebase. The project manager had already ruled
+  the same way.
+- *The architect testing the widening on the merits rather than recording it:*
+  right, and now checkable, which is the part that matters.
+- *The hardener constructing a specific wrong implementation instead of
+  accepting the architect's id-rule claim:* right, and the right method.
+  Reproduced above.
+- *The architect rejecting the `prepare` alternative:* the decision is fine and
+  is gated from both sides, but the stated reason is weaker than it reads. The
+  argument is that a zero-argument `prepare` would put a fact about React inside
+  the policy slice. What such a `prepare` actually declares is "this action
+  carries no payload", which is a domain fact - and `editTodo` and
+  `completeTodo` in that same slice already use `prepare` for arity. So the
+  alternative was more available than the note suggests. Not a finding to act
+  on: the chosen shape works, the property and the new rule hold it, and either
+  design would have needed a gate.
+
+**6. The E2E procedures needed no editing, and none should have**
+
+All 21 procedures and their 21 test files are untouched across the whole task -
+`git log a268541~1..HEAD -- qa/` is empty. They should not have changed: the
+visible surface is identical in 320 differential scripts, no UI was added, and
+procedures 16 to 20 still assert the absence of error UI, which is still absent.
+Procedure 09's note - the checkbox moves only after the backend answers - is
+still true and is the one I proved is enforced. Nothing to ask about.
+
+**CRAP gate and DRY**
+
+Complexity from ESLint's own rule as a gate over `src`, `acceptance`,
+`properties`, `hardening` and `scripts`: `--rule '{"complexity":["error",{"max":10}]}'`
+exits 0, so nothing in the repository is over. The highest anywhere is
+`classifyRun` at 9 (pre-existing, `scripts/acceptance/runner-protocol.mjs`), the
+highest in `src/` is 4, and the hardener's `actionsOf` is 6. Coverage
+re-measured with `@vitest/coverage-v8@5.0.0` installed `--no-save`: `src/` at
+95.27 / 86.53 / 97.47, the cleaner's and hardener's figures to the digit, and
+`src/reducers/**`, `src/actions/**` and `src/store/**` together at **100% of 117
+statements, 4 branches and 60 functions**. So CRAP is complexity for everything
+this task owns, and the worst of it is 4 against a gate of 10. `package.json`
+md5 `4fad73d5...` and `package-lock.json` md5 `29184ac9...` verified identical
+before, during and after; finished with `npm ci` and the provider is gone again.
+DRY: I authored nothing that survives, so there is nothing of mine to dry.
+
+**Verified**
+
+Every command run from the working tree as it stands, after `npm ci`, with the
+tree clean.
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in six projects.
+- `npm test`: 19 files / 165 tests.
+- `npm run acceptance`: 7 files / 57 executions.
+- `npm run properties`: 6 files / 48. `npm run hardening`: 7 files / 59.
+- `npm run test:e2e`: 22 passed. `test:e2e:dev` and `test:e2e:preview`: 21
+  passed, 1 skipped each. The full regression suite from `qa/procedures/` runs
+  green against the built app, the dev server and the preview server.
+- My differential harness lived in `build/qa-differential/` and is deleted, for
+  the reason the coder deleted theirs: `build/` is only partly gitignored and a
+  copy of the pre-change tree does not belong in the working tree. The method is
+  described above in enough detail to rebuild, and the six disagreeing generated
+  scripts are reproducible by seed - the generator is `seed = index * 7919 + 13`
+  through a 32-bit LCG, and the scripts are 109, 162, 193, 197, 205 and 252.
+
+Branch `claude/react-modernization-plan-u7dgen` at `9136aac`; nothing committed,
+nothing reset, working tree clean.
+
+**Open questions for the project manager**
+
+None blocking; the task's done criteria are all met and every gate is green.
+Three recorded rather than guessed at.
+
+1. **Finding 1 needs a routing decision.** A reducer that throws on a settled
+   operation used to become a recorded failure and now becomes an unobserved
+   promise rejection with the operation stuck in flight. It is unspecified
+   behavior on both sides, nothing a user can see moves, and the reachable case
+   needs the backend to answer an add with `null`. If it should be specified,
+   that is the specifier's; if it should be left, it wants a line somewhere so
+   the next role does not rediscover it. I did not choose.
+2. **Finding 2 leaves a real survivor in the tree.** `action.meta.arg.id` versus
+   `action.payload.id` on a settled edit or mark is unpinned by every suite. One
+   answer with a differing `id` in `todo-state-operations`, or one unit test,
+   closes it. Whose it is depends on whether you read it as a specification gap
+   or a hardening gap; I would say the hardener's, since it is a survivor rather
+   than a missing claim, but their tool could not have produced it.
+3. **The branch has moved under four consecutive roles**, each of whom reported
+   it and left it alone, and each of whose "nothing committed" line is therefore
+   false by the time the next role reads it. The handling has been right every
+   time. It is the note that is wrong, and it will keep being wrong on tasks 11
+   to 13 unless the chain says who commits.
+
 ## Project manager notes
 
 **On the specifier's three questions, all answered so none blocks the coder.**
@@ -1943,3 +2240,41 @@ re-derives a fact the domain already knows, the strongest being
 `MainSection.tsx:17` re-deriving "are all marked" that `completeAllTodos`
 already computes. That is task 13's central job and it now has a concrete list
 rather than a description.
+
+## Project manager notes, fifth round
+
+**Finding 1 is a behavior regression and is routed for repair.** A reducer that
+throws while handling a settled operation used to be recorded: the dispatch sat
+inside `executeCall`'s catch, so the throw became a recorded failure. It now
+escapes as an unhandled promise rejection, `errorMessage` stays null, and `exec`
+stays stuck in flight. QA reached it with a well-formed array state by answering
+an add with the body `null`.
+
+No gate caught this, and the reason is worth stating: the coder checked for
+floating promises with `unhandledRejection` armed while all five operations
+failed **at the transport**, and concluded there were none. That conclusion was
+too strong for the question. A transport failure is the path `createAsyncThunk`
+is designed to absorb; a reducer throw is not. The check tested the case that
+was already safe.
+
+This task's whole contract is that behavior is preserved, so it is in scope.
+
+**Finding 2 is a coverage gap in code that is correct.** Reading
+`action.meta.arg.id` rather than `action.payload.id` in the two PATCH fulfilled
+handlers is right, but nothing distinguishes them, because nothing ever answers
+a PATCH with a differing id. Stryker cannot even generate that mutant. QA's
+differential calls the swap a user-visible divergence, so a test should pin it.
+
+Both go to one coder together: they are the same file and the same seam.
+
+**Finding 3, and a correction to a correction.** The architect's predicate
+analysis had one wrong sub-clause: a rejected thunk with no `error` does not
+record `undefined`, because immer treats an `undefined` return as "unchanged".
+The main correction it made to my note still stands. Recorded so the chain of
+corrections stays accurate rather than compounding.
+
+**On QA recording a wrong-headed probe of its own.** It tried mutating
+assertions to no-ops and noted that this proves nothing, since removing an
+assertion from a passing suite keeps it passing. Worth keeping in the record:
+this project has spent a lot of effort on gates that cannot fail, and the
+inverse error, a probe that cannot detect, is just as easy to make.
