@@ -1521,3 +1521,43 @@ those reducers into slices, so properties written now would be written against
 code that is about to be replaced, and the task file already asks that task to
 keep the id-allocation and toggle-all invariants under dedicated tests. Task 10
 inherits the runner.
+
+## Project manager notes, fifth round
+
+**Ruling: `gherkin-mutator` may write its manifest into `features/*.feature`.**
+The hardener was right to flag it and right not to strip it. The manifest is a
+delimited, tool-generated block (`acceptance-mutation-manifest-begin/end`)
+carrying hashes and per-scenario results. It is APS's own differential
+mechanism, and the shared definitions say to preserve manifests and never
+hand-edit them.
+
+So ownership of `features/` splits by kind, not by file. The specifier owns
+every authored line: scenario text, tables, comments, names. The hardener's tool
+owns the manifest block. Neither edits the other's. A role that needs an
+authored line changed asks the specifier; a role that finds a stale manifest
+re-runs the tool rather than correcting it by hand.
+
+**On `npm run hardening` and `npm run properties` in CI.** Both are ordinary
+Vitest runs needing nothing `npm ci` does not already install; I confirmed
+Stryker is absent from `node_modules` and `npm run hardening` passes anyway.
+Stryker is needed only to *generate* mutants, not to run the hardening tests
+that resulted. So these two are not in the same position as acceptance, which
+needs Go and a third-party clone, and I am not deferring them to task 14. A
+coder is wiring them in now.
+
+That leaves exactly three commands outside CI, for stated reasons: `acceptance`
+(Go plus an unpinned clone), the Stryker mutation runs themselves (an unpersisted
+dependency), and the dev and preview E2E variants (deliberately, per task 08).
+
+**On persisting Stryker.** Task 14, with the coverage provider. Same question,
+same answer: it changes what CI installs.
+
+**On the `id` column in requests 3, 4 and 5.** Routed to the specifier, which
+owns it. The hardener reports a real remedy that the specifier already uses
+elsewhere in the same file, so this is a spec improvement with a known shape,
+not a defect.
+
+**On the hardener's correction about the coverage provider.** Noted. The
+architect described it as already present as a Vitest optional peer; it was the
+cleaner's `--no-save` copy and `npm ci` removes it. The lockfile is the record,
+not `node_modules`.
