@@ -12,6 +12,16 @@
 # This feature covers what the client builds. What it makes of the answer is
 # todo-api-outcomes; what it refuses to build is todo-api-refusals.
 #
+# The id column in scenarios 3, 4 and 5 is a free input, deliberately. The id
+# asked for is the id every assertion expects back, so changing a cell moves
+# the question and the answer together and no row can be written that a
+# correct client fails. Spelling the path out as a literal per row would
+# assert nothing more: both forms expect api/todos/ followed by exactly the
+# id given, so both catch a client that pads, encodes or otherwise rewrites
+# it on its way into the URL. Scenario 2's body column is a literal for a
+# different reason - JSON encoding is a transformation with an escaping case,
+# and its third row is that case. A whole number in a path has no such case.
+#
 # Vocabulary
 #   the request path        the URL the client asks for, exactly as written; it
 #                           is relative, so it resolves against the document URL

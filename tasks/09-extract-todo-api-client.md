@@ -1480,6 +1480,89 @@ outside CI rather than the file's stated three: acceptance, the Stryker runs
 themselves, and the dev and preview E2E variants. That matches the fifth-round
 note exactly, so nothing needs saying unless the count moves again.
 
+### Specifier (correction: id column)
+
+Routed to me by the fifth-round ruling: the `id` column in
+`todo-api-requests` 3, 4 and 5, six surviving `--level soft` mutants, with the
+hardener's proposed remedy being a literal `path` column per row. I judged it
+and **declined**. No scenario, step or examples table changed. What I added is
+one comment block in `features/todo-api-requests.feature` recording why those
+cells have no killable mutant, in the same place and for the same reason the
+outcomes feature already records its deliberate survivors inline.
+
+**Why the remedy buys nothing.** The hardener's stated benefit is that a
+literal path "would catch a client that percent-encoded, zero-padded or
+otherwise transformed the id on its way into the URL". It would not catch
+anything the current form misses, because the expected path is expanded from
+the same example cell the `When` used. Today, for a row `| 42 |`, the harness
+builds the call with `42` and asserts the path equals `api/todos/42`; a client
+that zero-padded would produce `api/todos/042` and go red. Written out as a
+literal, the assertion is the identical string. For any transformation `T`, the
+placeholder form fails exactly when `api/todos/T(id) != api/todos/id`, which is
+exactly when the literal form fails. The two are equally strong against every
+implementation defect, always. The only thing the literal adds is sensitivity to
+mutation of the example data - a class of defect the delivered system cannot
+have.
+
+**Why the analogy to the `body` column does not hold.** The hardener reads
+requests 2's literal `body` as a general anti-concatenation pattern, quoting my
+predecessor's "a concatenating implementation passes the other rows and fails
+that one". That sentence is about the *implementation* concatenating instead of
+JSON-encoding: `'{"text":"' + text + '"}'` survives `Buy milk` and dies on
+`He said "hi"`. The `body` column earns its place because JSON encoding is a
+real transformation with a real escaping case, and the third row *is* that
+case; killing the `text` mutants is a side effect of that row existing, not its
+purpose. A path has no analogous case here. `src/todo-api/client.ts` types the
+id as `number` (`todoPath = (id: number) => \`api/todos/${id}\``), and a whole
+number's decimal form needs no escaping - `encodeURIComponent(42)` is `"42"`.
+There is no row I could add that would distinguish an encoding client from a
+pasting one, so the column would be a verbatim restatement of the input with a
+fixed prefix.
+
+**And that shape is the one the hardener itself rejected.** For outcomes 4 it
+wrote: "Adding a column that restates the input verbatim is the 'example column
+that only asserts the no-op' my brief tells me to prefer deleting." A `path`
+column is that column. The distinction drawn between them - identity versus
+concatenation - does not survive contact with the fact that the concatenation's
+literal half (`api/todos/`) is already spelled out in the step text and already
+pinned. Nothing about the placement is unspecified.
+
+**Small costs it would also have.** Each row would carry the id twice, so a
+typo (`| 42 | api/todos/4 |`) turns the suite red with no behavioral meaning.
+And it would collapse three distinct step texts into one `the request path is
+<path>`, changing what `gherkin-ir-dry-checker` reports about a file whose dry
+report my predecessor deliberately tuned.
+
+**What I did change.** Ten comment lines in the header block of
+`features/todo-api-requests.feature`, between the "One user-level operation"
+paragraph and `Vocabulary`, saying that the `id` column is a free input, that
+mutating it moves question and answer together, that a literal path would
+assert nothing more, and why scenario 2's `body` is a literal for a different
+reason. This is the practice the file already follows - outcomes 1 and 2 carry
+the same kind of note above them - and it exists so the next hardener reads
+these six survivors as declared rather than as a gap. If the project manager
+would rather the justification live only in this task file, deleting those ten
+lines is the whole revert.
+
+**Verified.**
+
+- `npm run acceptance`: 3 files / 24 executions, unchanged.
+- `npm run lint` and `npm run format:check`: pass.
+- `.aps/bin/gherkin-parser` exit 0, and the emitted IR is **byte-identical** to
+  the IR parsed from `HEAD`'s copy of the file. Comments do not reach the IR, so
+  nothing downstream of the parser can have moved. `gherkin-ir-dry-checker` exit
+  0 with the same 36 findings as before, all previously reviewed.
+- No `src/`, `qa/`, `acceptance/` or script file was touched, and no E2E
+  procedure needed editing.
+
+**Left for the next role.** The manifest block in
+`features/todo-api-requests.feature` is untouched and, because the IR did not
+move, is not stale - its `scenario_hash` for requests 2 still matches. The six
+`id` survivors will still be reported as survivors on the next
+`gherkin-mutator` run; that is the intended state, and the feature file now says
+so. Class A (the ten deliberate `status`/`body` survivors) is likewise
+untouched. Nothing is open for me.
+
 ## Project manager notes
 
 **On the specifier's open question about `undefined`.** Keep the row. The guard
