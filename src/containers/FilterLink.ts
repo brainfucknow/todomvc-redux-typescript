@@ -4,7 +4,6 @@ import Link from '../components/Link'
 import { Dispatch } from 'react'
 import { RootState } from './index'
 import TodoFilters from '../constants/TodoFilters'
-import { ActionMessage } from '../constants/ActionMessage'
 
 export interface LinkProps {
   filter: TodoFilters
@@ -15,7 +14,7 @@ const mapStateToProps = (state: RootState, ownProps: LinkProps) => ({
 })
 
 const mapDispatchToProps = (
-  dispatch: Dispatch<ActionMessage>,
+  dispatch: Dispatch<ReturnType<typeof setVisibilityFilter>>,
   ownProps: LinkProps,
 ) => ({
   setFilter: () => {

@@ -381,6 +381,261 @@ wrote no source, no handler and no manifest.
 
 ### Coder
 
+Replaced `callAPIMiddleware` and the four hand-written switch reducers with
+`createSlice` reducers and `createAsyncThunk` operations, and wrote the step
+handlers and the second world the new features needed. `npm run acceptance` is
+green: 57 passed, the 24 from task 09 and the 33 this task's features generate.
+No feature file changed.
+
+**What changed, and why**
+
+- `src/actions/api.ts` is now the seam the middleware was: five
+  `createAsyncThunk`s that run the task 09 client and translate its outcome into
+  a settled thunk. The transport is the store's `extra` argument, so this module
+  performs no request and imports no `fetch`. Each thunk's argument is the
+  operation's own fields - the same record `call.fields` holds - so a reducer
+  reads `action.meta.arg.id` whichever operation reported.
+- `src/store/index.ts` is new: `createTodoStore(send, preloadedState?)`. It is
+  the one place that joins a transport to the store, and it takes it as an
+  argument rather than defaulting to `sendWithFetch`, so nothing can forget to
+  override a default that talks to the network. `src/index.tsx` and
+  `src/test-support/store.tsx` pass `sendWithFetch`; the acceptance suite passes
+  its own.
+- `src/reducers/todos.ts` is one slice with both families: six local edits in
+  `reducers`, the four settled operations in `extraReducers`. Same seed, same id
+  rule, same toggle-all rule.
+- `src/reducers/apis.ts` is two slices, `executing` and `errorMessage`, keeping
+  the state keys `exec` and `errorMessage`. The stray `console.log` is gone.
+- `src/reducers/visibilityFilter.ts` is a slice. `src/reducers/index.ts` is
+  unchanged: same four keys, same names, so no container, component or selector
+  moved.
+- `src/actions/local.ts` re-exports the slice creators as plain functions of the
+  arguments the app has at each call site. That is not decoration - see the trap
+  below.
+- Deleted: `src/middlewares/` (both files), `src/constants/ActionMessage.ts`,
+  `src/constants/ActionTypes.ts`. Nothing imports them.
+- `src/containers/FilterLink.ts`: one type annotation, `Dispatch<ActionMessage>`
+  to `Dispatch<ReturnType<typeof setVisibilityFilter>>`, because the union type
+  it named is gone. No state path moved and no behavior changed; this is the
+  only container line this task touched.
+- `scripts/architecture/rules.mjs`: the acceptance rule's allow list is widened
+  to `src/store`, `src/actions/*`, `src/selectors`, `src/models/*` and
+  `src/constants/*`, with the reason saying why and what is still refused. The
+  rule keeps its name so `hardening/rules.hardening.test.ts` still holds it, and
+  both of its planted violations - `src/todo-api/fetchTransport` and
+  `src/reducers/todos` - are still refused under the wider list.
+- `scripts/architecture/boundaries.spec.mjs`: the exact-edge assertions now name
+  `src/actions/api.ts`, `src/store/index.ts` and `src/index.tsx` instead of the
+  deleted middleware.
+- `README.md`: the State and Data rows said a middleware runs the calls. They
+  now say what does.
+
+**Evidence, not just a passing suite**
+
+I drove the old pipeline and the new one side by side. `git archive HEAD src`
+into a scratch tree gives the pre-change modules; both stores were then built in
+one Node process over a single `globalThis.fetch` stub, so both go through
+`sendWithFetch` and the recorded requests are directly comparable. 15 scripts -
+each of the five operations answering, each failing at the transport, a body
+that will not parse, a 500 with a parseable body, a delete whose body is never
+read, a failure followed by a success, two updates in flight at once, the three
+local edits, and an operation left in flight forever. After every step and again
+after settlement I compared: the wire requests (url, method, headers, body), the
+whole state (`todos`, `visibilityFilter`, `exec`, `errorMessage` reduced to name
+and message, and the todos the selector makes visible), and every `console.error`
+argument.
+
+All 15 agree exactly. Two further checks are below. The harness lived in
+`build/differential/` and is deleted - `build/` is only partly gitignored and I
+am not leaving a copy of the old tree in the working tree. It is six minutes to
+rebuild from this paragraph if QA wants it.
+
+**Trap 1: the serializability warnings, and what lands in state**
+
+Both go away, and the stored value does change.
+
+Driven with the *default* middleware on both stores, a failed load produced two
+`console.error`s matching "non-serializable" from the old store and none from
+the new one. That is task 07's finding, gone as a side effect: the raw error is
+no longer in the action.
+
+What lands in state changes with it. Before: `state.errorMessage` was the real
+`TypeError` instance. After: it is `createAsyncThunk`'s serialized error,
+`{name, message, stack}` - same `name`, same `message`, not an `Error`. Nothing
+in the UI reads it, the E2E procedures assert the absence of error UI, and the
+features assert the message only, so nothing anywhere goes red. It is still a
+change in what the store holds and I am reporting it rather than letting the
+green suite speak for it.
+
+**Trap 2: floating promises, checked by hand**
+
+Nothing in this project would tell me, so: every call site that discards a
+promise is `TodoList`'s mount effect (`loadTodos()`), `TodoItem`'s checkbox and
+destroy button, and `Header`'s save. All four discard the value `dispatch`
+returns. `createAsyncThunk`'s promise resolves with the rejected action rather
+than rejecting - the only way to get a rejection out of it is `.unwrap()`, and
+`unwrap` appears nowhere in `src/`, `acceptance/`, `properties/`, `hardening/`
+or `qa/`. Inside `src/actions/api.ts`, `runCall` awaits `executeCall`, whose own
+chain ends in a `.catch`.
+
+Checked rather than reasoned as well: with `process.on('unhandledRejection')`
+armed, all five operations were dispatched into a failing transport with every
+result discarded. Nothing was reported unhandled, and the failure still reached
+`state.errorMessage`. The acceptance steps await settlement at
+`the backend answers` / `the call fails`; the two scenarios that leave an
+operation running leave a pending promise, never a rejected one.
+
+**Trap 3: the dispatch result**
+
+`dispatch(anApiAction)` now resolves to the settled action - `{type:
+'todos/load/fulfilled', payload: [...]}` on a success, the `rejected` action on
+a failure. It never rejects. Verified differentially: the old pipeline resolved
+to `undefined` for the same load, the new one to the fulfilled action.
+
+Nothing reads it. `src/` discards it at all four call sites above, `qa/` has no
+access to it, and no step in `features/` reads it. So the value has gone from
+accidentally meaningful, to accidentally `undefined`, to deliberately meaningful,
+with no reader at any point. If a component ever starts awaiting one, that is
+behavior and wants a scenario before it wants code.
+
+**The four uncalled branches**
+
+`addTodo`, `deleteTodo`, `editTodo` and `completeTodo` are all still in the
+todos slice's `reducers`, still allocating ids by `max(ids, -1) + 1`, still
+reachable only from tests and the acceptance suite. `src/actions/index.ts` still
+maps those four names to the backend operations, so they still have no caller in
+the app. The slice's docstring says so, so does `src/actions/local.ts`. I did not
+delete them and I did not give them a caller; that question is the architect's.
+
+**The second world**
+
+`acceptance/steps/index.ts` is now a merge. It declares `ProjectWorld` as
+`{api, state}`, creates both per execution, and lifts each family's definitions
+into it with a small `inWorld` helper, so neither family can read the other's
+world. Routing stays the runtime's job, by pattern. `acceptance/steps/todo-api.ts`
+changed by one word: its world interface is exported.
+
+`acceptance/steps/todo-state.ts` is the new vocabulary, all 24 forms. Its world
+holds a store whose transport hands each request back to the scenario as a
+deferred, which is what makes `the app starts ...` and `the backend answers ...`
+two steps rather than one: the operation is genuinely in flight in between. The
+client sends synchronously before it yields, so a started operation can be paired
+with its request without waiting for anything.
+
+The specifier's warning about `(.+) is in flight` versus
+`no operation is left in flight` holds: the negative does not end in
+" is in flight", so the greedy pattern cannot reach it. No step in either family
+was reported ambiguous by the runtime across all 57 executions.
+
+**Unit tests, added and dropped**
+
+Added:
+
+- `src/actions/api.spec.ts` - the boundary spec `callapimiddleware.spec.ts` was.
+  What reaches Redux and in what order, that a delete's success carries no
+  parsed body, that the error is logged *between* the two dispatches, that the
+  recorded failure is a serialized error keeping the message, and what a dispatch
+  resolves to.
+- `src/reducers/apis.spec.ts` - the two pieces of state nothing reads. Includes
+  the per-id map with two updates running at once, which a single "which id is
+  updating" field fails.
+- `src/reducers/visibilityFilter.spec.ts` - three cases; there was no spec here
+  before.
+- `src/reducers/todos.spec.ts` gained the operation branches, which had no unit
+  test at all before: load replaces wholesale, add appends the answer rather than
+  the request, a patch replaces the whole todo, an answer for a todo the list
+  does not hold changes nothing, a delete removes by its argument, and a pending
+  operation moves nothing. It also gained explicit tests for the two invariants:
+  one past the highest id rather than one past the length, and toggle-all from a
+  mixed list.
+
+Rewritten:
+
+- `src/actions/index.spec.ts` asserted the literal objects six hand-written
+  creators returned. Under `createSlice` those objects are generated code, so per
+  the project manager's ruling that part is gone. What replaced it is the one
+  thing `src/actions/index.ts` actually decides and the reason four branches have
+  no caller: each of the five API names sends its request, and each of the three
+  local names sends none. It is driven through a store with a recording
+  transport, so it is behavior rather than shape.
+
+Dropped:
+
+- `src/middlewares/callapimiddleware.spec.ts`, with the module. Four of its five
+  tests moved into `src/actions/api.spec.ts` above. The fifth -
+  "throws on a dispatched null before anything of this task runs" - has no
+  counterpart: it pinned the behavior of a middleware sitting in the dispatch
+  chain reading `.outcomeNames` off whatever went past. There is no middleware in
+  the chain now, so there is nothing to throw. `src/todo-api/client.spec.ts` and
+  `features/todo-api-refusals.feature` still hold `isTodoApiCall`'s own answer.
+
+`npm test` is 18 files / 165 tests, up from 16 / 139.
+
+**Two small behavior notes**
+
+- `src/actions/local.ts` exports plain functions rather than the slice action
+  creators themselves. That is load-bearing, not style: `MainSection` passes
+  `actions.completeAllTodos` straight to an `onClick` and `Footer` does the same
+  with `onClearCompleted`. A `createSlice` creator called with a React event puts
+  that event in `action.payload` - a non-serializable payload, and a new warning
+  on every toggle-all. The wrappers take no arguments, so the event is dropped
+  where it always was. No component changed.
+- `completeTodoCall(id, completed)` refuses a null flag. It used to throw
+  synchronously at the dispatch site, because the action creator built the call;
+  it now rejects the thunk, because the payload creator builds it. TypeScript
+  types the argument `boolean` and `TodoItem` always passes one, so nothing in
+  the app can reach it. The client's own refusal is unchanged and
+  `features/todo-api-refusals.feature` still drives it directly.
+
+**Verified**
+
+`npm run acceptance` 57 passed / 7 files, 0 failures. `npm test` 165 passed / 18
+files. `npm run lint`, `npm run format:check`, `npm run typecheck` (six projects,
+0 errors), `npm run build`, `npm run properties` (26), `npm run hardening` (50)
+all pass. `npm run test:e2e` 22 passed; `test:e2e:dev` and `test:e2e:preview` 21
+passed / 1 skipped each - unchanged, and no QA file touched. Branch
+`claude/react-modernization-plan-u7dgen` at a268541, unmoved; nothing committed.
+
+**Left for the next roles**
+
+- *Cleaner*: `src/actions/api.ts` exports each operation twice - the thunk
+  (`loadTodosOperation`) for the reducers to match on and the wrapper
+  (`loadTodos`) for the UI to call. Both earn their place today (see the
+  `onClick` note), but whether the module wants that shape is a judgement.
+- *Architect*: the store shape is now inferrable, as the task predicted -
+  `createTodoStore` returns a typed store and `src/containers/index.ts` still
+  declares `RootState` by hand with two of the four keys. That is task 12's
+  question. Also yours: the four callerless branches, and whether
+  `createTodoStore`'s `preloadedState` parameter is production surface or a test
+  seam - it is used by the acceptance suite only.
+- *Hardener*: the new and changed modules are `src/actions/api.ts`,
+  `src/reducers/todos.ts`, `src/reducers/apis.ts`,
+  `src/reducers/visibilityFilter.ts`, `src/store/index.ts` and
+  `acceptance/steps/todo-state.ts`. One thing to know before scanning
+  `src/actions/api.ts`: `reported[reported.length - 1]` is the settled outcome
+  because `executeCall` reports exactly one after the started one - a mutant that
+  reads `reported[0]` is killed by every success test, but the shape is worth
+  seeing. Two smaller notes: your `rules.hardening.test.ts` uses
+  `src/constants/ActionTypes` as a stand-in import target and that file no longer
+  exists (harmless - it is a string, not a resolved path); and the widened
+  acceptance allow list has no planted violation proving the newly allowed
+  entries are the only ones, if you want one.
+- *QA*: the regression suite passes unchanged and I changed nothing under `qa/`.
+  The differential method above is the thing worth re-running independently; the
+  two findings I would most want a second opinion on are the serialized error in
+  `state.errorMessage` and the claim that nothing reads a dispatch result.
+
+**Open questions**
+
+None blocking. One recorded:
+
+1. I edited `scripts/architecture/rules.mjs` and
+   `scripts/architecture/boundaries.spec.mjs` because the module graph moved
+   under them and they assert it exactly. Neither belongs to a role in this
+   chain by name. If tooling under `scripts/architecture/` is meant to be the
+   hardener's or the architect's rather than whoever moves the graph, say so and
+   I will note it for the next structural task.
+
 ### Cleaner
 
 ### Architect
@@ -428,3 +683,43 @@ invariant and they are specified. Preserve them. The architect's brief has a
 line about policy reachable only by tests while an adapter reimplements it; that
 question belongs to the architect on this task, not to the coder, and not by
 deletion in passing.
+
+## Project manager notes, second round
+
+**On `state.errorMessage` changing shape.** Accepted, and this is the trap the
+task file warned about being found rather than slipping through. It was a real
+`TypeError`; it is now `{name, message, stack}` with the same name and message.
+Nothing reads it, the E2E procedures assert the absence of error UI, and no gate
+went red — so the only reason this is on the record is that the coder went
+looking for it and reported it.
+
+Accepted on the merits, not merely because nothing broke. Non-serializable
+values in Redux state are a documented anti-pattern that RTK's own development
+middleware warns about, and the old store emitted two such warnings on a failed
+load where the new one emits none. This is the rewrite removing a defect that
+was never in scope to remove, in a place no user can see. If a later task ever
+surfaces the error to the user, it now has a serializable value to render.
+
+**On `src/actions/local.ts` keeping plain wrappers rather than slice creators.**
+Right call, and worth recording because it is a trap with no gate behind it.
+`MainSection` and `Footer` pass two of these straight to an `onClick`, and a
+`createSlice` action creator invoked with a React event puts that event object
+into `action.payload`. The wrappers keep the components unchanged and keep a DOM
+event out of the store. Note this is the same class of problem as the item
+above, arriving from the opposite direction.
+
+**On who owns `scripts/architecture/`.** The architect owns the rules; a coder
+may widen an allow list when the correct call changes the graph, provided it
+records the reason and keeps the rule's identity so the hardener's tests still
+hold it. That is what happened here and it is the intended model. The architect
+brief says as much: allowed-dependency lists encode intent, and when the correct
+inward call changes the graph, the list is updated rather than the call bent
+around it. The architect on this task should confirm the widening was correct,
+not merely that it was recorded.
+
+**On the four uncalled reducer branches.** Still present, still callerless,
+invariant intact, now documented in two places. The architect owns the decision
+and has a brief line aimed squarely at it: policy used only by tests while an
+adapter reimplements it gets wired or deleted. Note these are not quite that
+case, since no adapter reimplements them; they are specified behavior with no
+caller. Decide deliberately and say why.

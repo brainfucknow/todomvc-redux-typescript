@@ -66,9 +66,19 @@ export const BOUNDARY_RULES = [
   {
     name: 'the acceptance pipeline drives the policy, not the network shell',
     files: ['acceptance/**'],
-    allow: ['src/todo-api/client', 'acceptance/**', 'vitest', 'node:*'],
+    allow: [
+      'src/todo-api/client',
+      'src/store',
+      'src/actions/*',
+      'src/selectors',
+      'src/models/*',
+      'src/constants/*',
+      'acceptance/**',
+      'vitest',
+      'node:*',
+    ],
     reason:
-      'Acceptance runs the client against a stand-in transport. Importing src/todo-api/fetchTransport.ts would put fetch back in the suite, and reaching into any other part of src/ would be a second, unowned way in.',
+      'Two families of feature now, and each drives the module that answers its questions: todo-api-* runs the client, and todo-state-* runs the store the app itself builds, dispatching the same actions the app dispatches and reading the same selectors. Widened in task 10, which is where the second family and the state it specifies arrived. What stays out is the list that matters: src/todo-api/fetchTransport.ts would put fetch back in the suite - the store takes its transport as an argument precisely so the suite can supply its own - and src/components, src/containers and src/middlewares would make the acceptance suite a second renderer of the app.',
   },
   {
     name: 'the property suite drives the policy, not the network shell',

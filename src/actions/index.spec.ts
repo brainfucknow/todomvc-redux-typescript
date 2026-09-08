@@ -1,46 +1,98 @@
-import * as types from '../constants/ActionTypes'
-import * as actions from './local'
+import * as actions from './index'
+import { createTodoStore, type TodoStore as Store } from '../store'
+import type { SendRequest, TodoApiRequest } from '../todo-api/client'
+import TodoFilters from '../constants/TodoFilters'
 
-describe('todo actions', () => {
-  it('addTodo should create ADD_TODO action', () => {
-    expect(actions.addTodo('Use Redux')).toEqual({
-      type: types.ADD_TODO,
-      text: 'Use Redux',
+/**
+ * Which of the app's names ask the backend and which the app answers itself.
+ *
+ * This is the one thing `./index` decides, and it is why four branches of the
+ * todos slice have no caller: `addTodo`, `deleteTodo`, `editTodo` and
+ * `completeTodo` are mapped to backend operations here, so the local edits of
+ * the same name are never dispatched by the app.
+ */
+
+const listening = () => {
+  const requests: TodoApiRequest[] = []
+  const send: SendRequest = (request) => {
+    requests.push(request)
+    return Promise.resolve({
+      status: 200,
+      body: '{"id":1,"text":"x","completed":false}',
     })
+  }
+  return { requests, store: createTodoStore(send) }
+}
+
+describe('what the app dispatches', () => {
+  it.each([
+    [
+      'loadTodos',
+      (store: Store) => store.dispatch(actions.loadTodos()),
+      'GET',
+      'api/todos/',
+    ],
+    [
+      'addTodo',
+      (store: Store) => store.dispatch(actions.addTodo('Buy milk')),
+      'POST',
+      'api/todos/',
+    ],
+    [
+      'editTodo',
+      (store: Store) => store.dispatch(actions.editTodo(1, 'Buy oats')),
+      'PATCH',
+      'api/todos/1',
+    ],
+    [
+      'completeTodo',
+      (store: Store) => store.dispatch(actions.completeTodo(1, true)),
+      'PATCH',
+      'api/todos/1',
+    ],
+    [
+      'deleteTodo',
+      (store: Store) => store.dispatch(actions.deleteTodo(1)),
+      'DELETE',
+      'api/todos/1',
+    ],
+  ])('sends %s to the backend', async (_name, dispatch, method, path) => {
+    const { requests, store } = listening()
+
+    await dispatch(store)
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].method).toBe(method)
+    expect(requests[0].path).toBe(path)
   })
 
-  it('deleteTodo should create DELETE_TODO action', () => {
-    expect(actions.deleteTodo(1)).toEqual({
-      type: types.DELETE_TODO,
-      id: 1,
-    })
+  it('toggles every todo without asking the backend', () => {
+    const { requests, store } = listening()
+
+    store.dispatch(actions.completeAllTodos())
+
+    expect(requests).toStrictEqual([])
+    expect(store.getState().todos.map((todo) => todo.completed)).toStrictEqual([
+      true,
+    ])
   })
 
-  it('editTodo should create EDIT_TODO action', () => {
-    expect(actions.editTodo(1, 'Use Redux everywhere')).toEqual({
-      type: types.EDIT_TODO,
-      id: 1,
-      text: 'Use Redux everywhere',
-    })
+  it('clears the completed todos without asking the backend', () => {
+    const { requests, store } = listening()
+    store.dispatch(actions.completeAllTodos())
+
+    store.dispatch(actions.clearCompleted())
+
+    expect(requests).toStrictEqual([])
+    expect(store.getState().todos).toStrictEqual([])
   })
 
-  it('completeTodo should create COMPLETE_TODO action', () => {
-    expect(actions.completeTodo(1, true)).toEqual({
-      type: types.COMPLETE_TODO,
-      id: 1,
-      completed: true,
-    })
-  })
+  it('chooses a filter without asking the backend', () => {
+    const { requests, store } = listening()
 
-  it('completeAll should create COMPLETE_ALL action', () => {
-    expect(actions.completeAllTodos()).toEqual({
-      type: types.COMPLETE_ALL_TODOS,
-    })
-  })
+    store.dispatch(actions.setVisibilityFilter(TodoFilters.SHOW_ACTIVE))
 
-  it('clearCompleted should create CLEAR_COMPLETED action', () => {
-    expect(actions.clearCompleted()).toEqual({
-      type: types.CLEAR_COMPLETED,
-    })
+    expect(requests).toStrictEqual([])
+    expect(store.getState().visibilityFilter).toBe(TodoFilters.SHOW_ACTIVE)
   })
 })

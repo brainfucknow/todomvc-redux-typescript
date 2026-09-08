@@ -1,17 +1,12 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { configureStore } from '@reduxjs/toolkit'
 import { Provider } from 'react-redux'
 import App from './components/App'
-import reducer from './reducers'
+import { createTodoStore } from './store'
+import { sendWithFetch } from './todo-api/fetchTransport'
 import 'todomvc-app-css/index.css'
-import { callAPIMiddleware } from './middlewares/callapimiddleware'
 
-const store = configureStore({
-  reducer,
-  middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(callAPIMiddleware),
-})
+const store = createTodoStore(sendWithFetch)
 
 const container = document.getElementById('root')
 if (!container) {

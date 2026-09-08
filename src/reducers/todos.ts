@@ -1,17 +1,27 @@
+import { createSlice, PayloadAction } from '@reduxjs/toolkit'
 import {
-  ADD_TODO,
-  DELETE_TODO,
-  EDIT_TODO,
-  COMPLETE_TODO,
-  COMPLETE_ALL_TODOS,
-  CLEAR_COMPLETED,
-  LOAD_TODO_SUCCESS,
-  POST_TODO_SUCCESS,
-  DELETE_TODO_SUCCESS,
-  PATCH_TODO_SUCCESS,
-} from '../constants/ActionTypes'
-import { ActionMessage } from '../constants/ActionMessage'
+  addTodoOperation,
+  completeTodoOperation,
+  editTodoOperation,
+  loadTodosOperation,
+  removeTodoOperation,
+} from '../actions/api'
 import { Todo } from '../models/Todo'
+
+/**
+ * The todo list. Two families of change reach it and they answer different
+ * questions: a local edit decides the whole change itself, and a settled
+ * backend operation writes down what the backend said.
+ *
+ * Four of the local edits - add, delete, edit and mark - have no caller today,
+ * because `src/actions/index.ts` maps those names to the backend operations.
+ * They are behavior this project carries, they are specified in
+ * `features/todo-state-edits.feature`, and scenarios 2 and 3 there are the only
+ * place an id is ever allocated. Do not read them as dead code.
+ *
+ * Nothing here is optimistic: an operation moves the list when it settles and
+ * not before.
+ */
 
 const initialState: Todo[] = [
   {
@@ -20,62 +30,77 @@ const initialState: Todo[] = [
     id: 0,
   },
 ]
-export default function todoApiResults(
-  state = initialState,
-  action: ActionMessage,
-) {
-  switch (action?.type) {
-    case LOAD_TODO_SUCCESS:
-      return action.json
-    case POST_TODO_SUCCESS:
-      return [...state, action.json]
-    case DELETE_TODO_SUCCESS:
-      return state.filter((t) => t.id !== action.id)
-    case PATCH_TODO_SUCCESS:
-      return state.map((todo) => (todo.id === action.id ? action.json : todo))
 
-    default:
-      return todos(state, action)
-  }
-}
+const nextId = (todos: Todo[]) =>
+  todos.reduce((maxId, todo) => Math.max(todo.id, maxId), -1) + 1
 
-export function todos(state = initialState, action: ActionMessage) {
-  switch (action?.type) {
-    case ADD_TODO:
-      return [
-        ...state,
-        {
-          id: state.reduce((maxId, todo) => Math.max(todo.id, maxId), -1) + 1,
-          completed: false,
-          text: action.text,
-        },
-      ]
+const replacing = (todos: Todo[], id: number, replacement: Todo) =>
+  todos.map((todo) => (todo.id === id ? replacement : todo))
 
-    case DELETE_TODO:
-      return state.filter((todo) => todo.id !== action.id)
+const todosSlice = createSlice({
+  name: 'todos',
+  initialState,
+  reducers: {
+    addTodo: (state, { payload: text }: PayloadAction<string>) => [
+      ...state,
+      { id: nextId(state), completed: false, text },
+    ],
 
-    case EDIT_TODO:
-      return state.map((todo) =>
-        todo.id === action.id ? { ...todo, text: action.text } : todo,
-      )
+    deleteTodo: (state, { payload: id }: PayloadAction<number>) =>
+      state.filter((todo) => todo.id !== id),
 
-    case COMPLETE_TODO:
-      return state.map((todo) =>
-        todo.id === action.id ? { ...todo, completed: action.completed } : todo,
-      )
+    editTodo: {
+      reducer: (
+        state,
+        { payload }: PayloadAction<{ id: number; text: string }>,
+      ) =>
+        state.map((todo) =>
+          todo.id === payload.id ? { ...todo, text: payload.text } : todo,
+        ),
+      prepare: (id: number, text: string) => ({ payload: { id, text } }),
+    },
 
-    case COMPLETE_ALL_TODOS: {
+    completeTodo: {
+      reducer: (
+        state,
+        { payload }: PayloadAction<{ id: number; completed: boolean }>,
+      ) =>
+        state.map((todo) =>
+          todo.id === payload.id
+            ? { ...todo, completed: payload.completed }
+            : todo,
+        ),
+      prepare: (id: number, completed: boolean) => ({
+        payload: { id, completed },
+      }),
+    },
+
+    completeAllTodos: (state) => {
       const areAllMarked = state.every((todo) => todo.completed)
-      return state.map((todo) => ({
-        ...todo,
-        completed: !areAllMarked,
-      }))
-    }
+      return state.map((todo) => ({ ...todo, completed: !areAllMarked }))
+    },
 
-    case CLEAR_COMPLETED:
-      return state.filter((todo) => todo.completed === false)
+    clearCompleted: (state) => state.filter((todo) => todo.completed === false),
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(loadTodosOperation.fulfilled, (_state, action) => action.payload)
+      .addCase(addTodoOperation.fulfilled, (state, action) => [
+        ...state,
+        action.payload,
+      ])
+      .addCase(editTodoOperation.fulfilled, (state, action) =>
+        replacing(state, action.meta.arg.id, action.payload),
+      )
+      .addCase(completeTodoOperation.fulfilled, (state, action) =>
+        replacing(state, action.meta.arg.id, action.payload),
+      )
+      .addCase(removeTodoOperation.fulfilled, (state, action) =>
+        state.filter((todo) => todo.id !== action.meta.arg.id),
+      )
+  },
+})
 
-    default:
-      return state
-  }
-}
+export const todoActions = todosSlice.actions
+
+export default todosSlice.reducer

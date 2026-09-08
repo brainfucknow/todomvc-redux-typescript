@@ -44,7 +44,7 @@ describe('reading what a module imports', () => {
   it('keeps a package specifier exactly as written', () => {
     expect(
       importTargetsOf(
-        'src/middlewares/callapimiddleware.ts',
+        'src/store/index.ts',
         "import { Middleware } from 'redux'\nimport x from '@testing-library/react'",
       ),
     ).toStrictEqual(['redux', '@testing-library/react'])
@@ -270,12 +270,24 @@ describe('this repository', () => {
       'src/todo-api/client',
     ])
     expect(targetsOf('src/actions/api.ts')).toStrictEqual([
+      '@reduxjs/toolkit',
+      'src/todo-api/client',
+      'src/models/Todo',
+    ])
+    expect(targetsOf('src/store/index.ts')).toStrictEqual([
+      '@reduxjs/toolkit',
+      'src/reducers',
+      'src/actions/api',
       'src/todo-api/client',
     ])
-    expect(targetsOf('src/middlewares/callapimiddleware.ts')).toStrictEqual([
-      'redux',
-      'src/todo-api/client',
+    expect(targetsOf('src/index.tsx')).toStrictEqual([
+      'react',
+      'react-dom/client',
+      'react-redux',
+      'src/components/App',
+      'src/store',
       'src/todo-api/fetchTransport',
+      'todomvc-app-css/index.css',
     ])
     expect(targetsOf('acceptance/runtime.ts')).toStrictEqual([
       'node:fs',

@@ -23,7 +23,7 @@ import type { StepContext, StepDefinition, StepSuite } from '../runtime'
  * outcome-names cell is JSON.
  */
 
-interface TodoApiWorld {
+export interface TodoApiWorld {
   call?: TodoApiCall
   refusal?: unknown
   outcomes: TodoApiOutcome[]

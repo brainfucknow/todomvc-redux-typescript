@@ -8,8 +8,8 @@ A TodoMVC client written in TypeScript with React and Redux, built and served by
 | --- | --- |
 | Build and dev server | Vite 8 (`vite.config.mts`) |
 | UI | React 19 with `createRoot` and `StrictMode` |
-| State | Redux 5 with `@reduxjs/toolkit`'s `configureStore`; `connect()` containers |
-| Data | `src/todo-api/` builds the requests and reads the answers; `fetch` lives in one adapter, and a middleware runs the calls against `api/todos/` |
+| State | Redux 5 with `@reduxjs/toolkit`: `createSlice` reducers and `createAsyncThunk` operations behind `configureStore`; `connect()` containers |
+| Data | `src/todo-api/` builds the requests and reads the answers; `fetch` lives in one adapter, and the store is handed that adapter so the thunks run the calls against `api/todos/` |
 | Types | TypeScript 5.9, `strict`, six projects: `tsconfig.json` for the app, `qa/tsconfig.json` for the E2E specs, `acceptance/tsconfig.json` for the acceptance runtime and step handlers, `properties/tsconfig.json` for the property suite, `hardening/tsconfig.json` for the hardening suite, `tsconfig.tools.json` for the config files and scripts |
 | Unit tests | Vitest, jsdom, `@testing-library/react` |
 | Property tests | Vitest in Node over `properties/`, with this repository's own generator in `properties/tiny-check.ts` |

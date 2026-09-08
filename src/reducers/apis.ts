@@ -1,59 +1,104 @@
-import { ActionMessage } from '../constants/ActionMessage'
-import * as ActionTypes from '../constants/ActionTypes'
-import { AnyAction } from 'redux'
-export function executing(
-  state = { isLoadingAll: false, t: {}, isAdding: false },
-  action: ActionMessage,
-) {
-  switch (action?.type) {
-    case 'LOAD_TODO_REQUEST':
-      return {
+import {
+  createSlice,
+  isAnyOf,
+  isRejected,
+  type SerializedError,
+} from '@reduxjs/toolkit'
+import {
+  addTodoOperation,
+  completeTodoOperation,
+  editTodoOperation,
+  loadTodosOperation,
+  removeTodoOperation,
+} from '../actions/api'
+
+/**
+ * What the app knows about backend operations it has started: which are still
+ * running, and the last one that failed.
+ *
+ * Nothing in the UI reads either. They are state the app computes and keeps,
+ * and `features/todo-state-operations.feature` and
+ * `features/todo-state-failures.feature` specify them; surfacing them to a user
+ * would be new behavior and is not this project's plan.
+ */
+
+export interface Executing {
+  isLoadingAll: boolean
+  isAdding: boolean
+  /** Per todo id, as a string, whether an update of that todo is running. */
+  t: Record<string, { isUpdating: boolean }>
+}
+
+const updating = (state: Executing, id: number, isUpdating: boolean) => ({
+  ...state,
+  t: { ...state.t, [id.toString()]: { isUpdating } },
+})
+
+const startedUpdate = isAnyOf(
+  editTodoOperation.pending,
+  completeTodoOperation.pending,
+  removeTodoOperation.pending,
+)
+
+const settledUpdate = isAnyOf(
+  editTodoOperation.fulfilled,
+  editTodoOperation.rejected,
+  completeTodoOperation.fulfilled,
+  completeTodoOperation.rejected,
+  removeTodoOperation.fulfilled,
+  removeTodoOperation.rejected,
+)
+
+const executingSlice = createSlice({
+  name: 'executing',
+  initialState: { isLoadingAll: false, t: {}, isAdding: false } as Executing,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder
+      .addCase(loadTodosOperation.pending, (state) => ({
         ...state,
         isLoadingAll: true,
-      }
-    case 'LOAD_TODO_SUCCESS':
-    case 'LOAD_TODO_FAILURE':
-      return {
+      }))
+      .addCase(addTodoOperation.pending, (state) => ({
         ...state,
-        isLoadingAll: false,
-      }
-    case 'PATCH_TODO_REQUEST':
-    case 'DELETE_TODO_REQUEST':
-      console.log('action', action)
-      return {
-        ...state,
-        t: { ...state.t, [action.id.toString()]: { isUpdating: true } },
-      }
-    case 'PATCH_TODO_SUCCESS':
-    case 'PATCH_TODO_FAILURE':
-    case 'DELETE_TODO_SUCCESS':
-    case 'DELETE_TODO_FAILURE':
-      return {
-        ...state,
-        t: { ...state.t, [action.id.toString()]: { isUpdating: false } },
-      }
+        isAdding: true,
+      }))
+      .addMatcher(
+        isAnyOf(loadTodosOperation.fulfilled, loadTodosOperation.rejected),
+        (state) => ({
+          ...state,
+          isLoadingAll: false,
+        }),
+      )
+      .addMatcher(
+        isAnyOf(addTodoOperation.fulfilled, addTodoOperation.rejected),
+        (state) => ({ ...state, isAdding: false }),
+      )
+      .addMatcher(startedUpdate, (state, action) =>
+        updating(state, action.meta.arg.id, true),
+      )
+      .addMatcher(settledUpdate, (state, action) =>
+        updating(state, action.meta.arg.id, false),
+      )
+  },
+})
 
-    case 'POST_TODO_REQUEST':
-      return { ...state, isAdding: true }
-    case 'POST_TODO_SUCCESS':
-    case 'POST_TODO_FAILURE':
-      return { ...state, isAdding: false }
-    default:
-      return state
-  }
-}
+const errorMessageSlice = createSlice({
+  name: 'errorMessage',
+  initialState: null as SerializedError | null,
+  reducers: {
+    /**
+     * Nothing asks. The branch is live and callerless, as it was before this
+     * task, and `features/todo-state-failures.feature` 4 is what holds it.
+     */
+    resetErrorMessage: () => null,
+  },
+  extraReducers: (builder) => {
+    builder.addMatcher(isRejected, (_state, action) => action.error)
+  },
+})
 
-// Updates error message to notify about the failed fetches.
-export function errorMessage(state = null, action: AnyAction) {
-  if (!action) return state
+export const errorActions = errorMessageSlice.actions
 
-  const { type, error } = action
-
-  if (type === ActionTypes.RESET_ERROR_MESSAGE) {
-    return null
-  } else if (error) {
-    return error
-  }
-
-  return state
-}
+export const executing = executingSlice.reducer
+export const errorMessage = errorMessageSlice.reducer
