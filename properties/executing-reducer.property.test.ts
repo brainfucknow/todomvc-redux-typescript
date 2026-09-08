@@ -52,48 +52,63 @@ const UPDATES: OperationName[] = ['edit', 'mark', 'remove']
 
 const isUpdate = (started: Started) => UPDATES.includes(started.operation)
 
-const pendingOf = ({ operation, id, text: body, completed }: Started) => {
-  switch (operation) {
-    case 'load':
-      return loadTodosOperation.pending('r', undefined)
-    case 'add':
-      return addTodoOperation.pending('r', { text: body })
-    case 'edit':
-      return editTodoOperation.pending('r', { id, text: body })
-    case 'mark':
-      return completeTodoOperation.pending('r', { id, completed })
-    case 'remove':
-      return removeTodoOperation.pending('r', { id })
-  }
-}
-
-const settlementOf = (
-  { operation, id, text: body, completed }: Started,
-  succeeded: boolean,
-) => {
+/**
+ * The three actions one started operation can produce, and the one place that
+ * knows how each of the five is addressed: a load takes no argument, an add
+ * takes the text, an update takes the id and whatever it is changing. Pending
+ * and settled were two switches over the same five operations until the
+ * hardener's DRY pass; they are one because they answer one question.
+ */
+const actionsOf = ({ operation, id, text: body, completed }: Started) => {
   const answer = { id, text: body, completed }
   switch (operation) {
     case 'load':
-      return succeeded
-        ? loadTodosOperation.fulfilled([answer], 'r', undefined)
-        : loadTodosOperation.rejected(failed, 'r', undefined)
+      return {
+        pending: loadTodosOperation.pending('r', undefined),
+        fulfilled: loadTodosOperation.fulfilled([answer], 'r', undefined),
+        rejected: loadTodosOperation.rejected(failed, 'r', undefined),
+      }
     case 'add':
-      return succeeded
-        ? addTodoOperation.fulfilled(answer, 'r', { text: body })
-        : addTodoOperation.rejected(failed, 'r', { text: body })
+      return {
+        pending: addTodoOperation.pending('r', { text: body }),
+        fulfilled: addTodoOperation.fulfilled(answer, 'r', { text: body }),
+        rejected: addTodoOperation.rejected(failed, 'r', { text: body }),
+      }
     case 'edit':
-      return succeeded
-        ? editTodoOperation.fulfilled(answer, 'r', { id, text: body })
-        : editTodoOperation.rejected(failed, 'r', { id, text: body })
+      return {
+        pending: editTodoOperation.pending('r', { id, text: body }),
+        fulfilled: editTodoOperation.fulfilled(answer, 'r', {
+          id,
+          text: body,
+        }),
+        rejected: editTodoOperation.rejected(failed, 'r', { id, text: body }),
+      }
     case 'mark':
-      return succeeded
-        ? completeTodoOperation.fulfilled(answer, 'r', { id, completed })
-        : completeTodoOperation.rejected(failed, 'r', { id, completed })
+      return {
+        pending: completeTodoOperation.pending('r', { id, completed }),
+        fulfilled: completeTodoOperation.fulfilled(answer, 'r', {
+          id,
+          completed,
+        }),
+        rejected: completeTodoOperation.rejected(failed, 'r', {
+          id,
+          completed,
+        }),
+      }
     case 'remove':
-      return succeeded
-        ? removeTodoOperation.fulfilled(undefined, 'r', { id })
-        : removeTodoOperation.rejected(failed, 'r', { id })
+      return {
+        pending: removeTodoOperation.pending('r', { id }),
+        fulfilled: removeTodoOperation.fulfilled(undefined, 'r', { id }),
+        rejected: removeTodoOperation.rejected(failed, 'r', { id }),
+      }
   }
+}
+
+const pendingOf = (start: Started) => actionsOf(start).pending
+
+const settlementOf = (start: Started, succeeded: boolean) => {
+  const settlements = actionsOf(start)
+  return succeeded ? settlements.fulfilled : settlements.rejected
 }
 
 const anyStart: Arbitrary<Started> = {

@@ -89,6 +89,27 @@ describe('the state layer knows no UI and no transport', () => {
     ])
   })
 
+  it('refuses every direction it names, one import per pattern', () => {
+    const outward = [
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react-redux',
+      'src/components',
+      'src/components/MainSection',
+      'src/containers',
+      'src/containers/VisibleTodoList',
+      'src/todo-api/fetchTransport',
+      'src/index',
+    ]
+
+    expect(
+      judged(module('src/reducers/todos.ts', ...outward)).map(
+        ([, target]) => target,
+      ),
+    ).toStrictEqual(outward)
+  })
+
   it('allows what the state layer decides with', () => {
     expect(
       judged(
@@ -122,6 +143,23 @@ describe('the UI reaches the state layer only through actions and selectors', ()
       'src/todo-api/client',
       'src/todo-api/fetchTransport',
     ])
+  })
+
+  it('refuses every way past the seam, one import per pattern', () => {
+    const around = [
+      'src/reducers',
+      'src/reducers/todos',
+      'src/store',
+      'src/store/middleware',
+      'src/todo-api',
+      'src/todo-api/client',
+    ]
+
+    expect(
+      judged(module('src/containers/MainSection.ts', ...around)).map(
+        ([, target]) => target,
+      ),
+    ).toStrictEqual(around)
   })
 
   it('allows the two seams it is given, and the shapes it renders', () => {
@@ -304,8 +342,24 @@ describe('the hardening suite drives modules, never the network shell', () => {
           'vitest',
           'node:fs',
         ),
+        module(
+          'hardening/todo-operations.hardening.test.ts',
+          'src/actions/api',
+        ),
       ),
     ).toStrictEqual([])
+  })
+
+  it('refuses the store and the UI, which no mutation of a module needs', () => {
+    expect(
+      judged(
+        module('hardening/todo-operations.hardening.test.ts', 'src/store'),
+        module(
+          'hardening/todo-operations.hardening.test.ts',
+          'src/components/MainSection',
+        ),
+      ).map(([, target]) => target),
+    ).toStrictEqual(['src/store', 'src/components/MainSection'])
   })
 })
 

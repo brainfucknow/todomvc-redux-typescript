@@ -142,6 +142,7 @@ export const BOUNDARY_RULES = [
     files: ['hardening/**'],
     allow: [
       'src/todo-api/client',
+      'src/actions/*',
       'properties/tiny-check',
       'scripts/**',
       'hardening/**',
@@ -149,6 +150,6 @@ export const BOUNDARY_RULES = [
       'node:*',
     ],
     reason:
-      'Hardening tests exist to break whichever module is under mutation, so unlike acceptance and properties they reach the repository tooling as well as the policy. What they still may not reach is src/todo-api/fetchTransport.ts or any other part of src/: a mutation killed by the network would be measuring the network.',
+      'Hardening tests exist to break whichever module is under mutation, so unlike acceptance and properties they reach the repository tooling as well as the policy. Widened in task 10 to src/actions/*, which is where the first state-layer module this suite has had to hold lives: the five backend operations, whose action type names are what tells them apart in every reducer matcher and which nothing else in the project pinned. What they still may not reach is src/todo-api/fetchTransport.ts, src/store, src/components or src/containers: a mutation killed by the network, or by a rendered component, would be measuring the network or the component.',
   },
 ]

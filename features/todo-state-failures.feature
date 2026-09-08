@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=246b33eff1e5ac4855b26e80e4f6e27fa5bbafa0f84a507edcae79a331e08c26
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T11:59:36Z","feature_name":"Recorded failures","feature_path":"features/todo-state-failures.feature","background_hash":"868a780854f8874ea0347fc03542c1ec2e57b107bd1a0dabc1b8ffbe0ea56705","implementation_hash":"sha256:f8eb4589b9bf04119b59385ad0e38e6ff479b62d6b0a423d5d61528ac8c74ca2","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 # todo-state-failures
 #
 # Scenarios in this feature are named "todo-state-failures <n>". The name is a

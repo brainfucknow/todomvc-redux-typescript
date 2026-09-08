@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T12:00:45Z","feature_name":"Todo list edits","feature_path":"features/todo-state-edits.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"sha256:012dff0a78d7fa0d3ff3206259f29f324893e98f5c14bcc801af2485da48f59a","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 # todo-state-edits
 #
 # Scenarios in this feature are named "todo-state-edits <n>". The name is a

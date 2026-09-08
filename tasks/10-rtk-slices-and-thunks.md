@@ -1369,6 +1369,429 @@ None blocking. Three recorded rather than guessed at silently.
 
 ### Hardener
 
+Mutation hardening of what this task created and changed. Nine source modules
+mutated one at a time, four feature files put through `gherkin-mutator --level
+soft`, two survivors killed with one new hardening file, eight more killed by
+planting the violations two new boundary rules were missing, one function split
+for the CRAP gate and one DRY pass. No `src/` module's behavior moved; nothing
+under `qa/` was touched and no authored line of any feature file was edited.
+
+**The branch moved under me, and I left it alone**
+
+The architect's note ends "my changes are in the working tree". They are not:
+the branch is at `e3d3725`, "Decide the uncalled branches, and gate the duties
+that had no gate", which is that work committed, and the working tree was clean
+when I started. That is the third role in a row to report this. I read the
+commit as the architect's change and hardened it in place. I committed nothing
+and reset nothing; my changes are in the working tree.
+
+**The baseline, proved twice, and once by failing**
+
+*Language mutation.* Stryker 10.0.0 with the `command` runner, the net being
+everything this project runs over a `src/` module:
+
+    npx vitest run --project unit --reporter=dot
+      && npx vitest run --config vitest.properties.config.mts --reporter=dot
+      && npx vitest run --config vitest.hardening.config.mts --reporter=dot
+
+`coverageAnalysis: "off"`, concurrency 4, and both the temp directory and the
+JSON reports outside the repository. Stryker's own initial run is the baseline
+check and I read it on every run: "Initial test run succeeded" appears in each
+of the eleven runs below, and a run whose dry run had failed produced no
+numbers at all.
+
+It did fail once, usefully. The first configuration also ran `--project
+scripts`, and `scripts/typecheck-gate.spec.mjs` asserts the compiler resolves to
+`<repo>/node_modules/typescript/bin/tsc`; inside a Stryker sandbox the repo root
+is the sandbox and that assertion is false, so the dry run went red and Stryker
+refused to continue. Exactly the failure mode the handoff warns about, caught by
+the gate rather than by a plausible-looking score. The scripts project is not
+part of a `src/` module's net anyway, so it was dropped there and targeted
+directly for `scripts/architecture/rules.mjs`.
+
+*Gherkin mutation.* Per the operational note: each feature parsed on its own
+with `.aps/bin/gherkin-parser` into a scratch IR directory and generated on its
+own into a scratch generated directory, so no job runs through the other six
+features. Before any mutation I drove `scripts/acceptance/runner-worker.mjs` by
+hand with one job per feature pointed at the **unmutated** IR:
+
+    baseline-todo-state-edits       test_success
+    baseline-todo-state-operations  test_success
+    baseline-todo-state-failures    test_success
+    baseline-todo-state-filter      test_success
+
+Only then did `gherkin-mutator` run, with `-runner-worker "node
+scripts/acceptance/runner-worker.mjs"` - the `node` command directly, never
+through npm.
+
+**Language mutation, one file at a time**
+
+| module | mutants | killed | survived |
+| --- | --- | --- | --- |
+| `src/reducers/todos.ts` | 64 | 64 | 0 |
+| `src/reducers/executing.ts` | 26 | 26 | 0 |
+| `src/reducers/errorMessage.ts` | 6 | 6 | 0 |
+| `src/reducers/visibilityFilter.ts` | 4 | 4 | 0 |
+| `src/reducers/index.ts` | 1 | 1 | 0 |
+| `src/actions/api.ts` | 30 | 29 | 1 declared |
+| `src/actions/local.ts` | 8 | 8 | 0 |
+| `src/actions/index.ts` | 0 | - | - |
+| `src/store/index.ts` | 6 | 6 | 0 |
+| `scripts/architecture/rules.mjs` | 111 | 110 | 1 declared |
+
+`api.ts` and `rules.mjs` are the after figures; both started worse and the
+sections below say what closed the gap. `executing.ts` was re-run after the DRY
+pass and `api.ts` after the new hardening file, so every number above is of the
+tree as it stands.
+
+Not mutated, deliberately: `src/containers/FilterLink.ts` (a container, and its
+one changed line is a type annotation), `src/index.tsx` and
+`src/test-support/store.tsx` (adapters), and `acceptance/steps/todo-state.ts`.
+That last one is the cleaner's largest changed file at 275 mutants, and it is
+the acceptance vocabulary's adapter - it binds a feature's sentences to the
+store and decides nothing of its own. What it is worth is measured from the
+other side, by the gherkin run below, which is the tool that asks whether the
+sentences are load-bearing.
+
+**`src/actions/api.ts`: three survivors, two killed, one declared**
+
+Every one was re-checked by hand before I acted on it - applied to the real
+source, all four suites run, source restored - because a mutation runner is
+itself a thing that can be wrong.
+
+*Two killed.* Emptying the type prefix of `editTodoOperation` or of
+`completeTodoOperation` changed nothing anywhere. `api.spec.ts` drives load, add
+and remove and asserts their action types in as many words; the two operations
+it happens not to drive were the two whose names cost nothing to rewrite. That
+is the same shape task 09 recorded for `readsResponseBody` - four of five
+operations pinned, the fifth free - and it gets the same answer, in a new file
+`hardening/todo-operations.hardening.test.ts`: each of the five operations'
+three phase names asserted, plus the claim that makes the name behavior rather
+than decoration, which is that all fifteen are distinct. Every matcher in
+`todos.ts` and `executing.ts` selects on these types, so two operations sharing
+a prefix would have one operation's answer move the list for another, with lint,
+typecheck, the unit suite, the properties and the acceptance suite all green -
+because each of them drives one operation at a time. Both mutants verified dead
+against the new file.
+
+*One declared equivalent.* `const reported: TodoApiOutcome[] = []` seeded with a
+junk element survives. It cannot be otherwise: `runCall` reads
+`reported[reported.length - 1]`, and `executeCall` reports 'started'
+synchronously and then exactly one of 'succeeded'/'failed' before its promise
+resolves, so after the `await` the array holds exactly two entries and a seeded
+prefix can never be last. That contract is not assumed - `client.spec.ts` pins
+it directly (`expect(outcomes.map(o => o.name)).toStrictEqual(['POST_TODO_REQUEST',
+'POST_TODO_SUCCESS'])`) - so the mutant is unobservable rather than merely
+unobserved. The coder's note about `reported[reported.length - 1]` being worth
+seeing stands: the mutants that read the *wrong* end (`reported[0]`,
+`length + 1`) are all killed. I did not rewrite the accumulator to a single
+`let`, because the guard that would then be needed for the undefined case is a
+branch nothing can reach, which trades a declared equivalent mutant for an
+uncovered one.
+
+**`scripts/architecture/rules.mjs`: the architect asked, and the answer is yes**
+
+The architect's note asks to be told if a mutation of either new rule's `deny`
+list survives, calling it a gap in their planted violations. Eight did, and
+every one of them was in the two rules task 10 added:
+
+- *the state layer knows no UI and no transport* - `react-dom`, `react-dom/*`,
+  `src/components` (the bare directory, not `src/components/**`),
+  `src/containers/**` and `src/index` could each be blanked with nothing going
+  red. The planted violation drove five of the ten patterns.
+- *the UI reaches the state layer only through actions and selectors* -
+  `src/store/**` and `src/todo-api` likewise. Four of six driven.
+
+Note which halves survived: `src/components` survived while `src/components/**`
+died, and `src/containers/**` survived while `src/containers` died. That is the
+glob trap the architect found, seen from the mutation side - the rules name both
+forms and the violations named one each, so exactly one of each pair was held.
+
+Closed by extending the two "refuses" tests in
+`hardening/rules.hardening.test.ts` to plant one import per denied pattern,
+chosen so each target matches exactly one pattern and blanking that pattern
+changes the answer. `rules.mjs` now scores 110 of 111.
+
+The one left is `allow: []` on *the todo API policy depends on nothing*, seeded
+with a nonsense pattern. No finite test can tell an empty allow list from one
+holding a pattern nothing imports. What can be told is the list gaining a *real*
+entry: put `'redux'` in it and the refusal test above it goes red. Declared.
+
+**The architect's claim about the id rule, checked - and it holds**
+
+The architect kept the four uncalled reducer branches partly on the ground that
+"the id rule was three rows in a feature table and two examples in a spec; it is
+now a statement about every list". Three things were worth checking and the
+third is the one that settles it.
+
+*Is the property the rule, or a corollary of it?* The rule.
+`todos-reducer.property.test.ts` asserts the exact id (`id: absentFrom(before)`)
+and only then adds the weaker "greater than every id already there". Had it been
+the weaker clause alone, `max + 2` would have satisfied it.
+
+*Is it independent of the implementation?* Nearly. `absentFrom` is
+`list.reduce((highest, todo) => Math.max(highest, todo.id), -1) + 1`, which is
+`nextId` with its arguments swapped. It is an independent copy rather than an
+independent characterisation, so it catches any change to `nextId` but would not
+catch someone "fixing" both together. Worth knowing; not worth changing, because
+the alternative characterisations are all weaker.
+
+*Does it buy anything the table does not?* Yes, and here is the demonstration.
+Three mutations of `nextId`, each applied to the real source with all three
+suites run:
+
+| mutation | unit | acceptance | properties |
+| --- | --- | --- | --- |
+| returns `todos.length` | red | red | red |
+| right, except an empty list gives 1 | red | red | red |
+| `max + 2` | red | red | red |
+| **right below three todos, `max + 2` from three up** | **green** | **green** | **red** |
+
+The last row is the claim. An id rule that is correct for every list the feature
+table and the unit spec ever show it, and wrong for longer ones, passes both and
+fails exactly one property. No table can catch that, because a table can only
+say what happens to the lists it lists.
+
+Two qualifications, so the claim is not read wider than it is. First, of the
+five Stryker mutants inside `nextId`, all five die under each of the three
+suites separately - the property adds no kill count there, it adds reach.
+Second, measured as nets over the whole of `todos.ts`, the unit suite alone
+kills 64 of 64, the acceptance suite alone 64 of 64, and the property suite
+alone 60 of 64 - the four it misses are the seed literal, which properties never
+assert because they always supply their own list. So the properties are not the
+strongest net on this module; they are the only one that says anything about
+lists nobody wrote down. The architect's argument is about the second thing and
+survives.
+
+**Gherkin mutation, `--level soft`, per feature**
+
+| feature | mutations | killed | survived |
+| --- | --- | --- | --- |
+| `todo-state-filter` | 6 | 6 | 0 |
+| `todo-state-edits` | 15 | 12 | 3 |
+| `todo-state-operations` | 15 | 9 | 6 |
+| `todo-state-failures` | 0 | - | - |
+
+`todo-state-failures` has no `Scenario Outline` and therefore no example cells,
+which is what the soft level mutates; zero is the honest number, not a skip. The
+three `todo-api-*` features carry manifests from task 09 and were not re-run:
+nothing this task changed touches them.
+
+The mutator wrote its own manifest block into all four files - and a
+`mutation-stamp` line into the two with no survivors. I hand-edited none of it.
+
+*The six in `todo-state-operations` are scenario 8.* Five are the `error`
+column, which the specifier declared free in the feature's own header and in
+their handoff: the message the call fails with is the message the record is
+expected to hold, so the cell is input and expectation at once. Declared,
+correct, nothing to do.
+
+The sixth is not declared, and it is a refinement of that declaration rather
+than a defect. Row 3's `operation` cell, `editing todo 2 to Buy oats`, survives
+mutation of the *text*: "Buy oats" to "BUy oats" changes nothing, because
+scenario 8 fails every call and a failed edit never carries its text anywhere
+observable. The feature header says "The operation and progress columns are not
+free: they are two independent statements about the same row". That is true of
+what the cell *identifies* - which operation, and which todo; mutate either and
+`<progress>` contradicts it - and not true of the payload inside the phrase. One
+sentence of the header is slightly wider than the fact. The specifier owns that
+line; I am reporting it rather than editing it.
+
+*The three in `todo-state-edits` are all the `todos` input column.* Scenario 2
+row 3's second todo text, and scenario 7 rows 2 and 3's `"id"` key (mutated to
+`"iD"` and `"Id"`, which parse as a todo with no id). Both are free for the
+same reason: scenario 2 asserts the *last* todo and the count, and scenario 7
+asserts every todo's flag and the count, so neither reads the ids or texts it is
+given. This is the same class as the declared `error` column, undeclared. It is
+also why the one *killed* mutation of a scenario 7 `todos` cell was killed by a
+JSON syntax break rather than by an assertion - a weak kill. Nothing here is
+wrong; the cells are genuinely free. It wants a line in the feature header
+saying so, which is the specifier's to write.
+
+**The mixed-job scan: nothing further to split**
+
+Mutants counted per line across the changed sources, looking for two
+neighbourhoods with nothing between them - the shape that found `apis.ts`:
+
+- `todos.ts` (64), `executing.ts` (26), `errorMessage.ts` (6),
+  `visibilityFilter.ts` (4), `local.ts` (8), `store/index.ts` (6),
+  `reducers/index.ts` (1): each one continuous neighbourhood, one job.
+- `api.ts` (30) has three - `runCall` at 47-55 (12), the five thunks at 71-93
+  (10), the five wrappers at 102-108 (8). Not two jobs: `api.spec.ts` is one
+  `describe` with one falsifiability story, `runCall` is the thunks' shared body
+  rather than a second subject, and pulling it out would export a helper across
+  a seam to save a scroll. The coder's open question about `api.ts` exporting
+  each operation twice is answered the same way from this side: the two exports
+  are one operation seen by its two callers.
+- `src/actions/index.ts` generates no mutants at all, which is what a module of
+  re-exports should generate. Its one real decision is pinned by a spec that
+  drives a store.
+
+**CRAP gate on the changed files**
+
+Coverage as the cleaner measured it, unchanged because I changed no `src/`
+module: 95.27% statements / 86.53% branches / 97.47% functions over `src/`, and
+every module this task created or changed at 100/100/100 under the unit suite.
+Complexity from ESLint's own rule run as a gate:
+
+    npx eslint . --rule '{"complexity":["error",{"max":10}]}'
+
+That found exactly one function over the gate in the whole repository, and it
+was in a file this task created: `settlementOf` in
+`properties/executing-reducer.property.test.ts`, complexity 11. At 100%
+coverage CRAP is the complexity, so 11 against a gate of 10.
+
+It is not the `cond`-answering-one-question exception: it was a five-case switch
+crossed with a ternary on `succeeded`, which is two questions - which operation,
+and how did it end - multiplied together. Split, and then DRYed (below) into one
+`actionsOf` of complexity 6 whose caller asks the second question in two lines.
+The extract owns its input: it takes a `Started` and nothing else. No boolean
+was pushed down into a helper; the boolean stayed with the caller who already
+knew it.
+
+The gate is now clear repository-wide with room: the highest complexity anywhere
+is `classifyRun` at 9, in `src/` it is 4, and in this task's own `src/` modules
+it is 2.
+
+**DRY**
+
+One duplication, in the file I had just split. `pendingOf` and `settlementOf`
+were two switches over the same five operations, and between them they wrote
+each operation's argument shape three times - `{ id, text: body }` for an edit
+in the pending case and again in each of the two settled cases. They are now one
+`actionsOf(started)` returning `{ pending, fulfilled, rejected }`: one place
+knows how each of the five is addressed, and a sixth operation is one case
+rather than four edits in two functions. 81 lines changed for byte-identical
+behavior, and `src/reducers/executing.ts` still scores 26 of 26 after it.
+
+Falsifiability re-checked rather than assumed: the architect's mutation row "an
+operation settles on `fulfilled` only" still turns exactly two properties red
+after the refactor, which is the number their table records.
+
+Left alone, deliberately: `absentFrom` mirroring `nextId` (see the id-rule
+section - DRYing it by importing `nextId` would make the property a tautology),
+and `wholeNumber` duplicated between the two acceptance step families, which the
+cleaner declined for a reason that still holds.
+
+**A flake worth recording, and which direction it points**
+
+While measuring which suite kills what, an acceptance-only Stryker run of
+`todos.ts` reported one survivor - `deleteTodo` replaced by `() => undefined`.
+Applied by hand, `npm run acceptance` kills it; re-run, the same configuration
+reported 64 of 64. So the command runner driving `npm run acceptance` in a
+sandbox occasionally runs without the active mutant reaching the workers.
+
+The direction matters: a mutant that is not active makes the tests pass, which
+reads as *survived*. This flake can only invent survivors, never kills. That is
+the safe side, and it is why every survivor in this note was re-applied by hand
+before I acted on it. It is also an argument for what the runs above did:
+`npx vitest` directly, never through `npm run`.
+
+**Inherited threads, from where I sit**
+
+Nothing I did moves any of the three, and I checked rather than assumed.
+
+- *Floating promises.* I introduced no `await`, no `.then` and no `.unwrap`.
+  `unwrap` still appears nowhere in `src/`, `acceptance/`, `properties/`,
+  `hardening/` or `qa/`; the new hardening file reads three type strings off
+  each operation and starts nothing. The four discarding call sites the coder
+  listed are unchanged.
+- *Dispatch result.* Unchanged and still unread. `hardening/todo-operations`
+  does not dispatch; it reads the names the operations would dispatch under.
+- *Serializability.* Unchanged. `errorMessage` still stores whatever
+  `action.error` holds, which is `createAsyncThunk`'s serialized error, and I
+  touched neither the slice nor its property.
+
+**Verified**
+
+Every command run from the working tree as it stands, after `npm ci`, after the
+last edit.
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in six projects.
+- `npm test`: 19 files / 165 tests. Unchanged - I added no unit test and changed
+  none.
+- `npm run acceptance`: 7 files / 57 executions, unchanged. No authored feature
+  line was edited; the four manifest blocks are the mutator's own and are the
+  only feature-file change.
+- `npm run properties`: 6 files / 48, unchanged. The count is the same because
+  the DRY pass moved helpers, not properties.
+- `npm run hardening`: 7 files / 59. Was 6 / 54. One new file
+  (`todo-operations.hardening.test.ts`, 2 tests) and three new tests in
+  `rules.hardening.test.ts` - two planting a violation per denied pattern for
+  the two rules task 10 added, one refusing the store and the UI from the
+  hardening suite itself. Nothing existing was changed, weakened or removed.
+- `npm run test:e2e`: 22 passed. `test:e2e:dev` and `test:e2e:preview`: 21
+  passed, 1 skipped each. No `qa/` file was read or edited.
+- `@stryker-mutator/core@10.0.0`, `@stryker-mutator/vitest-runner@10.0.0` and
+  `@vitest/coverage-v8@5.0.0` installed in **one** `npm install --no-save`, per
+  the project manager's third-round note, so neither pruned the other.
+  `package.json` md5 `4fad73d5...` and `package-lock.json` md5 `29184ac9...`
+  identical before, during and after; finished with `npm ci`, and
+  `node_modules/@stryker-mutator` is gone again. No Stryker configuration, temp
+  directory or report was written inside the repository.
+
+Branch `claude/react-modernization-plan-u7dgen` at `e3d3725`; nothing committed,
+nothing reset. Working tree: one new file `hardening/todo-operations.hardening.test.ts`,
+and modified `hardening/rules.hardening.test.ts`,
+`properties/executing-reducer.property.test.ts`,
+`scripts/architecture/rules.mjs`, and the four `features/todo-state-*.feature`
+manifest blocks.
+
+**One rule I widened, and why it was mine to widen**
+
+`hardening/**` was allowed `src/todo-api/client` and nothing else in `src/`,
+because until this task the only `src/` module this suite had ever had to hold
+was the client. `hardening/todo-operations.hardening.test.ts` imports
+`src/actions/api`, so the graph moved and the list moved with it, in the same
+change, with the reason rewritten and the rule's name kept - the model the
+project manager described for the coder's allow-list widening. It is the
+narrowest widening that works: `src/actions/*`, not `src/**`, and the reason now
+names what is still refused. There is a new positive assertion driving the
+widened entry and a new negative one refusing `src/store` and
+`src/components/**` from this suite, so emptying the new entry or widening it
+further turns `npm run hardening` red rather than passing quietly.
+
+**Left for QA**
+
+- The three findings I would most want re-checked independently are the two
+  declared equivalent mutants (`api.ts`'s seeded accumulator, `rules.mjs`'s empty
+  allow list) and the id-rule table above - particularly its last row, which is a
+  three-line change to `src/reducers/todos.ts` and takes about two minutes to
+  reproduce.
+- Nothing under `qa/` changed, and no procedure's expected behavior moved. The
+  regression suite passed unchanged at the end of this handoff.
+- The new hardening file pins five literal action-type strings. If a later task
+  renames an operation, that file is one of the two places to change; the other
+  is `src/actions/api.spec.ts`.
+
+**Open questions for the project manager**
+
+None blocking. Four recorded rather than guessed at silently.
+
+1. **Two free cells in `todo-state-edits` are undeclared**, and one sentence in
+   `todo-state-operations`'s header is slightly wider than the fact (the
+   `operation` column's *payload* is free in scenario 8, its *identity* is not).
+   Both are the specifier's lines and I did not touch them. Task 11's specifier
+   inherits the same practice; a line in each header would make these read as
+   declared rather than as gaps to the next hardener.
+2. **`npm run hardening` moves from 6 files to 7 and 54 tests to 59.** You have
+   asked to be told rather than have it assumed: one new file for a survivor in
+   `src/actions/api.ts`, three new tests closing the planted-violation gaps the
+   architect asked me to report. No existing test changed.
+3. **I edited `properties/executing-reducer.property.test.ts`**, which is the
+   architect's file, for the CRAP gate and then for DRY. The gate left no choice
+   about the first - complexity 11 against a gate of 10 - and the second followed
+   from it. Behavior is identical and the architect's own mutation row still
+   turns it red. If you would rather a hardener reported a CRAP breach back to
+   the architect rather than fixing it, say so; the cost is one more handoff for
+   a change that adds no behavior.
+4. **The acceptance-only measurement in this note is a side probe, not a gate.**
+   I ran it to answer the question about the id rule, and it is where the flake
+   above turned up. If a future task wants "which suite kills what" as a standing
+   number, the command runner needs to stop going through `npm run` - which is
+   the same lesson as the NDJSON banner, one layer out.
+
 ### QA
 
 ## Project manager notes

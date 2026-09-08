@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T12:01:10Z","feature_name":"Todo backend operations","feature_path":"features/todo-state-operations.feature","background_hash":"b417a1730d0c186557c6a7e1d46f2db4eb24e94fc2d1599b25512e9fa5b266dd","implementation_hash":"sha256:beb7f8921f8bea9fe995d5f610aae9eccb18fe3dde302f80eba13c22ceebe4a9","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 # todo-state-operations
 #
 # Scenarios in this feature are named "todo-state-operations <n>". The name is a
