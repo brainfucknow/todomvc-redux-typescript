@@ -269,9 +269,10 @@ describe('driving the real compiler over a throwaway project', () => {
  * root today; a `working-directory:` key would move it, and false green 3 was
  * exactly that move going unnoticed.
  *
- * The expected line names all six projects, so dropping one - this file's own
- * tsconfig.tools.json included - turns this test red rather than passing
- * quietly with less checked.
+ * The expected line names all seven projects, so dropping one - this file's own
+ * tsconfig.tools.json included, and src/todo-input/tsconfig.json, which is the
+ * only check anywhere that the input rules name no DOM type - turns this test
+ * red rather than passing quietly with less checked.
  */
 describe('the gate as a command', () => {
   /** @param {string} cwd */
@@ -291,7 +292,7 @@ describe('the gate as a command', () => {
       expect(fromRoot.stderr).toBe('')
       expect(fromRoot.status).toBe(0)
       expect(fromRoot.stdout).toBe(
-        '0 error(s) in tsconfig.json, qa/tsconfig.json, acceptance/tsconfig.json, properties/tsconfig.json, hardening/tsconfig.json, tsconfig.tools.json\n',
+        '0 error(s) in tsconfig.json, src/todo-input/tsconfig.json, qa/tsconfig.json, acceptance/tsconfig.json, properties/tsconfig.json, hardening/tsconfig.json, tsconfig.tools.json\n',
       )
       expect(fromSubdirectory.status).toBe(fromRoot.status)
       expect(fromSubdirectory.stdout).toBe(fromRoot.stdout)

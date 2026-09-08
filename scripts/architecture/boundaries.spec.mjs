@@ -259,6 +259,11 @@ describe('this repository', () => {
    * graph comes out of a regex. These are the edges of the modules task 09
    * drew a boundary around, written out so an over-reading pattern - one that
    * mistook prose for an import - fails here rather than passing everywhere.
+   *
+   * Task 11's two are here for a second reason as well. `src/todo-input/` is
+   * allowed nothing at all, and an allow list of nothing is satisfied just as
+   * well by a module the scanner never found as by one that imports nothing.
+   * Naming the two files, and the component that asks them, says which it is.
    */
   it('has the import edges it looks like it has', () => {
     /** @param {string} path */
@@ -266,6 +271,13 @@ describe('this repository', () => {
       repository.find((module) => module.path === path)?.targets
 
     expect(targetsOf('src/todo-api/client.ts')).toStrictEqual([])
+    expect(targetsOf('src/todo-input/field.ts')).toStrictEqual([])
+    expect(targetsOf('src/todo-input/effects.ts')).toStrictEqual([])
+    expect(targetsOf('src/components/TodoTextInput.tsx')).toStrictEqual([
+      'react',
+      'classnames',
+      'src/todo-input/field',
+    ])
     expect(targetsOf('src/todo-api/fetchTransport.ts')).toStrictEqual([
       'src/todo-api/client',
     ])

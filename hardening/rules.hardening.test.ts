@@ -51,6 +51,50 @@ describe('the todo API policy depends on nothing', () => {
   })
 })
 
+describe('the todo input rules depend on nothing', () => {
+  it('refuses the way back into a component: React, a DOM type, the store', () => {
+    expect(
+      judged(
+        module('src/todo-input/field.ts', 'react'),
+        module('src/todo-input/effects.ts', 'src/components/TodoItem'),
+        module('src/todo-input/field.ts', 'src/store'),
+        module('src/todo-input/effects.ts', 'src/models/Todo'),
+      ).map(([, target]) => target),
+    ).toStrictEqual([
+      'react',
+      'src/components/TodoItem',
+      'src/store',
+      'src/models/Todo',
+    ])
+  })
+
+  it('refuses a module the directory does not have yet, not just the two it has', () => {
+    expect(
+      judged(module('src/todo-input/editing.ts', 'react')).map(
+        ([, target]) => target,
+      ),
+    ).toStrictEqual(['react'])
+  })
+
+  it('is content with the two modules as they stand, importing nothing', () => {
+    expect(
+      judged(
+        module('src/todo-input/field.ts'),
+        module('src/todo-input/effects.ts'),
+      ),
+    ).toStrictEqual([])
+  })
+
+  it('lets a spec import the module it drives, and Vitest with it', () => {
+    expect(
+      judged(
+        module('src/todo-input/field.spec.ts', 'src/todo-input/field'),
+        module('src/todo-input/effects.spec.ts', 'src/todo-input/effects'),
+      ),
+    ).toStrictEqual([])
+  })
+})
+
 describe('the fetch transport translates for the client and knows nothing else', () => {
   it('refuses the transport reaching past the client', () => {
     expect(
@@ -373,6 +417,7 @@ describe('the table above', () => {
   it('names every rule there is, so a new boundary cannot arrive unproven', () => {
     const proven = [
       'the todo API policy depends on nothing',
+      'the todo input rules depend on nothing',
       'the fetch transport translates for the client and knows nothing else',
       'the state layer knows no UI and no transport',
       'the UI reaches the state layer only through actions and selectors',

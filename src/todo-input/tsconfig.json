@@ -1,0 +1,41 @@
+{
+  // The input rules, compiled with nothing around them.
+  //
+  // A seventh project, and the only one that is not about covering files: every
+  // file here is already checked by the root tsconfig.json, which include-s
+  // "src". This one checks the same two modules again under the conditions the
+  // task that created them asked for - no React, and no DOM type in the
+  // signature - because nothing else in the repository can see that claim.
+  //
+  // `types: []` and `typeRoots: []` are the point, and they are what task 09
+  // got wrong: it read a missing DOM lib as proof that a module could not touch
+  // the network, when @types/node was declaring `fetch`, `Response` and
+  // `RequestInit` as globals the whole time. Dropping the lib catches only
+  // DOM-*only* names like `document`. Dropping the ambient packages as well is
+  // what catches the rest. Verified by planting each of the three: `document`
+  // (TS2584), `KeyboardEvent` (TS2304) and `fetch`/`Response` (TS2304) all fail
+  // to compile here, and the two modules compile clean.
+  //
+  // `scripts/architecture/rules.mjs` states the other half - that these modules
+  // import nothing - and hardening/rules.hardening.test.ts proves that half can
+  // fail. The two are complementary and neither replaces the other: a global
+  // needs no import, and an import of a framework needs no global.
+  //
+  // The specs are excluded rather than absent: they are TypeScript in this
+  // directory and they legitimately use Vitest's globals, which is a claim
+  // about a test and not about the rules under it.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": [],
+    "typeRoots": []
+  },
+  "include": ["."],
+  "exclude": ["**/*.spec.ts"]
+}

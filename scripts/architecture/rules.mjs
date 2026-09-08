@@ -14,6 +14,11 @@
  * and a component may not reach past `src/actions/` and `src/selectors/` into
  * the slices, the store or the API client.
  *
+ * Task 11 added the second "depends on nothing", for `src/todo-input/`. That
+ * directory exists because two class components were holding rules that need
+ * no framework to answer; an import of React into it would put them back
+ * without changing a line of behavior, and nothing else here would notice.
+ *
  * One trap in the vocabulary, learned here: `a/**` matches what is under `a`
  * and not `a` itself, so a directory that has an `index.ts` - `src/reducers`,
  * `src/containers` - has to be named twice to be refused. `matches` in
@@ -42,6 +47,14 @@ export const BOUNDARY_RULES = [
     allow: [],
     reason:
       'It answers domain questions and is the module the acceptance and property suites drive directly. It imports nothing today, so the empty list is the truth rather than a guess; a later task that needs a domain type here should widen it deliberately.',
+  },
+  {
+    name: 'the todo input rules depend on nothing',
+    files: ['src/todo-input/**'],
+    except: ['src/todo-input/*.spec.ts', 'src/todo-input/**/*.spec.ts'],
+    allow: [],
+    reason:
+      'The second module in this repository that answers domain questions with no environment at all, and the one task 11 created by taking those answers out of two class components. An import here is the way back: React, a DOM type from @types/react, the store, or a component the rules would then be shaped around. The empty list is the truth today rather than a guess - neither module imports anything - and a later task that needs a domain type here should widen it deliberately, as src/todo-api/client.ts is told to. Its specs are excepted because a spec importing the module it drives is the arrow pointing the right way - both patterns, because `**` stands for at least one segment here, so `src/todo-input/**/*.spec.ts` alone would miss the two specs that sit directly in the directory. This rule and src/todo-input/tsconfig.json are two halves of one claim and neither replaces the other: an import of React is caught here, and a bare DOM global like KeyboardEvent, which needs no import at all, is caught there.',
   },
   {
     name: 'the fetch transport translates for the client and knows nothing else',
@@ -128,6 +141,7 @@ export const BOUNDARY_RULES = [
     files: ['properties/**'],
     allow: [
       'src/todo-api/client',
+      'src/todo-input/*',
       'src/reducers/*',
       'src/actions',
       'src/actions/*',
@@ -136,13 +150,14 @@ export const BOUNDARY_RULES = [
       'vitest',
     ],
     reason:
-      'Same boundary as acceptance, for the same reason: a property that needed the network would be a property of the network. Widened in task 10 to the state layer, whose reducers are pure functions of a state and an action and are exactly what a property is for - the id rule and the toggle-all rule are statements about every list, which no table of examples can make. What stays out is unchanged: src/todo-api/fetchTransport, src/components and src/containers. src/store stays out too, though nothing forbids it elsewhere - a property here is a statement about a function, not about a running store.',
+      'Same boundary as acceptance, for the same reason: a property that needed the network would be a property of the network. Widened in task 10 to the state layer, whose reducers are pure functions of a state and an action and are exactly what a property is for - the id rule and the toggle-all rule are statements about every list, which no table of examples can make. Widened in task 11 to src/todo-input/, for the same shape of reason: the input rules are total functions over a small input space, so what holds of them holds of every text and every key rather than of the handful a feature table can name. What stays out is unchanged: src/todo-api/fetchTransport, src/components and src/containers. src/store stays out too, though nothing forbids it elsewhere - a property here is a statement about a function, not about a running store.',
   },
   {
     name: 'the hardening suite drives modules, never the network shell',
     files: ['hardening/**'],
     allow: [
       'src/todo-api/client',
+      'src/todo-input/*',
       'src/actions/*',
       'properties/tiny-check',
       'scripts/**',
@@ -151,6 +166,6 @@ export const BOUNDARY_RULES = [
       'node:*',
     ],
     reason:
-      'Hardening tests exist to break whichever module is under mutation, so unlike acceptance and properties they reach the repository tooling as well as the policy. Widened in task 10 to src/actions/*, which is where the first state-layer module this suite has had to hold lives: the five backend operations, whose action type names are what tells them apart in every reducer matcher and which nothing else in the project pinned. What they still may not reach is src/todo-api/fetchTransport.ts, src/store, src/components or src/containers: a mutation killed by the network, or by a rendered component, would be measuring the network or the component.',
+      'Hardening tests exist to break whichever module is under mutation, so unlike acceptance and properties they reach the repository tooling as well as the policy. Widened in task 10 to src/actions/*, which is where the first state-layer module this suite has had to hold lives: the five backend operations, whose action type names are what tells them apart in every reducer matcher and which nothing else in the project pinned. Widened in task 11 to src/todo-input/*, which is the module that task created and the one it asks this suite to prove has no survivors; without this line the suite cannot import what it is asked to mutate. What they still may not reach is src/todo-api/fetchTransport.ts, src/store, src/components or src/containers: a mutation killed by the network, or by a rendered component, would be measuring the network or the component.',
   },
 ]

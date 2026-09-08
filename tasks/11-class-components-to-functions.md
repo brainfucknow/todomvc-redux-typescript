@@ -760,6 +760,215 @@ coming back.
 
 ### Architect
 
+The architecture the coder and the cleaner left is right, and I changed no
+source file in `src/`. What was missing was the checking: two allow lists that
+would have blocked the next role, a boundary this task claims and nothing could
+see, and properties for two modules that are total functions over a small space.
+All three are now in place. `npm run properties` is 7 files / 67, up from 6 / 48.
+
+**Review, in the order the brief sets.** UI/core separation: every input rule
+lives in exactly one place. `grep` for `trim()`, `length === 0`, `=== 13` and
+`.which` across `src/` outside the specs returns two lines, both in
+`src/todo-input/`. No component re-decides anything the module owns, and no
+module in `src/todo-input/` is reachable only from a test - all five exported
+functions have a component caller. Dependency rule: no cycles, no violations,
+and the acceptance step files decide nothing either - `todo-input-commits.ts`
+applies `clearsField` exactly as `TodoTextInput` does and asserts values that
+`src/` returned. Information hiding: `field.ts` and `effects.ts` are one subject
+each and the cleaner was right not to split `effects.ts`, whose whole point is
+that both answers to one question are visible in one file. I found nothing to
+move.
+
+**1. Both allow lists widened, and the reasons say why.** `properties/**` and
+`hardening/**` now name `src/todo-input/*`. I needed the first for the property
+file below, so the widening is not speculative in either case: the property
+suite reaches the modules today and the hardener's mutation scan cannot start
+without the second. Each reason names task 11 and what it added, in the practice
+task 10 set - `rules.mjs`'s own doc says a list is widened in the same change as
+the call and the reason carries the why, so that the graph and the claim never
+drift apart.
+
+**2. The "depends on nothing" rule is written, and it arrives with the test that
+binds it.** `the todo input rules depend on nothing`, over `src/todo-input/**`,
+excepting the specs, `allow: []`. Task 09's lesson is that a rule nobody
+violates on purpose is indistinguishable from no rule, and this repository
+already answered that objection rather than living with it:
+`hardening/rules.hardening.test.ts` breaks every rule deliberately and its last
+test asserts the table names every rule there is, so a rule cannot arrive
+unproven. The cost of a new boundary here is four planted violations, and I paid
+it. The rule refuses `react`, a component, the store and a domain type; it
+refuses `src/todo-input/editing.ts`, a module the directory does not have yet,
+so the rule is about the directory and not about two filenames; it is content
+with the two modules as they stand; and it lets each spec import the module it
+drives.
+
+That fourth test earned its place immediately. My first draft excepted
+`src/todo-input/**/*.spec.ts`, and it went red: `**` expands to `.*` between two
+separators, so that pattern requires a subdirectory and does not match
+`src/todo-input/field.spec.ts` sitting directly in the directory. It is the same
+trap `rules.mjs`'s doc already records in its other shape - `a/**` matches what
+is under `a` and not `a` itself. The except is now both patterns and the reason
+says why. Had I written the rule without the test, the specs would have been
+silently in violation of a rule the repository was passing.
+
+**3. The boundary was re-checked with a tool that can see it, and the claim
+holds.** `src/todo-input/field.ts` and `effects.ts` compile clean under
+`types: []`, `typeRoots: []` and `lib: ["ES2022"]` - no ambient type package at
+all, not merely no DOM lib. That is the distinction task 09 got wrong. I proved
+the config can say no before trusting it that it said yes: `document` fails
+TS2584, `KeyboardEvent` fails TS2304, and `fetch` and `Response` - the exact
+names `@types/node` was supplying behind task 09's claim - fail TS2304. The
+emitted `.d.ts` for both modules names nothing but `string`, `number`, `boolean`
+and types declared in the same file.
+
+It is now `src/todo-input/tsconfig.json`, a seventh project in
+`scripts/typecheck.mjs`, so `npm run typecheck` and therefore CI check it. It is
+the only project that covers no new file: the app project already compiles both
+modules, and this one compiles them again with nothing around them.
+`scripts/typecheck-gate.spec.mjs` asserts the exact project list, so dropping it
+turns that test red. This and the boundary rule are two halves of one claim and
+neither replaces the other - an import of React is caught by the rule, and a
+bare `KeyboardEvent`, which needs no import at all, is caught only here.
+
+Vite resolves the nearest `tsconfig.json` per file, so a config inside `src/`
+can change how those files are transpiled. It does not: I hashed `dist/` before
+adding it and after, and the bundle is byte-identical
+(`5a06164fe810dd25fe2ad9331005cdb3` over the sorted file digests, both times).
+
+**4. I did not revert the branch, and the property suite now says why it is
+safe.** With `commitFromEditField` answering `closesEditor`, the component's job
+is to perform that answer, not to second-guess it; `setEditing(!closesEditor)`
+is the UI asking the domain and doing what it says, and `if (closesEditor)`
+was the UI honouring the answer in one direction and ignoring it in the other.
+The project manager's note is right that the two differ only in the unreachable
+case, and the honest way to close that is to stop it being merely unreachable:
+`the editor is closed whichever change it asked for` is now a property over
+every id and every text. Plant `closesEditor: false` and it goes red. So the
+component honours a flag, and the flag's value is stated where it can fail,
+which is a better pair than a branch nothing can reach.
+
+**5. Recorded for task 13, not acted on.** Task 10's architect logged eight
+cases. Two of them were this task's and are closed: `TodoItem`'s "an edit to
+empty text deletes the todo" and `Header`'s "an empty new todo is not added" are
+both `src/todo-input/effects.ts` now, asked rather than computed, and the
+asymmetry between them is the one thing that file exists to hold. The other six
+stand, and one line number moved when the class became a function - the checkbox
+that decides a click means "the other flag" is `src/components/TodoItem.tsx:47`
+now, not `:54`. The rest are where task 10 left them:
+`MainSection.tsx:17` and `:32`, `containers/MainSection.ts:9`,
+`containers/FilterLink.ts:13`.
+
+I found no new case. The conversion moved rules out of components; it put none
+in. One thing that is not a task 13 case but belongs to task 12, which is the
+task that touches how components are handed their props:
+`TodoTextInput`'s public props carry `newTodo?: boolean` and `editing?: boolean`,
+two booleans encoding the one thing the domain calls a `FieldKind`. `Header`
+passes the first, `TodoItem` passes the second, and `editing === !newTodo` at
+both call sites is held by convention alone. Collapsing them to `field:
+FieldKind` would render byte-identical markup at both call sites and would let
+the component stop deriving `field` from a boolean. I did not do it: it changes
+a component's interface and its spec files, and the props also drive class
+names, which this task puts out of scope.
+
+**6. Properties, which were my bullet.** One new file,
+`properties/todo-input.property.test.ts`, 19 properties, taking the suite from
+6 files / 48 to 7 / 67. What it states that the tables cannot:
+
+- The trim asymmetry as one equation rather than two examples. For every text,
+  Enter and losing focus commit the same thing exactly when the text had no
+  surrounding whitespace, and different things otherwise. A field that trimmed
+  on blur would make them always agree, and that is the plausible wrong
+  implementation the done criteria name.
+- The negative universal about keys, twice: against near-misses picked to break
+  a loose reading (`enter`, `ENTER`, `Enter `, `Return`, `NumpadEnter`, `\n`,
+  `13`) and then against generated text, so the claim covers keys nobody listed.
+- One question, two answers, as a biconditional: for every text, the new-todo
+  field refuses it exactly when the edit field deletes on it. Trim in one caller
+  and only that caller and the equivalence breaks while every example in both
+  spec files still passes.
+- What Enter commits, said three ways rather than as `held.trim()`: the commit
+  is contained in the held text, it has no surrounding whitespace of its own,
+  and it is the held text unchanged whenever there was none to remove. That
+  refuses a stripping implementation as well as a trimming one.
+- Idempotence: committing a commit again changes nothing.
+- Conservation: opening a field and letting it lose focus round-trips the text
+  character for character; the edit field commits untouched; both effects carry
+  the text and the id through unchanged.
+- Clearing turns on which field it is and on nothing else, including when the
+  commit is empty.
+- Emptiness is length and not blankness, over generated runs of every character
+  `trim` removes.
+- And the two modules composed, which no feature file can reach because
+  `todo-input-commits` stops where `todo-input-effects` starts: an edit field
+  holding nothing but whitespace is **deleted** when Enter commits it and
+  **edited to those spaces** when focus moves away. Same field, same characters,
+  two gestures, opposite outcomes. That is the project manager's sharp end,
+  pinned as a property so a fix has to move it on purpose.
+
+**The properties were shown to fail.** Eight wrong implementations planted one
+at a time, each reverted with `git checkout` afterwards; the count is the
+properties that went red.
+
+| planted in place of the rule | red |
+| --- | --- |
+| `commitOnBlur` trims | 4 |
+| Enter does not trim | 5 |
+| the key test is case- and space-insensitive | 1 |
+| the new-todo field clears only a non-empty commit | 2 |
+| `openingText` trims | 2 |
+| `isEmpty` trims, in both callers | 2 |
+| `isEmpty` trims, in the new-todo caller only | 2 |
+| `closesEditor: false` | 1 |
+
+Every one is caught by the property that claims to catch it, and the
+seventh - the one that breaks the asymmetry in one caller and leaves both spec
+files green - is caught only by the biconditional.
+
+**Verified**
+
+`npm run lint`, `npm run format:check`, `npm run typecheck` (seven projects now,
+0 errors), `npm test` 21 files / 193 tests, `npm run build`, `npm run acceptance`
+9 files / 75 tests, `npm run properties` 7 files / 67 tests (was 6 / 48),
+`npm run hardening` 7 files / 65 tests (was 7 / 61), `npm run test:e2e` 22
+passed, `test:e2e:dev` and `test:e2e:preview` 21 passed / 1 skipped. `dist/`
+byte-identical to the build before any of my changes. No dependency installed,
+`package.json` and `package-lock.json` untouched, nothing committed and nothing
+reset. The branch had moved again before I started - it is at `0267621`, the
+cleaner's work committed, and the working tree was clean; I read that as the
+cleaner's change and left it alone.
+
+**Left for the next roles**
+
+- Hardener: both allow lists are widened, so `src/todo-input/*` is importable
+  from `hardening/` now and the scan can run. Three things this pass creates
+  rather than inherits. `properties/todo-input.property.test.ts` kills the eight
+  mutants in the table above, so a survivor scan should be read against that
+  file as well as the specs - what it does not cover is anything the two modules
+  do that no property names. `scripts/architecture/rules.mjs` has one more rule
+  and `hardening/rules.hardening.test.ts` four more tests, and the same warning
+  task 09's scan produced applies: rule *data* is not falsified by the tests
+  that falsify the algorithm, so mutate the new rule's globs and patterns
+  specifically. And `src/todo-input/tsconfig.json` is a gate whose failure mode
+  is silent - delete its `types: []` and nothing goes red - which is worth one
+  thought even though it is a config rather than a source.
+- Hardener, still open from the cleaner and the project manager: the
+  `key`-versus-`which` gap. I did not close it. It is a claim about what
+  `TodoTextInput` reads out of a real event, which is a component-level claim,
+  and nothing I added touches it - my properties drive the module, which has no
+  DOM in its signature at all and therefore cannot tell you which field of an
+  event the component chose to pass in.
+- QA: no procedure changed, no user surface moved, and the bundle is byte-for-byte
+  the one the cleaner left. All three E2E suites pass at the counts the coder and
+  the cleaner recorded.
+
+**Open questions**
+
+None blocking. Two judgments recorded rather than guessed at: keeping
+`setEditing(!closesEditor)` for the reason in 4, and adding a seventh typecheck
+project rather than leaving the no-DOM claim in a handoff note, on the grounds
+that this project has now twice found a claim that was false because nothing
+could check it.
+
 ### Hardener
 
 ### QA
@@ -878,3 +1087,39 @@ part that keeps the distinction alive after everyone forgets.
 task 10's two-slice reducer file, task 10's `errorMessage`, and this task's step
 file at 172 mutants in two neighbourhoods. It has produced a real finding every
 time it has been applied on this project.
+
+## Project manager notes, fourth round
+
+**The no-React/no-DOM boundary is genuinely enforced now, and I verified the
+case that failed before.** Planting `document` in `field.ts` fails the typecheck,
+and so does planting `fetch` — which is precisely the name `@types/node` was
+supplying behind task 09's false claim, where a DOM-free tsconfig caught only
+DOM-*only* names. The difference is `types: []` **and** `typeRoots: []` rather
+than merely omitting the DOM lib. The architect ran the negative controls before
+the positive one, which is why this claim is worth more than the earlier one.
+
+**The new rule catching a bug in its own first draft is the best vindication of
+task 09's lesson so far.** `**` expands between two separators, so
+`src/todo-input/**/*.spec.ts` requires a subdirectory and misses
+`src/todo-input/field.spec.ts`. Written without its binding test, the specs
+would have sat in silent violation of a rule that passed. That is the same
+failure task 09 found by emptying `BOUNDARY_RULES` and watching `npm test` stay
+green — a rule nobody violates on purpose is indistinguishable from no rule —
+and here it was caught during authoring rather than three tasks later.
+
+**On keeping `setEditing(!closesEditor)` and then retiring the question.**
+Better than either accepting or reverting: the component now performs the
+domain's answer rather than honouring it in one direction, and a property pins
+`closesEditor === true` over every id and text, so the case is no longer merely
+unreachable — it is asserted unreachable. An unreachable branch that nothing
+pins is a latent behavior; an unreachable branch a property holds shut is a
+decision.
+
+**Recorded for task 12, not acted on.** `TodoTextInput`'s props carry two
+booleans, `newTodo` and `editing`, encoding one `FieldKind`, with
+`editing === !newTodo` held by convention alone. That is a component-interface
+question and task 12 rewrites how these components get their props.
+
+**Recorded for task 13.** Two of task 10's eight re-derivation cases are closed
+by this task, both now in `effects.ts`; one moved line; the other five stand. No
+new cases found.
