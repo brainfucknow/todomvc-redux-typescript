@@ -1,5 +1,13 @@
-import React, { PureComponent } from 'react'
+import React, { useState } from 'react'
 import classnames from 'classnames'
+import {
+  commitOnBlur,
+  commitOnKey,
+  openingText,
+  type FieldCommit,
+  type FieldKind,
+} from '../todo-input/field'
+
 export interface TodoTextInputProps {
   onSave(text: string): void
   text?: string
@@ -7,57 +15,53 @@ export interface TodoTextInputProps {
   editing?: boolean
   newTodo?: boolean
 }
-interface TodoTextInputState {
-  text: string
-}
 
-export default class TodoTextInput extends PureComponent<
-  TodoTextInputProps,
-  TodoTextInputState
-> {
-  state = {
-    text: this.props.text || '',
+/**
+ * The text field, and nothing but the field: it renders an input, turns the
+ * events React hands it into questions for `src/todo-input/field.ts`, and does
+ * what the answers say. Every rule about trimming, clearing and which key acts
+ * is there rather than here.
+ *
+ * The field is seeded once, from the text it is opened on, and never re-reads
+ * that prop - `useState(openingText(text))` keeps the class's behavior, where
+ * a later `text` prop was ignored. `memo` would be theatre here: `onSave` is a
+ * fresh closure on every render of both callers, so the `PureComponent` this
+ * replaced compared props that always differed and never skipped a render.
+ */
+const TodoTextInput: React.FunctionComponent<TodoTextInputProps> = ({
+  onSave,
+  text,
+  placeholder,
+  editing,
+  newTodo,
+}) => {
+  const field: FieldKind = newTodo ? 'new-todo' : 'edit'
+  const [held, setHeld] = useState(openingText(text))
+
+  const handOn = (commit: FieldCommit | null) => {
+    if (!commit) return
+    onSave(commit.text)
+    if (commit.clearsField) setHeld('')
   }
 
-  handleSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const text = (e.target as HTMLInputElement).value.trim()
-    if (e.which === 13) {
-      this.props.onSave(text)
-      if (this.props.newTodo) {
-        this.setState({ text: '' })
+  return (
+    <input
+      className={classnames({ edit: editing, 'new-todo': newTodo })}
+      type="text"
+      placeholder={placeholder}
+      // Dropping autoFocus moves where the caret lands when the input
+      // appears, both for the new-todo field and for an item opened for
+      // editing. That is a behavior change, which task 06 puts out of scope.
+      // eslint-disable-next-line jsx-a11y/no-autofocus
+      autoFocus={true}
+      value={held}
+      onBlur={(e) => handOn(commitOnBlur(field, e.target.value))}
+      onChange={(e) => setHeld(e.target.value)}
+      onKeyDown={(e) =>
+        handOn(commitOnKey(field, e.currentTarget.value, e.key))
       }
-    }
-  }
-
-  handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    this.setState({ text: e.target.value })
-  }
-
-  handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    if (!this.props.newTodo) {
-      this.props.onSave(e.target.value)
-    }
-  }
-
-  render() {
-    return (
-      <input
-        className={classnames({
-          edit: this.props.editing,
-          'new-todo': this.props.newTodo,
-        })}
-        type="text"
-        placeholder={this.props.placeholder}
-        // Dropping autoFocus moves where the caret lands when the input
-        // appears, both for the new-todo field and for an item opened for
-        // editing. That is a behavior change, which task 06 puts out of scope.
-        // eslint-disable-next-line jsx-a11y/no-autofocus
-        autoFocus={true}
-        value={this.state.text}
-        onBlur={this.handleBlur}
-        onChange={this.handleChange}
-        onKeyDown={this.handleSubmit}
-      />
-    )
-  }
+    />
+  )
 }
+
+export default TodoTextInput

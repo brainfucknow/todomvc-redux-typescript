@@ -100,6 +100,14 @@ describe('components', () => {
       expect(props.deleteTodo).toBeCalledWith(0)
     })
 
+    it('TodoTextInput onSave should call editTodo with an untrimmed blurred text', () => {
+      const { editInput, props } = setup(true)
+      fireEvent.change(editInput(), { target: { value: '   ' } })
+      fireEvent.blur(editInput())
+      expect(props.editTodo).toBeCalledWith(0, '   ')
+      expect(props.deleteTodo).not.toBeCalled()
+    })
+
     it('TodoTextInput onSave should exit component from edit state', () => {
       const { editInput, item } = setup(true)
       pressReturn(editInput())

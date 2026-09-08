@@ -42,16 +42,42 @@ describe('components', () => {
       expect(input.className).toEqual('new-todo')
     })
 
+    it('should hold the empty string when opened on no text at all', () => {
+      const { input } = setup({ text: undefined })
+      expect(input.value).toEqual('')
+    })
+
     it('should update value on change', () => {
       const { input } = setup()
       fireEvent.change(input, { target: { value: 'Use Radox' } })
       expect(input.value).toEqual('Use Radox')
     })
 
+    it('should not call onSave on any other key press', () => {
+      const { input, props } = setup()
+      for (const key of ['Escape', 'ArrowUp']) {
+        fireEvent.keyDown(input, { key, code: key })
+      }
+      expect(props.onSave).not.toBeCalled()
+    })
+
     it('should call onSave on return key press', () => {
       const { input, props } = setup()
       pressReturn(input)
       expect(props.onSave).toBeCalledWith('Use Redux')
+    })
+
+    it('should trim the text it saves on return key press', () => {
+      const { input, props } = setup()
+      fireEvent.change(input, { target: { value: '  Use Radox  ' } })
+      pressReturn(input)
+      expect(props.onSave).toBeCalledWith('Use Radox')
+    })
+
+    it('should not reset state on return key press if not newTodo', () => {
+      const { input } = setup()
+      pressReturn(input)
+      expect(input.value).toEqual('Use Redux')
     })
 
     it('should reset state on return key press if newTodo', () => {
@@ -64,6 +90,13 @@ describe('components', () => {
       const { input, props } = setup()
       fireEvent.blur(input)
       expect(props.onSave).toBeCalledWith('Use Redux')
+    })
+
+    it('should not trim the text it saves on blur', () => {
+      const { input, props } = setup()
+      fireEvent.change(input, { target: { value: '  Use Radox  ' } })
+      fireEvent.blur(input)
+      expect(props.onSave).toBeCalledWith('  Use Radox  ')
     })
 
     it('shouldnt call onSave on blur if newTodo', () => {

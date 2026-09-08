@@ -110,6 +110,7 @@ export const BOUNDARY_RULES = [
     files: ['acceptance/**'],
     allow: [
       'src/todo-api/client',
+      'src/todo-input/*',
       'src/store',
       'src/actions/*',
       'src/selectors',
@@ -120,7 +121,7 @@ export const BOUNDARY_RULES = [
       'node:*',
     ],
     reason:
-      'Two families of feature now, and each drives the module that answers its questions: todo-api-* runs the client, and todo-state-* runs the store the app itself builds, dispatching the same actions the app dispatches and reading the same selectors. Widened in task 10, which is where the second family and the state it specifies arrived. What stays out is the list that matters: src/todo-api/fetchTransport.ts would put fetch back in the suite - the store takes its transport as an argument precisely so the suite can supply its own - and src/components, src/containers and src/middlewares would make the acceptance suite a second renderer of the app.',
+      'Three families of feature now, and each drives the module that answers its questions: todo-api-* runs the client, todo-state-* runs the store the app itself builds, dispatching the same actions the app dispatches and reading the same selectors, and todo-input-* runs the text-input rules in src/todo-input/. Widened in task 10 for the second family and in task 11 for the third, whose modules exist precisely so that the rules can be asked without a component. What stays out is the list that matters: src/todo-api/fetchTransport.ts would put fetch back in the suite - the store takes its transport as an argument precisely so the suite can supply its own - and src/components, src/containers and src/middlewares would make the acceptance suite a second renderer of the app.',
   },
   {
     name: 'the property suite drives the policy, not the network shell',

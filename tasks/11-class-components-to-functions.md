@@ -378,6 +378,137 @@ wrote no source, no handler and no manifest.
 
 ### Coder
 
+Both classes are gone. `src/todo-input/` holds the rules they encoded, the two
+components and `Header` ask it, and the acceptance suite drives it with no React
+in the way. `npm run acceptance` is 75 of 75.
+
+**Added**
+
+- `src/todo-input/field.ts`: what a field hands on, and when. `openingText`,
+  `commitOnKey(field, held, key)`, `commitOnBlur(field, held)`. A commit is
+  `{ text, clearsField }`, and `null` is "nothing is committed, the field is
+  left as it is". `FieldKind` is `'new-todo' | 'edit'`, so which field is asking
+  is an argument rather than a component's private business.
+- `src/todo-input/effects.ts`: what a committed text does.
+  `commitFromNewTodoField(text)` answers `add` or `refuse`;
+  `commitFromEditField(id, text)` answers `{ change, closesEditor }` where the
+  change is `edit` or `delete`. Both call one `isEmpty`, which is the point: the
+  two callers ask the same question and get opposite answers, and the shared
+  predicate is where that is visible.
+- `src/todo-input/field.spec.ts` and `effects.spec.ts`: 18 tests, written before
+  either module existed and red for the right reason first.
+- `acceptance/steps/todo-input.ts`: the third step vocabulary, 18 patterns, its
+  own world, registered in `acceptance/steps/index.ts` beside the other two.
+
+**Changed**
+
+- `TodoTextInput` and `TodoItem` are function components. `Header` now asks the
+  module instead of testing `text.length !== 0` inline.
+- `acceptance/steps/todo-state.ts`: `/^marking todo (.+) complete$/` is now
+  `/^marking todo (.+) (complete|active)$/` and carries the flag through the
+  `completedFlag` helper that was already there for `every todo in the list
+  reads`. That is the seventeenth failure, closed.
+- `scripts/architecture/rules.mjs`: the acceptance suite's allow list gains
+  `src/todo-input/*`, with the reason rewritten to say three families and why.
+  Nothing else in the graph moved.
+- Component specs: six tests added, none changed or removed. They pin what only
+  a rendered component can pin - that the right rule is wired to the right event
+  - because acceptance never renders anything. A field opened on no `text` prop
+  holds `""`; Enter saves trimmed; blur saves untrimmed; Enter leaves a non-new
+  field alone; no other key saves; and a `TodoItem` blurred on three spaces
+  edits rather than deletes, which is the project manager's sharp end seen
+  through the component.
+
+**The one implementation detail that changed: `e.which === 13` is now
+`e.key === 'Enter'`.** The rule had to leave the component, and a module that
+takes a DOM key code would be taking a DOM detail into a testable module while
+the feature file says `the Enter key is pressed`. The two identify the same key
+in every browser this app runs in, `which` is deprecated, and both harnesses
+that press keys send both: `src/test-support/keyboard.ts` sets `key`, `code`,
+`keyCode` and `which`, and Playwright's `press('Enter')` sets all of them too.
+All three E2E suites pass unchanged, which is where a real key event is what
+gets pressed. If you consider this out of scope under "no keyboard handling
+changes", say so - the alternative is a `keyCode` in a module signature.
+
+**`memo` on `TodoItem`, nothing on `TodoTextInput`.** The two `PureComponent`s
+were not equal in what shallow comparison bought them.
+
+- `TodoItem`'s props are `todo` - one object out of the store - and the bound
+  action creators, which `connect` builds once per store because
+  `mapDispatchToProps` here takes no `ownProps`. `TodoList` re-renders on every
+  store change and maps every todo, so the comparison really did skip rows whose
+  own todo had not changed. React 19 does not memoize on its own here (no
+  compiler in this build), so dropping it would re-render every row on every
+  change. `memo` keeps it.
+- `TodoTextInput` is handed a fresh `onSave` closure by both callers on every
+  render. Its shallow comparison could never succeed, so `PureComponent` never
+  skipped a render of it and `memo` would only add a comparison that always
+  fails. Left off deliberately, not forgotten.
+
+Neither is observable, so nothing in the suites asserts it. Both files say which
+they are and why.
+
+**Task 05's class-field question is retired, and the bundle says so.** I built
+before and after and read the output rather than the source diff. The old bundle
+carried `class extends x.PureComponent{state={...};handleSubmit=e=>{...}}` -
+exactly the two class fields task 05's QA diffed - and three occurrences of
+`PureComponent`. The new one has neither: one `PureComponent`, which is React's
+own definition, and both components emitted as arrow functions. Four class
+declarations remain in the whole bundle and all four are dependencies (immer's
+`Immer`, RTK's `MiddlewareArray` and its two `_type` carriers), compiled by their
+own builds and not by this repository's `useDefineForClassFields`. No file under
+`src/` contains the word `class` as a declaration any more. So the lowering
+difference did vanish, as the task predicted, and nothing else was using class
+fields.
+
+**What the acceptance handlers do and do not decide.** The step file plays the
+part `TodoTextInput` plays: it asks a rule what an event commits and then does
+what the answer says, including emptying the field when `clearsField` says to.
+It decides nothing itself - every assertion reads a value some function in
+`src/` returned. Text cells are parsed as JSON, per the features' declaration,
+and `undefined` is the bare word. The field pattern is
+`^the (.+) field holds (.+)$` as the specifier instructed; I did not write the
+`^(.+) holds (.+)$` form. No step is ambiguous: the runtime reports ambiguity
+rather than guessing, and all 75 executions run.
+
+**Verified**
+
+`npm run acceptance` 9 files / 75 tests, all passing. `npm test` 21 files / 193
+tests (was 19 / 169: two new spec files, 18 module tests and six component
+tests). `npm run lint`, `npm run format:check`, `npm run typecheck` (six
+projects, 0 errors), `npm run build`. `npm run properties` 6 / 48. `npm run
+hardening` 7 / 61. `npm run test:e2e` 22 passed; `test:e2e:dev` and
+`test:e2e:preview` 21 passed, 1 skipped. No dependency installed, lockfile
+untouched, nothing committed.
+
+**Left for the next roles**
+
+- Cleaner: `wholeNumber` is now copied in all three step files - `todo-api.ts`,
+  `todo-state.ts` and mine. I added the third copy rather than restructure two
+  files I was otherwise not touching; whether the three families should share a
+  cell vocabulary (`wholeNumber`, and the JSON-text reader mine adds) is yours to
+  decide. Nothing else I wrote is duplicated.
+- Architect: two allow lists to consider. `properties/**` and `hardening/**` do
+  not name `src/todo-input/*`, so neither suite can reach the new modules until
+  one of you widens them - the hardener will need `hardening/**` widened to drive
+  a mutation scan at all. And there is a rule this repository would now support
+  that it does not have: `src/todo-input/**` imports nothing, in the shape of
+  "the todo API policy depends on nothing". I did not add it, because writing a
+  new boundary rule is yours; the graph is ready for it.
+- Hardener: the two modules are small and total, and the specs already drive
+  every peer as a set - both fields for every claim that holds for both, both
+  ids and two texts for every pass-through, both branches for `closesEditor`.
+  What I have not proved is that no survivor remains.
+- QA: no procedure changed and none needed to. `qa/procedures/04`, `05`, `06`,
+  `07` and `09` are the same rules seen through the UI, and all three E2E suites
+  pass.
+
+**Open questions**
+
+None blocking. One judgment recorded above rather than guessed at: the
+`which` -> `key` change, which I made because the rule had to leave the DOM
+behind and the feature file names keys by name.
+
 ### Cleaner
 
 ### Architect
@@ -421,3 +552,37 @@ happens before the key test rather than after, and the input seeds from
 `props.text || ''` once and never re-reads the prop. That second one is the
 reason `todo-input-commits 1` exists, and the coder should read it before
 reaching for `useState(props.text)`.
+
+## Project manager notes, second round
+
+**On `e.which === 13` becoming `e.key === 'Enter'`: accepted, and worth stating
+why it is not a behavior change.** The two are equivalent for the Enter key in
+every browser this app targets, including the numpad Enter, and `which` has been
+deprecated for years. The reason to prefer `key` here is not modernity: a module
+that takes a DOM key code has a DOM detail in its signature, and this module's
+whole point is having none. The Gherkin names keys by name, so the module and
+the specification now agree on vocabulary.
+
+The coder was right to flag it rather than bury it in a diff. It is the only
+implementation detail that changed in a task whose contract is that none does.
+
+**On `memo` for one component and not the other.** The reasoning is the kind I
+want: `TodoItem`'s props really are shallow-stable, so the `PureComponent` it
+replaced was skipping rows and `memo` preserves that. `TodoTextInput` receives a
+fresh `onSave` closure every render, so its comparison could never succeed and
+`memo` there would be theatre. A reflexive `memo` on both would have looked more
+consistent and been worse.
+
+**Task 05's class-field question is retired.** Confirmed at the bundle: the old
+one carried `class extends x.PureComponent{state={…};handleSubmit=e=>{…}}` and
+the new one has neither. The only `PureComponent` left in `src/` is two comments
+explaining why `memo` is on one component and not the other, and the only class
+declarations left in the bundle belong to dependencies compiled by their own
+builds.
+
+**Routed onward, all recorded by the coder rather than done in passing:**
+`wholeNumber` is now copied across three step files, which is the cleaner's call;
+`properties/**` and `hardening/**` allow lists lack `src/todo-input/*` and the
+hardener needs that widened before it can scan the new modules; and a
+`src/todo-input/**` "depends on nothing" boundary rule is supportable but is the
+architect's line to write.

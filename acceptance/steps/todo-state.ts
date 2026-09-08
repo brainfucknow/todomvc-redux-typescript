@@ -143,10 +143,10 @@ const OPERATIONS: [RegExp, (captures: string[]) => Operation][] = [
         store.dispatch(editTodo(wholeNumber(id), text)),
   ],
   [
-    /^marking todo (.+) complete$/,
-    ([id]) =>
+    /^marking todo (.+) (complete|active)$/,
+    ([id, direction]) =>
       (store) =>
-        store.dispatch(completeTodo(wholeNumber(id), true)),
+        store.dispatch(completeTodo(wholeNumber(id), completedFlag(direction))),
   ],
   [
     /^deleting todo (.+)$/,
@@ -201,7 +201,10 @@ function flag(value: string): boolean {
   return value === 'true'
 }
 
-/** `complete` and `active`, the two cells `every todo in the list reads` takes. */
+/**
+ * `complete` and `active`: the two cells `every todo in the list reads` takes,
+ * and the two directions `the app starts marking todo <id> <flag>` runs in.
+ */
 function completedFlag(word: string): boolean {
   if (word !== 'complete' && word !== 'active') {
     throw new Error(`Not a completed state: ${word}`)
