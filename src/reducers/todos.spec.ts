@@ -183,6 +183,31 @@ describe('todos reducer', () => {
     ).toEqual([answered, runTests])
   })
 
+  it('replaces the todo the edit asked about, not the one the answer names', () => {
+    const answered = { text: 'Buy oats', completed: true, id: 1 }
+
+    expect(
+      todos(
+        [useRedux, runTests],
+        editTodoOperation.fulfilled(answered, 'r', { id: 0, text: 'Buy oats' }),
+      ),
+    ).toEqual([answered, runTests])
+  })
+
+  it('replaces the todo the marking asked about, not the one the answer names', () => {
+    const answered = { text: 'Run the tests', completed: true, id: 1 }
+
+    expect(
+      todos(
+        [useRedux, runTests],
+        completeTodoOperation.fulfilled(answered, 'r', {
+          id: 0,
+          completed: true,
+        }),
+      ),
+    ).toEqual([answered, runTests])
+  })
+
   it('leaves the list alone when an answer names a todo it does not hold', () => {
     const answered = { text: 'Buy oats', completed: false, id: 9 }
 

@@ -2091,6 +2091,154 @@ Three recorded rather than guessed at.
    time. It is the note that is wrong, and it will keep being wrong on tasks 11
    to 13 unless the chain says who commits.
 
+### Coder (repair: reducer throw and PATCH id)
+
+Both findings the fifth-round notes routed here are fixed, in the one file and
+the one seam they share. I committed nothing and reset nothing; the branch is
+where I found it, at `0ab8e05`, and three files are modified in the working
+tree.
+
+**Finding 1: the throw is recorded again, and it is the old behavior exactly**
+
+`src/actions/api.ts` gains `recording`, and the five wrappers the UI calls go
+through it. It dispatches the operation, and if the settled action's dispatch
+throws - which is a reducer throwing - it logs the throw and dispatches that
+same operation's `rejected` under the request id the operation started with.
+
+That is the shape the middleware had: `dispatchOutcome` sat inside
+`executeCall`'s `.then`, so a reducer throwing on a success fell into the same
+`.catch` a failing request did and was reported the same way. Redux Toolkit
+dispatches the settled action *outside* the catch it wraps a payload creator in,
+which is why the throw had nowhere to go but a rejected promise nobody holds.
+
+A throw from recording the failure is still left to escape, because it escaped
+then too: the old middleware's failure dispatch was inside the promise it
+returned, and the call sites discard that promise.
+
+*Measured against the pre-task-10 tree rather than reasoned about.* I extracted
+`a268541` into a scratch tree, built the old store with `callAPIMiddleware` over
+a stubbed `fetch`, and drove QA's case - add answered `null`, then a settled
+mark, edit or delete - through the old pipeline, the pipeline as this task left
+it, and the pipeline with the fix. Per operation:
+
+| | old middleware | task 10 as it stood | with the fix |
+| --- | --- | --- | --- |
+| unhandled rejections | none | 1 | none |
+| `console.error` (the app's own) | the `TypeError` | nothing | the `TypeError` |
+| `errorMessage` | the `TypeError` | `null` | the serialized `TypeError`, same `name` and `message` |
+| `exec.t['0'].isUpdating` | `false` | `true`, forever | `false` |
+| `todos` | unchanged | unchanged | unchanged |
+
+The old tree also emits the two non-serializable warnings on that path, exactly
+as task 07 predicted and this task accepts; the raw-versus-serialized error is
+the change this task already documented for transport failures and it is the
+same change here. Everything else matches value for value, so this is a
+restoration and not a third behavior.
+
+**How I checked, since the last check's shape is why this got through**
+
+The original floating-promise check armed `unhandledRejection` while all five
+operations failed at the transport. That is the path `createAsyncThunk` absorbs,
+so the probe could not have detected anything. I armed the same listener against
+a *reducer* throw, with every dispatch result discarded the way the four
+component call sites discard it, and confirmed the probe detects before it
+confirms: the pre-fix tree reports
+`TypeError: Cannot read properties of null (reading 'id')` as unhandled on all
+three of mark, edit and delete, and reports nothing after the fix.
+
+Then a 200-script differential between the pre-fix and post-fix trees, over the
+eight names `src/actions/index.ts` exports, with starts and answers interleaved
+so operations overlap and answers arrive out of order, and ten answer bodies
+including `null`, `"a string"`, unparseable bytes and the empty body. After
+every step and again at the end I compared `todos`, `visibilityFilter`, the
+selector's output, `errorMessage`, `exec`, the outstanding wire requests, what a
+local dispatch threw, and what each dispatch resolved to.
+
+- 49 unhandled rejections before, 0 after.
+- 164 of 200 scripts identical in every respect.
+- In the 36 that differ, the only keys that ever differ are `errorMessage` and
+  `exec` - the two values nothing reads - and every difference is a reducer
+  throw now recorded instead of lost. `todos`, `visibilityFilter`, the
+  selector's output, the requests and the local throws are identical in all 200.
+
+**Finding 2: the PATCH id is pinned**
+
+Two tests in `src/reducers/todos.spec.ts` answer a PATCH with a todo whose `id`
+is not the one asked for, holding both ids in the list, so `meta.arg.id` and
+`payload.id` land on different todos. I verified they fail the wrong
+implementation rather than assuming it: with `action.meta.arg.id` replaced by
+`action.payload.id` in both `fulfilled` handlers, exactly those two tests go red
+and the other eighteen stay green. The production code is unchanged - it was
+already right.
+
+**TDD**
+
+Written failing first, in this order: the two `todos.spec.ts` tests (verified
+red against the mutant, green against the tree), then the two finding-1 tests
+(red against the tree as it stood, for the right reason - the reducer's
+`TypeError` escaping through `changing` in `src/reducers/todos.ts:42`), then the
+fix.
+
+**What I changed**
+
+- `src/actions/api.ts`: `recording`, and the five UI wrappers routed through it.
+- `src/actions/api.spec.ts`: the throwing-reducer test at the seam, one at the
+  store, and `run`'s dispatch double now runs a thunk instead of recording it as
+  an action, which is what a store's dispatch does. The six tests already there
+  pass unchanged through the new double.
+- `src/reducers/todos.spec.ts`: the two differing-id tests.
+
+**One surface change, stated because this task owns that surface**
+
+`dispatch(anApiAction)` still resolves to the settled action and still never
+rejects. What it no longer carries is `.unwrap()`, `.abort()`, `.requestId` and
+`.arg`, because the wrapper returns a plain thunk rather than the
+`AsyncThunkAction` itself. Nothing reads any of them - QA verified `unwrap`
+appears nowhere outside this task file, and I re-checked `abort` and `requestId`
+across `src/`, `qa/`, `acceptance/`, `properties/`, `hardening/` and `scripts/`.
+Before this task the same dispatch returned a bare promise resolving to
+`undefined`, so this moves toward the pre-task shape rather than away from it.
+Restoring `.unwrap()` would also be wrong now: it would rethrow a failure this
+change exists to record.
+
+**Verified**
+
+Working tree as it stands, nothing installed, `package-lock.json` untouched.
+
+- `npm run lint` 0, `npm run format:check` 0, `npm run typecheck` 0 in six projects.
+- `npm test`: 19 files / **169 tests** (165 before, plus the four here).
+- `npm run properties` 6 / 48. `npm run hardening` 7 / 59. `npm run acceptance` 7 / 57.
+- `npm run build` passes.
+- `npm run test:e2e` 22 passed; `test:e2e:dev` and `test:e2e:preview` 21 passed, 1 skipped.
+- ESLint's `complexity` rule at max 10 over `src`, `acceptance`, `properties`,
+  `hardening` and `scripts` exits 0; `recording` is 2.
+- My scratch trees and probes lived outside the repository, under the session
+  scratchpad rather than `build/`, so there is nothing of mine to delete from
+  the working tree. The method is above in enough detail to rebuild; the
+  generator is `seed = index * 7919 + 13` through a 32-bit LCG.
+
+**For the next role**
+
+1. **A feature could specify this, and it is the specifier's to write, not
+   mine.** `features/todo-state-failures.feature` is where the record's own life
+   is specified and it already has the vocabulary: "the app starts adding the
+   todo Ship it / the backend answers with null", then a settled mark, then "the
+   recorded failure message is ..." and "the update of todo 0 is not running".
+   A todo-state-failures 5 in those words would put the behavior I restored
+   under the acceptance suite. I did not touch `features/`.
+2. **The hardener may want a look at `recording`.** It is new source in a module
+   their scan covers. The mutants I could think of all die: dropping the
+   `console.error`, blanking `started.requestId`, and removing the try/catch are
+   each caught by the two new tests. That is my own reasoning, not a scan.
+3. **The pending dispatch is a different case and I left it alone.** Redux
+   Toolkit dispatches `pending` inside its own try, so a reducer throwing there
+   already becomes a `rejected` action; the old middleware let that one
+   propagate synchronously out of `store.dispatch`. Neither is what finding 1
+   is about, nothing reaches it - `executing`'s pending branches cannot throw -
+   and changing it would be choosing a behavior rather than restoring one.
+4. Finding 3 needed no code: it is a correction to a note, and the note is
+   already corrected in the fifth-round record.
+
 ## Project manager notes
 
 **On the specifier's three questions, all answered so none blocks the coder.**

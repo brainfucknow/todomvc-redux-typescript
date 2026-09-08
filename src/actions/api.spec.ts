@@ -1,5 +1,12 @@
 import type { UnknownAction } from '@reduxjs/toolkit'
-import { addTodo, loadTodos, removeTodo, type TodoApiExtra } from './api'
+import {
+  addTodo,
+  completeTodo,
+  loadTodos,
+  removeTodo,
+  type TodoApiExtra,
+} from './api'
+import { createTodoStore } from '../store'
 import type { SendRequest } from '../todo-api/client'
 
 /**
@@ -40,20 +47,37 @@ const failingWith =
  */
 const silenced = () => vi.spyOn(console, 'error').mockImplementation(() => {})
 
+/**
+ * The store as an operation meets it: a dispatch that runs a thunk and hands a
+ * plain action to `reducers`, which is where a reducer's throw comes from.
+ */
 const run = async (
   operation: unknown,
   send: SendRequest,
   order: string[] = [],
+  reducers: (action: UnknownAction) => void = () => {},
 ) => {
   const dispatched: UnknownAction[] = []
-  const dispatch = (action: UnknownAction) => {
+  const extra: TodoApiExtra = { send }
+  const dispatch = (action: unknown): unknown => {
+    if (typeof action === 'function') {
+      return (action as Thunk)(dispatch, () => ({}), extra)
+    }
     order.push('dispatch')
-    dispatched.push(action)
+    dispatched.push(action as UnknownAction)
+    reducers(action as UnknownAction)
     return action
   }
-  const resolved = await (operation as Thunk)(dispatch, () => ({}), { send })
+
+  const resolved = (await dispatch(operation)) as UnknownAction
   return { dispatched, resolved }
 }
+
+/** Reducers that throw on one action, the way a null in the list makes them. */
+const throwingOn =
+  (type: string, error: unknown) => (action: UnknownAction) => {
+    if (action.type === type) throw error
+  }
 
 const typesOf = (dispatched: UnknownAction[]) =>
   dispatched.map((action) => action.type)
@@ -140,5 +164,71 @@ describe('the todo backend operations', () => {
 
     expect(resolved.type).toBe('todos/load/fulfilled')
     expect(resolved.payload).toStrictEqual([{ id: 1 }])
+  })
+
+  it('records a reducer that throws on a settled operation, as the middleware did', async () => {
+    const thrown = new TypeError(
+      "Cannot read properties of null (reading 'id')",
+    )
+    const order: string[] = []
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {
+      order.push('log')
+    })
+
+    const { dispatched, resolved } = await run(
+      addTodo('Ship it'),
+      answering('null'),
+      order,
+      throwingOn('todos/add/fulfilled', thrown),
+    )
+
+    expect(logged).toHaveBeenCalledWith(thrown)
+    expect(order).toStrictEqual(['dispatch', 'dispatch', 'log', 'dispatch'])
+    expect(typesOf(dispatched)).toStrictEqual([
+      'todos/add/pending',
+      'todos/add/fulfilled',
+      'todos/add/rejected',
+    ])
+    expect(resolved).toBe(dispatched[2])
+    expect(dispatched[2]).toMatchObject({
+      error: { name: 'TypeError', message: thrown.message },
+      meta: {
+        arg: { text: 'Ship it' },
+        requestId: (dispatched[0].meta as { requestId: string }).requestId,
+      },
+    })
+    logged.mockRestore()
+  })
+})
+
+/**
+ * The one route into a throwing reducer that needs nothing malformed to be in
+ * the state first: an add answered with the body `null` leaves a well-formed
+ * array with a `null` in it, and the next settled edit, marking or delete reads
+ * `id` off that `null`. Driven through a real store, because the throw has to
+ * come from the reducers the app runs rather than from a stand-in.
+ */
+describe('an operation whose settled action the reducers throw on', () => {
+  const holdingANullTodo = async () => {
+    const store = createTodoStore(answering('null'))
+    await store.dispatch(addTodo('Ship it'))
+    return store
+  }
+
+  it('is recorded as a failure of that operation and stops running', async () => {
+    const logged = silenced()
+    const store = await holdingANullTodo()
+
+    const settled = await store.dispatch(completeTodo(0, true))
+
+    expect(settled.type).toBe('todos/mark/rejected')
+    expect(store.getState().errorMessage).toMatchObject({ name: 'TypeError' })
+    expect(store.getState().exec.t['0']).toStrictEqual({ isUpdating: false })
+    expect(store.getState().todos).toStrictEqual([
+      { text: 'Use Redux', completed: false, id: 0 },
+      null,
+    ])
+    expect(logged).toHaveBeenCalledWith(expect.any(TypeError))
+    logged.mockRestore()
   })
 })

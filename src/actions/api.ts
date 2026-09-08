@@ -1,4 +1,8 @@
-import { createAsyncThunk } from '@reduxjs/toolkit'
+import {
+  createAsyncThunk,
+  type ThunkAction,
+  type UnknownAction,
+} from '@reduxjs/toolkit'
 import {
   addTodoCall,
   completeTodoCall,
@@ -94,15 +98,71 @@ export const removeTodoOperation = createTodoThunk<void, TodoId>(
 )
 
 /**
+ * As much of an operation as recording a throw needs: it starts under a request
+ * id, and it has a failure action of its own. Written out rather than named as
+ * `AsyncThunk`, because that type's configuration cannot be restated here
+ * without losing what the five operations return.
+ */
+type Started = Promise<UnknownAction> & { requestId: string }
+
+interface Operation<Argument> {
+  (
+    argument: Argument,
+  ): ThunkAction<Started, unknown, TodoApiExtra, UnknownAction>
+  rejected: (
+    error: Error | null,
+    requestId: string,
+    argument: Argument,
+  ) => UnknownAction
+}
+
+/**
+ * Runs one operation and records a reducer that throws on its settled action as
+ * a failure of that same operation - logged, then dispatched as its `rejected`
+ * under the request id that started it.
+ *
+ * That is where the throw went before there were thunks: the middleware
+ * dispatched from inside `executeCall`'s promise chain, so a reducer throwing
+ * on a success was caught alongside a failing request and reported the same
+ * way. Redux Toolkit dispatches the settled action outside the catch it gives a
+ * payload creator, so without this the throw is only a rejected thunk promise -
+ * which the four call sites discard, leaving nothing logged, nothing recorded,
+ * and the operation marked as still running for good.
+ *
+ * A throw from recording the failure is left to escape, as it did then.
+ */
+const recording =
+  <Argument>(
+    operation: Operation<Argument>,
+    argument: Argument,
+  ): ThunkAction<
+    Promise<UnknownAction>,
+    unknown,
+    TodoApiExtra,
+    UnknownAction
+  > =>
+  async (dispatch) => {
+    const started = dispatch(operation(argument))
+    try {
+      return await started
+    } catch (thrown) {
+      console.error(thrown)
+      return dispatch(
+        operation.rejected(thrown as Error, started.requestId, argument),
+      )
+    }
+  }
+
+/**
  * What the UI calls. Each one is a plain function of the arguments the app has
  * at the call site, because a thunk takes one argument and an edit has two -
  * and because an action creator handed straight to an `onClick` would take the
  * DOM event as its payload.
  */
-export const loadTodos = () => loadTodosOperation()
-export const addTodo = (text: string) => addTodoOperation({ text })
+export const loadTodos = () => recording(loadTodosOperation, undefined)
+export const addTodo = (text: string) => recording(addTodoOperation, { text })
 export const editTodo = (id: number, text: string) =>
-  editTodoOperation({ id, text })
+  recording(editTodoOperation, { id, text })
 export const completeTodo = (id: number, completed: boolean) =>
-  completeTodoOperation({ id, completed })
-export const removeTodo = (id: number) => removeTodoOperation({ id })
+  recording(completeTodoOperation, { id, completed })
+export const removeTodo = (id: number) => recording(removeTodoOperation, { id })
