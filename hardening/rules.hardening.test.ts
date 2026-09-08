@@ -1,0 +1,248 @@
+import { describe, expect, it } from 'vitest'
+import { violationsOf } from '../scripts/architecture/boundaries.mjs'
+import { BOUNDARY_RULES } from '../scripts/architecture/rules.mjs'
+
+/**
+ * Every rule in `scripts/architecture/rules.mjs`, broken on purpose.
+ *
+ * `boundaries.spec.mjs` runs the real rules over the real repository, which
+ * says nothing at all about whether any particular rule works: a repository
+ * that obeys every rule gives the same answer as a repository with no rules.
+ * A mutation scan said so out loud - deleting the whole rule list, emptying any
+ * rule's globs, or blanking any pattern in it left the suite green. That is the
+ * shape of gate this project keeps finding and removing.
+ *
+ * So each rule gets a module that breaks it and a module that obeys it, and the
+ * last test asserts the table names every rule there is. A rule added without a
+ * planted violation turns this file red, which is the point: the cost of a new
+ * boundary is proving it can fail.
+ */
+
+const module = (path: string, ...targets: string[]) => ({
+  path,
+  targets,
+})
+
+/**
+ * What the real rules say about these modules, as `[rule, target]` pairs - so a
+ * module that breaks nothing reads as `[]` and one test shape covers both
+ * directions.
+ */
+const judged = (...modules: { path: string; targets: string[] }[]) =>
+  violationsOf(modules, BOUNDARY_RULES).map((violation) => [
+    violation.rule,
+    violation.target,
+  ])
+
+describe('the todo API policy depends on nothing', () => {
+  it('refuses any import at all, including one that looks harmless', () => {
+    expect(judged(module('src/todo-api/client.ts', 'redux'))).toStrictEqual([
+      ['the todo API policy depends on nothing', 'redux'],
+    ])
+    expect(
+      judged(module('src/todo-api/client.ts', 'src/constants/ActionTypes')),
+    ).toStrictEqual([
+      ['the todo API policy depends on nothing', 'src/constants/ActionTypes'],
+    ])
+  })
+
+  it('is content with the module as it stands, importing nothing', () => {
+    expect(judged(module('src/todo-api/client.ts'))).toStrictEqual([])
+  })
+})
+
+describe('the fetch transport translates for the client and knows nothing else', () => {
+  it('refuses the transport reaching past the client', () => {
+    expect(
+      judged(module('src/todo-api/fetchTransport.ts', 'src/reducers/todos')),
+    ).toStrictEqual([
+      [
+        'the fetch transport translates for the client and knows nothing else',
+        'src/reducers/todos',
+      ],
+    ])
+  })
+
+  it('allows the one import it has', () => {
+    expect(
+      judged(module('src/todo-api/fetchTransport.ts', 'src/todo-api/client')),
+    ).toStrictEqual([])
+  })
+})
+
+describe('shipped code never reaches into test support', () => {
+  it('refuses each of the three things that do not exist in a bundle', () => {
+    expect(
+      judged(
+        module('src/components/App.tsx', 'src/test-support/store'),
+        module('src/reducers/todos.ts', 'vitest'),
+        module('src/containers/Header.ts', '@testing-library/react'),
+      ),
+    ).toStrictEqual([
+      [
+        'shipped code never reaches into test support',
+        'src/test-support/store',
+      ],
+      ['shipped code never reaches into test support', 'vitest'],
+      [
+        'shipped code never reaches into test support',
+        '@testing-library/react',
+      ],
+    ])
+  })
+
+  it('lets a spec and test support itself do exactly that', () => {
+    expect(
+      judged(
+        module('src/components/App.spec.tsx', 'src/test-support/store'),
+        module('src/todo-api/client.spec.ts', 'vitest'),
+        module('src/test-support/fetch.ts', 'vitest'),
+      ),
+    ).toStrictEqual([])
+  })
+})
+
+describe('the application never imports its own harnesses', () => {
+  it('refuses every harness directory by name', () => {
+    const harnesses = [
+      'qa/stub/server',
+      'acceptance/runtime',
+      'properties/tiny-check',
+      'hardening/rules.hardening.test',
+      'scripts/architecture/rules',
+      'build/acceptance/ir/todo-api-requests.json',
+      'features/todo-api-requests.feature',
+    ]
+
+    expect(
+      judged(module('src/index.tsx', ...harnesses)).map(([, target]) => target),
+    ).toStrictEqual(harnesses)
+  })
+
+  it('leaves an ordinary application import alone', () => {
+    expect(
+      judged(module('src/index.tsx', 'react-dom/client', 'src/components/App')),
+    ).toStrictEqual([])
+  })
+})
+
+describe('the acceptance pipeline drives the policy, not the network shell', () => {
+  it('refuses the transport, and any other way into src/', () => {
+    expect(
+      judged(
+        module('acceptance/steps/todo-api.ts', 'src/todo-api/fetchTransport'),
+        module('acceptance/runtime.ts', 'src/reducers/todos'),
+      ),
+    ).toStrictEqual([
+      [
+        'the acceptance pipeline drives the policy, not the network shell',
+        'src/todo-api/fetchTransport',
+      ],
+      [
+        'the acceptance pipeline drives the policy, not the network shell',
+        'src/reducers/todos',
+      ],
+    ])
+  })
+
+  it('allows the client, its own modules, Vitest and Node', () => {
+    expect(
+      judged(
+        module(
+          'acceptance/steps/todo-api.ts',
+          'src/todo-api/client',
+          'acceptance/runtime',
+          'vitest',
+          'node:fs',
+        ),
+      ),
+    ).toStrictEqual([])
+  })
+})
+
+describe('the property suite drives the policy, not the network shell', () => {
+  it('refuses the transport', () => {
+    expect(
+      judged(
+        module(
+          'properties/todo-api-client.property.test.ts',
+          'src/todo-api/fetchTransport',
+        ),
+      ),
+    ).toStrictEqual([
+      [
+        'the property suite drives the policy, not the network shell',
+        'src/todo-api/fetchTransport',
+      ],
+    ])
+  })
+
+  it('allows the client, its own runner and Vitest', () => {
+    expect(
+      judged(
+        module(
+          'properties/todo-api-client.property.test.ts',
+          'src/todo-api/client',
+          'properties/tiny-check',
+          'vitest',
+        ),
+      ),
+    ).toStrictEqual([])
+  })
+})
+
+describe('the hardening suite drives modules, never the network shell', () => {
+  it('refuses the transport, as the other two harnesses do', () => {
+    expect(
+      judged(
+        module(
+          'hardening/todo-api-client.hardening.test.ts',
+          'src/todo-api/fetchTransport',
+        ),
+      ),
+    ).toStrictEqual([
+      [
+        'the hardening suite drives modules, never the network shell',
+        'src/todo-api/fetchTransport',
+      ],
+    ])
+  })
+
+  it('allows the tooling it exists to break, which the other two may not touch', () => {
+    expect(
+      judged(
+        module(
+          'hardening/boundary-checking.hardening.test.ts',
+          'src/todo-api/client',
+          'properties/tiny-check',
+          'scripts/architecture/boundaries',
+          'hardening/support',
+          'vitest',
+          'node:fs',
+        ),
+      ),
+    ).toStrictEqual([])
+  })
+})
+
+describe('the table above', () => {
+  it('leaves every rule able to explain itself when it fails', () => {
+    for (const rule of BOUNDARY_RULES) {
+      expect(rule.reason.length).toBeGreaterThan(rule.name.length)
+    }
+  })
+
+  it('names every rule there is, so a new boundary cannot arrive unproven', () => {
+    const proven = [
+      'the todo API policy depends on nothing',
+      'the fetch transport translates for the client and knows nothing else',
+      'shipped code never reaches into test support',
+      'the application never imports its own harnesses',
+      'the acceptance pipeline drives the policy, not the network shell',
+      'the property suite drives the policy, not the network shell',
+      'the hardening suite drives modules, never the network shell',
+    ]
+
+    expect(BOUNDARY_RULES.map((rule) => rule.name)).toStrictEqual(proven)
+  })
+})

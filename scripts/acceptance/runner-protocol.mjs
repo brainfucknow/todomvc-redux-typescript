@@ -188,6 +188,17 @@ export function response({
 }
 
 /**
+ * Milliseconds per unit, and the unit a bare number means. The regex above
+ * admits only these three suffixes or none, so there is nothing else to fall
+ * back to - a second default here would be unreachable, and an unreachable
+ * default hides which unit a bare number is read as: with one in place,
+ * defaulting to `s` and defaulting to nothing produce the same answer.
+ *
+ * @type {Record<string, number>}
+ */
+const SCALES = { ms: 1, s: 1000, m: 60000 }
+
+/**
  * @param {string | undefined} timeout an APS duration, e.g. "30s"
  * @returns {number | undefined} milliseconds, or undefined when there is no
  *   readable duration to impose
@@ -195,6 +206,5 @@ export function response({
 export function timeoutMilliseconds(timeout) {
   const match = /^(\d+(?:\.\d+)?)(ms|s|m)?$/.exec(timeout ?? '')
   if (!match) return undefined
-  const scale = { ms: 1, s: 1000, m: 60000 }[match[2] ?? 's'] ?? 1000
-  return Number(match[1]) * scale
+  return Number(match[1]) * SCALES[match[2] ?? 's']
 }

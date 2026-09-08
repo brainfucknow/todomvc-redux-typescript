@@ -1005,6 +1005,414 @@ asserted for `null` and `undefined` at every id.
 
 ### Hardener
 
+Mutation hardening. Six modules mutated one at a time, then the three features
+through `gherkin-mutator --level soft`, then CRAP and DRY. Nothing in `qa/` was
+touched; `features/` was run, not edited, but the mutator writes a manifest into
+it - see the open question below. Every command in the release list was re-run
+after the last edit.
+
+**How mutation was run at all, since this repository has no mutant tester**
+
+`@stryker-mutator/core@10.0.0`, installed into `node_modules` only with
+`npm install --no-save`, driven through its `command` runner so it needs no
+Vitest plugin. `package.json` and `package-lock.json` are unchanged (lockfile
+md5 `29184ac9...` before and after; `package.json`'s only diff is the
+`hardening` script below). This is the route the cleaner took for the coverage
+provider and for the same reason: mutation is a measurement a role takes, not a
+gate CI runs, and "what does CI install" is task 14's question. Reproduce with
+
+    npm install --no-save @stryker-mutator/core@10.0.0
+    npx stryker run <config>            # configs are in the hardener's scratch
+
+One caution if you repeat it. `npm install --no-save --no-package-lock` re-resolves
+the tree and prunes optional peers - it removed `@vitest/coverage-v8` from
+`node_modules`. Plain `--no-save` is enough and leaves the lockfile alone; `npm ci`
+puts everything back either way, and I finished with one.
+
+**Language mutation, before and after**
+
+One file at a time, each against the tests that guard it plus the new hardening
+suite. Scores are Stryker's, over every mutant it generates for the file.
+
+| module | mutants | before | after | survivors left |
+| --- | --- | --- | --- | --- |
+| `src/todo-api/client.ts` | 91 | 98.90% | **100%** | 0 |
+| `scripts/architecture/imports.mjs` | 48 | 77.08% | **100%** | 0 |
+| `scripts/architecture/rules.mjs` (new, split out) | 71 | - | 98.59% | 1 |
+| `scripts/acceptance/runner-protocol.mjs` | 110 | 89.19% | 98.18% | 2 |
+| `scripts/architecture/boundaries.mjs` | 95 | 62.09% | 89.47% | 10 |
+| `properties/tiny-check.ts` | 199 | 63.82% | 73.37% | 53 |
+
+`boundaries.mjs`'s "before" is the whole file including the rule data that is now
+`rules.mjs`; the two rows after the split are what that 62% was hiding.
+
+The headline is the first row. **The module this task exists to create kills
+every mutant Stryker can make of it**, and it did so at 90 of 91 before I touched
+anything - the unit tests the coder and architect wrote are strong. The one
+survivor was a real hole and a small one: four of the five request specs in
+`client.spec.ts` assert `readsResponseBody` and the fifth, `completeTodoCall`,
+does not, so flipping that one call to `false` cost nothing. Whether an answer is
+read is what decides whether a body is parsed, and delete is the only operation
+that says no, so `hardening/todo-api-client.hardening.test.ts` now states it once
+for all five.
+
+**Not mutated, and why**
+
+- `src/todo-api/fetchTransport.ts` and `src/middlewares/callapimiddleware.ts` are
+  adapters; `src/actions/api.ts` is five re-exports with nothing to mutate.
+- `acceptance/runtime.ts`, `acceptance/run-feature.ts` and
+  `acceptance/steps/todo-api.ts` are the acceptance harness - `node:fs` and
+  `vitest` - so not testable modules, and they are what the Gherkin stage drives
+  rather than what it measures.
+- `scripts/acceptance/runner-worker.mjs`, `aps.mjs`, `run-acceptance.mjs`,
+  `install-aps.mjs`, `generate-entrypoints.mjs`: process shells.
+
+**The mixed-job hint: `boundaries.mjs` was two jobs and the count said so**
+
+58 of its 153 mutants survived, and almost every one was a mutation of the rule
+*data*: `BOUNDARY_RULES` emptied entirely, any rule's `files` blanked, any
+pattern in any `deny` list replaced with `""` - all green. The deciding half
+killed 95. That is two jobs with two falsifiability stories in one file, and the
+module's own doc comment already claimed to be "deciding only" while holding
+every path in the repository.
+
+So `scripts/architecture/rules.mjs` now holds `BOUNDARY_RULES` and nothing else,
+and `boundaries.mjs` holds `violationsOf`, `cyclesOf` and their helpers and knows
+no paths. `boundaries.spec.mjs` imports the rules from their new home; nothing
+else moved and no assertion changed.
+
+The reason the data survived is worth stating plainly, because it is the fifth
+false green this project has found and the same shape as the others: **the only
+thing driving the real rules was a repository that obeys them, and a repository
+that obeys every rule says exactly what a repository with no rules says.** The
+architect proved each rule could fail by planting five violations by hand and
+removing them again; nothing automated held that afterwards.
+`hardening/rules.hardening.test.ts` is that half - every rule broken on purpose
+and asserted to be caught by name, every rule obeyed on purpose and asserted to
+be let through, and a last test asserting the table names every rule there is, so
+a rule added later without a planted violation turns the file red.
+
+**What I changed**
+
+Source, three files:
+
+- `scripts/architecture/rules.mjs` - new; the rule data, moved out of
+  `boundaries.mjs` unchanged apart from one added rule (below) and a doc comment
+  saying what the split was for.
+- `scripts/architecture/boundaries.mjs` - the deciding half, and its doc comment
+  no longer claims something the file contradicted.
+- `scripts/acceptance/runner-protocol.mjs` - `{ms:1,s:1000,m:60000}[match[2] ?? 's'] ?? 1000`
+  became a named `SCALES` constant with no second default. The cleaner recorded
+  that `?? 1000` as unreachable and left it; mutation showed it was not free.
+  With it in place, `match[2] ?? 's'` and `match[2] ?? ''` produce the same
+  answer, so which unit a bare `"45"` is read as was unpinned. Removing it made
+  the existing `timeoutMilliseconds('45') === 45000` test do that work. It needed
+  no type assertion; the typecheck gate is still clean.
+
+One rule added to `rules.mjs`: `hardening/**` may reach the policy module, the
+property runner, the repository's tooling and its own files, and may not reach
+`src/todo-api/fetchTransport.ts` or anything else in `src/`. Hardening tests
+exist to break whichever module is under mutation, so unlike acceptance and
+properties they legitimately reach `scripts/`; what they still may not do is
+reach the network shell, because a mutation killed by the network would be
+measuring the network. `boundaries.spec.mjs`'s repository scan now includes
+`hardening/`.
+
+Tests, all new and all in one place:
+
+- `hardening/`, six files, 50 tests, run by `npm run hardening` through
+  `vitest.hardening.config.mts`. One file per module that had survivors, each
+  headed by what survived and why the test kills it.
+- A sixth tsconfig project, `hardening/tsconfig.json`, wired into
+  `scripts/typecheck.mjs`. `scripts/typecheck-gate.spec.mjs` went red on its
+  project-list assertion exactly as written, as it did for the coder and the
+  architect; the expected line and the comment above it were updated.
+- `eslint.config.js` gained `hardening/**/*.ts` to the block acceptance and
+  properties already share, and one stale reference to `boundaries.mjs` holding
+  the rules now points at `rules.mjs`.
+
+Hardening tests are a separate command for the reason acceptance and properties
+are: **`npm test` is 16 files / 139 tests, unchanged.** No hardening test joined
+that count, `test:unit` is still 13/83 and `scripts` still 3/56.
+
+**Survivor triage, file by file**
+
+Every remaining survivor was read, not just counted.
+
+`scripts/acceptance/runner-protocol.mjs`, 2 left, both equivalent:
+
+1. `catch { return undefined }` reduced to `catch {}`. Falling through leaves
+   `report` undefined and `report?.numTotalTests` then returns undefined anyway.
+   Same answer by a different route.
+2. `timeout ?? ''` with the empty string replaced by any other non-matching
+   string. Every string that fails the regex produces `undefined`, so no default
+   that is not itself a duration can be told from any other.
+
+The eight that died were all real: a report that parses to `null` used to throw
+instead of being refused; a missing failure count and a non-list `testResults`
+were both accepted; the singular "1 test file matched, but no test ran" - the
+wording a mutated feature actually produces - was asserted nowhere; and the
+duration regex accepted a leading `x` and rejected `1.25s`.
+
+`scripts/architecture/rules.mjs`, 1 left: the client rule's `allow: []` replaced
+by a one-element list holding a string no module imports. It forbids exactly what
+the empty list forbids. The seven `reason` prose mutants died to a test asserting
+each rule's reason says more than its name repeats, which is the property that
+matters - a gate that says only "no" is a gate people switch off - without
+pinning documentation into an assertion.
+
+`scripts/architecture/boundaries.mjs`, 10 left, all equivalent or unreachable,
+and the branch coverage report agrees (100% statements, 86.36% branches, the
+uncovered branches being lines 89, 109 and 165):
+
+- Four sentinel-value mutants (`[]` replaced by `["Stryker was here"]` in the
+  initial walk stack, the else branch of `internalEdges`, `rule.except ?? []`,
+  `rule.deny ?? []`). Each is only observable if a module path or a rule pattern
+  is literally that string.
+- `edges.get(path) ?? []`: unreachable. `internalEdges` maps every module and
+  `walk` is only ever called with a module path.
+- `settled.has(path)` and `settled.add(path)` removed: the memo changes cost, not
+  the answer, because `distinct` deduplicates what a re-walk would find twice.
+  Killing them would mean a timing test.
+- `.sort()` and `.join(' ')` in the cycle key, and `if (!byMembers.has(key))`:
+  all three only matter when the same loop is found twice in different rotations,
+  which `settled` prevents. Defensive, and I left them defensive.
+
+Nine others there did die, and they were worth having: a cycle reached from
+outside it reported the way in as part of the loop; a module that imports itself
+was a cycle; two loops in one graph were reported as one; a dotted filename lost
+the wrong extension; a non-index module got a truncated directory alias; and a
+rule with two file globs or two deny patterns only honoured the first of each.
+
+`properties/tiny-check.ts`, 53 left of 199, and this is the one number I am not
+going to dress up. The breakdown:
+
+- 19 are the `CHARACTERS` alphabet that `text()` draws from - one string literal
+  per entry. It is data chosen so a JSON body has something to survive, and the
+  only way to kill those mutants is to assert the alphabet, which asserts data.
+- 30 are inside the generators and shrinkers: the PRNG's mixing arithmetic, and
+  the shrink candidate lists of `integer`, `text`, `elementOf` and `arrayOf`.
+  A shrinker has several routes to the same minimum on purpose, so removing one
+  candidate still arrives at `37`, `"\""`, `[0,0]` and `[5,true]` - the four the
+  existing property test pins. Killing these means pinning the route rather than
+  the destination, and a shrinker whose route is pinned cannot be improved.
+- 2 are the `typeof value === 'string'` fast path in `show`. `JSON.stringify` of
+  a string is byte-identical with and without the replacer, so the branch is a
+  shortcut, not a decision.
+- The rest of the file went from 63.82% to 73.37% on the parts that are
+  decisions: `show` rendered `undefined` as nothing at all, dropped an undefined
+  a JSON body would swallow, and returned nothing for a circular value; the
+  failure report claimed "(shrunk from ...)" when nothing had shrunk and would
+  have collapsed to one line; `runs` and `shrinks` budgets were unpinned; and
+  `$PROPERTY_SEED` - this runner's entire reproducibility story - was driven by
+  nothing at all, so the guard reading it could be inverted or deleted and every
+  property still passed.
+
+**Gherkin mutation, and the baseline proved first**
+
+The baseline requirement from the repair coder's note is a procedure, so here it
+is as a procedure. Before each of the three runs, one job over the same worker
+against unmutated IR:
+
+    rm -rf build/acceptance-mutation && mkdir -p build/acceptance-mutation/generated
+    node scripts/acceptance/generate-entrypoints.mjs \
+      build/acceptance/ir/<feature>.json build/acceptance-mutation/generated
+    printf '%s\n' '{"id":"base","feature_json":"build/acceptance/ir/<feature>.json","generated_dir":"build/acceptance-mutation/generated"}' \
+      | node scripts/acceptance/runner-worker.mjs
+
+All three answered `test_success` - 10, 8 and 6 tests respectively - and all
+three mutation runs reported `Errors: 0`, so no result below comes from a run
+that was not running anything. The repaired adapter behaved: no `infrastructure_error`
+appeared anywhere, which is what a correctly configured run looks like now.
+
+**One footgun the coder's command does not mention, and it bit me.** A generated
+entry point does not bind to the IR it was generated from - it reads
+`process.env.ACCEPTANCE_IR` and falls back. So if the mutation work tree holds
+all three entry points, every job runs the mutated IR through all three of them:
+my first baseline reported 30 tests for a 10-scenario feature. Generate **only**
+the feature under mutation into the work tree, one directory per feature, as the
+coder's note says and as the commands above do. It is not merely a speed
+question; with three entry points loaded, the mutator's per-scenario accounting
+is measuring a feature three times.
+
+Then, per feature:
+
+    .aps/bin/gherkin-mutator -feature features/<feature>.feature \
+      -generated-dir build/acceptance-mutation/generated \
+      -work-dir build/acceptance-mutation \
+      -runner-worker "node scripts/acceptance/runner-worker.mjs" \
+      -level soft -json
+
+`node ...` directly, never `npm run`, as the coder warned: npm's banner would
+corrupt the NDJSON.
+
+| feature | mutants | killed | survived |
+| --- | --- | --- | --- |
+| todo-api-requests | 20 | 14 | 6 |
+| todo-api-outcomes | 20 | 2 | 18 |
+| todo-api-refusals | 6 | 2 | 4 |
+
+28 survivors, in four classes, and **I edited no feature file**:
+
+*A. Declared deliberate, 10.* The `status` column in outcomes 1, 2 and 3, and the
+`body` column in outcomes 2. The specifier recorded these in advance and they
+must survive: "this input is ignored" is the specification, `qa/procedures/21`
+depends on it, and the client never reads `response.ok`. They survived. Nothing
+was hardened against them and the defect is untouched.
+
+*B. Cause-shaped, 2.* The `body` column of outcomes 3, where the point is that a
+body which will not parse fails the call. Character-level mutation of `boom` or
+`Internal Server Error` produces another string that will not parse, so the
+outcome is unchanged. The scenario is right and the mutation cannot reach it.
+
+*C. Identity-shaped, 12.* A cell that feeds both the When and the Then, so
+mutating it moves the input and the expectation together. `id` in requests 3, 4
+and 5; `text` in outcomes 1; `id`, `text` and `error` in outcomes 4.
+
+*D. Shape-immune, 4.* The `names` column of refusals 2. What that scenario
+specifies is arity and type - not three strings - and a character mutation
+preserves both, so all four rows stay refused. Correct as written; `--level soft`
+cannot express the mutation that would test it.
+
+**The coder's open question about outcomes 4, answered.** It is right: outcomes 4
+has no killable cell as written, and I do not think it should be given one. What
+it specifies is a conservation identity - the operation's own fields ride onto
+both outcomes unchanged, and the error that ended the call is the error reported.
+No mutation of an example cell can falsify an identity, because mutating both
+sides preserves it. Adding a column that restates the input verbatim is the
+"example column that only asserts the no-op" my brief tells me to prefer deleting.
+The right tool for an identity is a property, and the architect already wrote it:
+`properties/todo-api-client.property.test.ts` asserts the call's fields on both
+outcomes over the whole generated range, which is a stronger statement than any
+two example rows. My recommendation is to leave outcomes 4 exactly as it is and
+record that the property covers it.
+
+**Requests 3, 4 and 5 are a different case, and this one is for the specifier.**
+`<id>` feeds `the request path is api/todos/<id>`, so the path is derived from
+the id by concatenation - the very thing the specifier guarded against for the
+add body, and for the same reason ("a concatenating implementation passes the
+other rows and fails that one"). The remedy already exists in the same file: the
+`body` column of requests 2, 3 and 4 is an independent literal, and every `body`
+mutant died. A `path` column carrying `api/todos/42` would kill the six `id`
+survivors and would catch a client that percent-encoded, zero-padded or otherwise
+transformed the id on its way into the URL. That is a change to `features/`,
+which is not mine, so I am reporting it rather than making it.
+
+**CRAP gate**
+
+Under 10 everywhere on the changed files, and with coverage where it is the gate
+reduces to complexity almost everywhere.
+
+- `src/todo-api/client.ts`: 100% statements, branches and functions under the
+  unit suite (unchanged from the cleaner's measurement; `src` totals are still
+  87.87% / 93.1%), and now 100% mutation score. Its most branching function is
+  `outcomeNamesOf` at 4.
+- `scripts/architecture/boundaries.mjs`: 100% statements, 86.36% branches, the
+  three uncovered branches being the unreachable defaults triaged above. Highest
+  complexity is `walk` at 5, so CRAP is about 5.0.
+- `scripts/acceptance/runner-protocol.mjs`: 100% lines and 100% functions from
+  its own spec alone; the two lines the spec misses are covered by the hardening
+  suite. `classifyRun` is the highest at about 9. It is one `cond` answering one
+  question - what does this finished run mean - which is the exception the
+  shared definitions name, and it is under the gate regardless. I did not split
+  it, and splitting it into helpers taking booleans the caller already computed
+  is exactly what the definition forbids.
+- `scripts/architecture/rules.mjs` is data: complexity 1.
+- The hardening tests are straight-line; the one helper with branches,
+  `withSeedEnvironment`, is 5.
+
+Coverage was measured with `@vitest/coverage-v8@5.0.0` installed `--no-save`, as
+the cleaner did, and not persisted; `npm ci` removes it. Note for whoever reads
+the architect's note next: that provider was **not** in the lockfile, it was the
+cleaner's un-saved copy still sitting in `node_modules`. My `npm ci` removed it,
+which is the correct behavior and confirms it has to be re-installed each time
+anyone wants a coverage number. That is another argument for task 14.
+
+**DRY**
+
+Two duplications in my own new tests, both removed: `rules.hardening.test.ts` had
+a `clean` helper that was `judged` without the mapping, and
+`tiny-check.hardening.test.ts` had the same failing property written out three
+times where one `failsAt` helper serves. I re-ran mutation afterwards to prove
+the refactor kept every kill - `rules.mjs` still 98.59%, and the `tiny-check.ts`
+lines those tests target still 42 of 45 with only the two equivalent `show`
+mutants left.
+
+Three duplications I left, deliberately:
+
+- The one-line `module(path, ...targets)` record builder appears in
+  `boundaries.spec.mjs` and in two hardening files. Hoisting it would make three
+  files depend on a fourth to construct a two-field object, which is the trade
+  the cleaner already refused for `acceptance/steps/todo-api.ts`.
+- `hardening/todo-api-client.hardening.test.ts` asserts `readsResponseBody` for
+  all five operations, and `client.spec.ts` asserts it for four of them. That is
+  the same fact in two places on purpose: the unit spec describes each operation
+  whole, the hardening file states the rule across all five, and if the fact
+  changed both would go red, which is the right outcome.
+- The five request builders in `client.ts` still repeat their shape, for the
+  reason the cleaner gave.
+
+**Verified, after the last edit, from a clean `npm ci` tree**
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in six projects.
+- `npm test`: 16 files / 139 tests, **unchanged**. `test:unit` 13 / 83,
+  `test:scripts` 3 / 56, both unchanged.
+- `npm run acceptance`: 3 files / 24 executions, unchanged - the mutator's
+  manifest comments do not reach the IR.
+- `npm run properties`: 2 files / 26 tests, unchanged.
+- `npm run hardening`: 6 files / 50 tests. New command.
+- `npm run test:e2e`: 22 passed. `test:e2e:dev` and `test:e2e:preview`: 21
+  passed, 1 skipped each. No procedure was edited or needed editing.
+- `package-lock.json` byte-unchanged (md5 checked before and after every install
+  and after `npm ci`). `package.json`'s only change is the `hardening` script.
+
+**Left for QA**
+
+- One new release check, `npm run hardening`. It needs nothing `npm ci` does not
+  already install - no Go, no clone, no network - so it is in the same position
+  as `npm run properties`, not `npm run acceptance`.
+- `npm test` still covers the boundary checker, and it now also covers the rule
+  data indirectly: a red `scripts` project can mean an architecture violation,
+  and the failure names the rule and its reason.
+- Nothing in the mutation tooling is wired into any command. Repeating this
+  hardening pass needs the two `--no-save` installs above; nothing QA runs
+  depends on them.
+
+**Open questions for the project manager**
+
+1. **`gherkin-mutator` writes its manifest into `features/*.feature`.** All three
+   feature files carry a new `# acceptance-mutation-manifest-begin ... end`
+   comment block at the top, recording which scenarios were fully killed and
+   when. That is the tool's own output - the thing that makes `--level soft`
+   differential on the next run - and my brief says to preserve mutation
+   manifests and never hand-edit them, so I kept them. But `features/` is the
+   specifier's, and no earlier role hit this because nobody had run the mutator.
+   Two things follow and both are yours to rule on: whether a machine-written
+   block in a specifier-owned file is acceptable, and if it is, that the
+   specifier must leave it alone rather than tidying it away. The blocks are
+   removable with three `sed` deletions and cost only a full re-run.
+   Worth knowing before you decide: `outcomes` recorded no scenarios at all,
+   because every scenario in it has at least one survivor, and all of those
+   survivors are the deliberate ones. So the manifest as it stands says
+   "requests 2 and refusals 1 are done", which is true.
+2. **Should the mutant tester be persisted?** Same shape as the coverage
+   provider, same answer from me: not in a structural task. `@stryker-mutator/core`
+   is one devDependency and a config file, and tasks 10 to 13 each get a
+   hardener who will install it by hand exactly as I did. If you would rather the
+   repository carry it, task 14 is where it belongs, next to the coverage
+   provider and the acceptance toolchain - all three are "what does CI install".
+3. **`npm run hardening` is now the third command outside CI**, after acceptance
+   and properties. You have already ruled properties should go in and acceptance
+   should not; hardening is in properties' position, not acceptance's. My
+   recommendation is that it goes in with properties, and I have left CI alone.
+4. **The `id` column in requests 3, 4 and 5**, above. A specifier question, and
+   the remedy is a pattern already in that file.
+5. **`npm test` did not move this time.** 16 files / 139 tests, exactly as the
+   architect left it. Recording it because three roles in a row have had to name
+   the number; the hardening tests went into their own command precisely so this
+   one stayed put.
+
 ### QA
 
 ## Project manager notes

@@ -1,28 +1,19 @@
 /**
- * The boundaries this repository has, written down where something can check
- * them.
+ * How a boundary rule is decided.
  *
- * Task 09 created several that existed only in prose: the todo API client owns
- * policy and must run with no environment at all, the fetch transport
- * translates for it and does nothing else, `src/test-support/` is for specs and
- * must never be reachable from shipped code, and the acceptance pipeline drives
- * the policy rather than the network shell. Every one of them was a comment in
- * a handoff note, and a comment cannot fail.
- *
- * Two kinds of statement live here, and neither is a style rule:
+ * Two kinds of statement are checked here, and neither is a style rule:
  *
  *   - an allowed- or forbidden-dependency list per group of modules, which is
  *     how a layer says what it is allowed to know about;
  *   - no import cycles anywhere, including cycles made only of type imports,
  *     which erase at run time but still mean two modules each define the other.
  *
- * A rule is intent, not scripture. When the correct inward call changes the
- * graph, widen the list in the same change and say why in the reason - that is
- * the point of keeping the intent as data. What must not happen is the graph
- * changing while the list still claims otherwise.
- *
- * Deciding only: this module reads no files and knows no paths of its own. Its
- * spec supplies the repository.
+ * Deciding only: this module reads no files and knows no paths of its own -
+ * `rules.mjs` holds the rules this repository is checked against, and the spec
+ * supplies the repository. The two were one file until a mutation scan showed
+ * they were two jobs: the deciding half killed 95 of its mutants and the rule
+ * data survived nearly all of its own, because data is not falsified by the
+ * same tests that falsify an algorithm.
  */
 
 /**
@@ -40,60 +31,6 @@
  * @property {string[]} [deny] targets not permitted
  * @property {string} reason
  */
-
-/** @type {Rule[]} */
-export const BOUNDARY_RULES = [
-  {
-    name: 'the todo API policy depends on nothing',
-    files: ['src/todo-api/client.ts'],
-    allow: [],
-    reason:
-      'It answers domain questions and is the module the acceptance and property suites drive directly. It imports nothing today, so the empty list is the truth rather than a guess; a later task that needs a domain type here should widen it deliberately.',
-  },
-  {
-    name: 'the fetch transport translates for the client and knows nothing else',
-    files: ['src/todo-api/fetchTransport.ts'],
-    allow: ['src/todo-api/client'],
-    reason:
-      'The adapter performs a request and hands back a status and bytes. Anything else it imported would be a domain decision moving into the shell.',
-  },
-  {
-    name: 'shipped code never reaches into test support',
-    files: ['src/**'],
-    except: ['src/**/*.spec.ts', 'src/**/*.spec.tsx', 'src/test-support/**'],
-    deny: ['src/test-support/**', 'vitest', '@testing-library/**'],
-    reason:
-      'src/test-support/ calls `vi` and renders through @testing-library, neither of which exists in a built bundle. A shipped module importing it would typecheck, lint and build, and fail in the browser.',
-  },
-  {
-    name: 'the application never imports its own harnesses',
-    files: ['src/**'],
-    deny: [
-      'qa/**',
-      'acceptance/**',
-      'properties/**',
-      'scripts/**',
-      'build/**',
-      'features/**',
-    ],
-    reason:
-      'The harnesses drive the application. An arrow the other way would put test infrastructure in the bundle and make the thing under test depend on the thing testing it.',
-  },
-  {
-    name: 'the acceptance pipeline drives the policy, not the network shell',
-    files: ['acceptance/**'],
-    allow: ['src/todo-api/client', 'acceptance/**', 'vitest', 'node:*'],
-    reason:
-      'Acceptance runs the client against a stand-in transport. Importing src/todo-api/fetchTransport.ts would put fetch back in the suite, and reaching into any other part of src/ would be a second, unowned way in.',
-  },
-  {
-    name: 'the property suite drives the policy, not the network shell',
-    files: ['properties/**'],
-    allow: ['src/todo-api/client', 'properties/**', 'vitest'],
-    reason:
-      'Same boundary as acceptance, for the same reason: a property that needed the network would be a property of the network.',
-  },
-]
 
 /**
  * @param {Module[]} modules

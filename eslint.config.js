@@ -14,7 +14,8 @@
  *   qa/tests, qa/*.ts    Node, Playwright specs, no React and no JSX a11y
  *   qa/stub/             plain CommonJS JavaScript, Node, no TypeScript rules
  *   acceptance/,         Node, no React: the harnesses that drive src/ through
- *   properties/          its own module boundary
+ *   properties/,         its own module boundary
+ *   hardening/
  *   root loose files     Node, ESM (vite.config.mts, scripts/*.mjs) or CJS
  *                        (eslint.config.js, prettier.config.js)
  *
@@ -102,7 +103,7 @@ module.exports = tseslint.config(
    * compiles clean under every project in the repository, DOM lib or not.
    *
    * What it imports is a different question with a different answer:
-   * scripts/architecture/boundaries.mjs holds the dependency rules, because a
+   * scripts/architecture/rules.mjs holds the dependency rules, because a
    * layer's allowed-dependency list is data other rules are written against,
    * not a lint setting.
    */
@@ -174,11 +175,11 @@ module.exports = tseslint.config(
     },
   },
 
-  // The acceptance pipeline's runtime and step handlers, and the property
-  // suite. Node, never a browser bundle, and no React: both drive src/ through
-  // its own module boundary.
+  // The acceptance pipeline's runtime and step handlers, the property suite,
+  // and the hardening suite. Node, never a browser bundle, and no React: all
+  // three drive src/ through its own module boundary.
   {
-    files: ['acceptance/**/*.ts', 'properties/**/*.ts'],
+    files: ['acceptance/**/*.ts', 'properties/**/*.ts', 'hardening/**/*.ts'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,

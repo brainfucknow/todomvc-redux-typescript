@@ -3,7 +3,8 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { importTargetsOf } from './imports.mjs'
-import { BOUNDARY_RULES, cyclesOf, violationsOf } from './boundaries.mjs'
+import { cyclesOf, violationsOf } from './boundaries.mjs'
+import { BOUNDARY_RULES } from './rules.mjs'
 
 /**
  * Two halves, and both are needed.
@@ -17,12 +18,17 @@ import { BOUNDARY_RULES, cyclesOf, violationsOf } from './boundaries.mjs'
  * `npm test`, so a later task that imports fetch into the policy module or
  * pulls test-support into shipped code goes red here rather than in review.
  *
+ * What it still cannot prove is that any *particular* rule in rules.mjs would
+ * catch anything, because a repository that obeys every rule says the same
+ * thing as a repository with no rules at all. `hardening/rules.hardening.test.ts`
+ * is the half that breaks each rule on purpose.
+ *
  * qa/ is deliberately outside the scan. QA owns it, and a dependency rule
  * written here would constrain a role that never reads this file.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const SCANNED = ['src', 'acceptance', 'properties', 'scripts']
+const SCANNED = ['src', 'acceptance', 'properties', 'hardening', 'scripts']
 const SOURCE = /\.(ts|tsx|mjs)$/
 
 describe('reading what a module imports', () => {

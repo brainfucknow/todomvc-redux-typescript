@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T08:15:15Z","feature_name":"Todo API outcome interpretation","feature_path":"features/todo-api-outcomes.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"sha256:7f18c37660fc0d223a7b21680ef9a490a862d22a75fd7403d90ef17367dc7a4f","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 # todo-api-outcomes
 #
 # Scenarios in this feature are named "todo-api-outcomes <n>". The name is a

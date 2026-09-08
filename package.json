@@ -42,6 +42,7 @@
     "test": "vitest run",
     "acceptance": "node scripts/acceptance/run-acceptance.mjs",
     "properties": "vitest run --config vitest.properties.config.mts",
+    "hardening": "vitest run --config vitest.hardening.config.mts",
     "acceptance:install": "node scripts/acceptance/install-aps.mjs",
     "test:unit": "vitest run --project unit",
     "test:scripts": "vitest run --project scripts",

@@ -1,0 +1,32 @@
+{
+  // The hardening suite: one test per mutant that survived a mutation run.
+  // A sixth project rather than part of "src" for the reason properties/ is a
+  // fifth - it needs Node's globals, and the app must never see them.
+  //
+  // `allowJs` without `checkJs`, because this is the one suite that drives the
+  // repository's own *.mjs tooling as well as its TypeScript. Those modules
+  // are type-checked by tsconfig.tools.json, which is where checkJs belongs;
+  // here they are read for the JSDoc types they export and nothing more.
+  //
+  // No DOM lib, deliberately, and the same reach as properties/ plus the
+  // tooling: scripts/architecture/rules.mjs states the import rule that says
+  // so, and hardening/rules.hardening.test.ts proves that rule can fail.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["node"]
+  },
+  "include": ["."]
+}

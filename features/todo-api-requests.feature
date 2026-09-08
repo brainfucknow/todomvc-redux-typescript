@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T08:14:29Z","feature_name":"Todo API request construction","feature_path":"features/todo-api-requests.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"sha256:d16c3906c1f1b0fafd15391324e076f25e6d1b6b91c154df4b4ca5b3ba9ae789","scenarios":[{"index":1,"name":"todo-api-requests 2","scenario_hash":"97cd52b99ac302134c4c48f77adec5ce0cbc5ad18daf05bf4ee03e734ae248b6","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-08T08:14:29Z"}]}
+# acceptance-mutation-manifest-end
+
 # todo-api-requests
 #
 # Scenarios in this feature are named "todo-api-requests <n>". The name is a
