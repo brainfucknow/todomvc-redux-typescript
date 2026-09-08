@@ -56,6 +56,24 @@ jobs:
       # working directory, and scripts/typecheck-gate.spec.mjs holds the test
       # for that. Do not add a `working-directory:` here without re-reading it.
 
+      # Three Vitest runs, three configs. vite.config.mts knows only the `unit`
+      # and `scripts` projects, so nothing under properties/ or hardening/ can
+      # reach CI through `npm test` - naming these two here is what runs them.
+      # Each costs about a second against the unit suite's twenty-odd, so they
+      # come first.
+      #
+      # Neither needs anything `npm ci` does not install. The generator behind
+      # the properties is properties/tiny-check.ts, this repository's own, not a
+      # third-party library. The hardening tests are ordinary tests that a
+      # surviving mutant argued for: Stryker generates mutants, it does not run
+      # these, and both commands pass with @stryker-mutator absent entirely.
+      #
+      # `npm run acceptance` is the one verification command still outside this
+      # file, because it needs Go and an unpinned third-party clone to run.
+      - run: npm run properties
+
+      - run: npm run hardening
+
       - run: npm test
 
       - run: npm run build

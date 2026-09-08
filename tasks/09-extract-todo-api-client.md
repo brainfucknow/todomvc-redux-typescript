@@ -1415,6 +1415,71 @@ Three duplications I left, deliberately:
 
 ### QA
 
+### Coder (CI: properties and hardening)
+
+`npm run properties` and `npm run hardening` are now steps in
+`.github/workflows/nodejs.yml`. It is the only file this role changed apart
+from this one; `git diff --name-only` lists the two of them.
+
+**Where they sit.** After `npm run typecheck`, before `npm test`. Timed on this
+machine: properties 1.3s, hardening 1.3s, against typecheck at 9.0s and
+`npm test` at 24.3s, so a broken invariant now surfaces a suite earlier than it
+otherwise would and the file's cheapest-first ordering still holds. They are
+placed below the typecheck step's `working-directory:` warning rather than
+between that warning and the step it warns about.
+
+**Both steps can fail.** Two plants, each reverted:
+
+- `COLLECTION_PATH` from `'api/todos/'` to `'api/todos'` in
+  `src/todo-api/client.ts`: properties exit 1, 1 of 26 failed. `npm test` also
+  exit 1; `npm run hardening` exit 0.
+- the delete call's `readsResponseBody` from `false` to `true`: hardening exit
+  1, 1 of 50 failed. `npm run properties` and `npm test` also exit 1.
+
+The first plant is the interesting one: hardening is green under it, so these
+are two gates and not one gate run twice. Every exit code above was read from
+`$?` after a redirect to a file, never after a pipeline, because a pipeline
+would have reported `grep`'s or `tail`'s status instead. After reverting, the
+working tree holds no change outside the workflow file.
+
+**Clean room.** Reconstructed a fresh checkout in a scratch directory from
+`git ls-files` plus `git ls-files --others --exclude-standard`, which is empty
+right now, so 162 files, and diffed the copied tree against that manifest: it
+matches. Then `npm ci` from the committed lockfile, and every `run:` step of the
+workflow in file order. With `/usr/local/go/bin` stripped from `PATH`:
+lint 0, format:check 0, typecheck 0 errors across the six projects, properties
+2 files / 26 tests, hardening 6 files / 50 tests, `npm test` 16 files / 139
+tests, build 0, the propTypes grep 0. Then, with Go back on `PATH` but
+irrelevant, `npm run test:e2e` 22 passed. Every baseline holds.
+
+**`npm ci` alone is enough for both new steps**, so no install step was added.
+`@stryker-mutator` is absent from the clean room's `node_modules` and hardening
+passes anyway: Stryker generates mutants, it does not run the tests that
+resulted from them. The property generator is `properties/tiny-check.ts`, this
+repository's own; the property suite imports nothing but it, the client and
+Vitest. Neither command touched Go, and neither clones anything.
+
+**What I could not verify.** GitHub Actions cannot run here. I parsed the
+workflow with a YAML parser and confirmed the step list and its order, and ran
+each `run:` command by hand in the clean room, but nothing proves the job as
+GitHub assembles it: `actions/checkout@v5`, `actions/setup-node@v5` with
+`cache: npm`, the `npx playwright install --with-deps chromium` step, which I
+was told never to run because this machine has a browser pre-installed, and the
+`if: failure()` artifact upload are all unexercised. The two new steps are plain
+`run:` lines with no `with:`, `env:` or `working-directory:` key, which is the
+narrowest thing they could be.
+
+**Left alone.** `npm run acceptance` stays out of CI, per the fifth-round
+ruling: Go plus an unpinned third-party clone inside the gate. Nothing in
+`src/`, `qa/` or `features/` was touched, no test's assertions changed, no
+dependency was persisted, and the workflow's triggers are as they were. Task 14
+still owns persisting Stryker and the coverage provider.
+
+**Open question for the project manager.** Three verification commands now sit
+outside CI rather than the file's stated three: acceptance, the Stryker runs
+themselves, and the dev and preview E2E variants. That matches the fifth-round
+note exactly, so nothing needs saying unless the count moves again.
+
 ## Project manager notes
 
 **On the specifier's open question about `undefined`.** Keep the row. The guard
