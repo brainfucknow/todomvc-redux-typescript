@@ -44,16 +44,62 @@ const phasesOf = (operation: Operation) => [
 ]
 
 /**
- * The five, each with the action the UI calls it by. One list, because both
+ * The five, each with the calls the UI starts it by and the argument each of
+ * those calls is the operation's own record of. One list, because all three
  * things asserted below are claims about every one of them and a sixth
- * operation should arrive here once rather than in two places.
+ * operation should arrive here once rather than in three places.
+ *
+ * Two calls each, differing in every field, because a wrapper that ignores what
+ * it was handed and passes a constant matches whichever single call carries
+ * that same constant - which is how `completeTodo` freezing its flag to `true`
+ * lived through a suite that only ever marks a todo complete. `loadTodos` has
+ * one call because it has no argument to vary.
  */
 const uiActions = [
-  { start: () => loadTodos(), operation: loadTodosOperation },
-  { start: () => addTodo('Ship it'), operation: addTodoOperation },
-  { start: () => editTodo(1, 'Ship it'), operation: editTodoOperation },
-  { start: () => completeTodo(1, true), operation: completeTodoOperation },
-  { start: () => removeTodo(1), operation: removeTodoOperation },
+  {
+    operation: loadTodosOperation,
+    calls: [{ start: () => loadTodos(), argument: undefined }],
+  },
+  {
+    operation: addTodoOperation,
+    calls: [
+      { start: () => addTodo('Ship it'), argument: { text: 'Ship it' } },
+      { start: () => addTodo('Or not'), argument: { text: 'Or not' } },
+    ],
+  },
+  {
+    operation: editTodoOperation,
+    calls: [
+      {
+        start: () => editTodo(1, 'Ship it'),
+        argument: { id: 1, text: 'Ship it' },
+      },
+      {
+        start: () => editTodo(2, 'Or not'),
+        argument: { id: 2, text: 'Or not' },
+      },
+    ],
+  },
+  {
+    operation: completeTodoOperation,
+    calls: [
+      {
+        start: () => completeTodo(1, true),
+        argument: { id: 1, completed: true },
+      },
+      {
+        start: () => completeTodo(2, false),
+        argument: { id: 2, completed: false },
+      },
+    ],
+  },
+  {
+    operation: removeTodoOperation,
+    calls: [
+      { start: () => removeTodo(1), argument: { id: 1 } },
+      { start: () => removeTodo(2), argument: { id: 2 } },
+    ],
+  },
 ]
 
 const operations = uiActions.map(({ operation }) => operation)
@@ -118,7 +164,7 @@ describe('the name each backend operation dispatches under', () => {
 interface Recorded {
   type: string
   error?: unknown
-  meta?: { requestId?: string }
+  meta?: { requestId?: string; arg?: unknown }
 }
 
 type UiThunk = (
@@ -136,13 +182,12 @@ const answering: SendRequest = (_request, readResponseBody) =>
 
 /**
  * The store as a wrapper meets it, reduced to the one thing that matters here:
- * a dispatch that runs a thunk, and reducers that throw on one action the way a
- * null in the todo list makes them.
+ * a dispatch that runs a thunk and hands every plain action to reducers, which
+ * is where a reducer's throw comes from.
  */
-const dispatchedWhenReducersThrowOn = async (
+const dispatchedBy = async (
   action: unknown,
-  type: string,
-  thrown: Error,
+  reducers: (action: Recorded) => void = () => {},
 ) => {
   const dispatched: Recorded[] = []
   const extra: TodoApiExtra = { send: answering }
@@ -151,7 +196,7 @@ const dispatchedWhenReducersThrowOn = async (
       return (candidate as UiThunk)(dispatch, () => ({}), extra)
     }
     dispatched.push(candidate as Recorded)
-    if ((candidate as Recorded).type === type) throw thrown
+    reducers(candidate as Recorded)
     return candidate
   }
 
@@ -159,19 +204,23 @@ const dispatchedWhenReducersThrowOn = async (
   return dispatched
 }
 
+/** Reducers that throw on one action, the way a null in the todo list makes them. */
+const throwingOn = (type: string, thrown: Error) => (action: Recorded) => {
+  if (action.type === type) throw thrown
+}
+
 describe('what each backend operation does with a reducer that throws on it', () => {
   it('records the throw as that operation failing, across all five', async () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    for (const { start, operation } of uiActions) {
+    for (const { operation, calls } of uiActions) {
       const thrown = new TypeError(
         "Cannot read properties of null (reading 'id')",
       )
 
-      const dispatched = await dispatchedWhenReducersThrowOn(
-        start(),
-        operation.fulfilled.type,
-        thrown,
+      const dispatched = await dispatchedBy(
+        calls[0].start(),
+        throwingOn(operation.fulfilled.type, thrown),
       )
 
       expect(dispatched.map((action) => action.type)).toStrictEqual([
@@ -189,5 +238,44 @@ describe('what each backend operation does with a reducer that throws on it', ()
     }
 
     logged.mockRestore()
+  })
+})
+
+/**
+ * The third thing every one of the five must do, and the same gap a third time.
+ * The wrappers exist because the UI has arguments a thunk cannot take - an edit
+ * has two - so each one builds the operation's record from what it was called
+ * with, and every reducer that keys off `action.meta.arg` reads what it built.
+ * `api.spec.ts` asserts that record for `addTodo` and for nobody else, and
+ * `index.spec.ts`'s table stops at each operation's method and path without
+ * ever reading a request body, so a frozen id dies there but a frozen text or a
+ * frozen flag does not: `editTodo` sending `{ id, text: 'x' }` and
+ * `completeTodo` sending `{ id, completed: true }` both survived the unit
+ * suite, the properties, this suite and acceptance together, and only the
+ * browser regression suite noticed.
+ *
+ * Nor could acceptance notice the flag as it is written: `todo-state-operations`
+ * says "marking todo N complete" and has no "not complete" phrasing, so no
+ * scenario ever asks for `completed: false`.
+ *
+ * Said once per operation, over two calls each, so that passing a constant
+ * fails whichever constant it is.
+ */
+describe('the argument each backend operation is started with', () => {
+  it('is the one its wrapper was called with, across all five', async () => {
+    for (const { operation, calls } of uiActions) {
+      for (const { start, argument } of calls) {
+        const dispatched = await dispatchedBy(start())
+
+        expect(dispatched.map((action) => action.type)).toStrictEqual([
+          operation.pending.type,
+          operation.fulfilled.type,
+        ])
+        expect(dispatched.map((action) => action.meta?.arg)).toStrictEqual([
+          argument,
+          argument,
+        ])
+      }
+    }
   })
 })

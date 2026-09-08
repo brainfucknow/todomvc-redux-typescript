@@ -2478,6 +2478,347 @@ None blocking. Three recorded.
    operations, rather than rediscovering it per task.
 
 
+### QA (re-verification)
+
+Independent verification of the tree as it stands, after the repair and the
+pass-2 hardening. Every gate is green at the stated baselines, the branch is at
+`eb12786`, and the only file I changed in the repository is this one.
+
+**The branch moved under me, which the sixth-round note says to expect**
+
+The pass-2 hardener's note ends "one modified file in the working tree". It is
+committed, at `eb12786`, and the tree was clean when I started. Fifth role in a
+row; reported and left alone, as instructed.
+
+**1. The regression is dead for all five operations, and I reproduced it for
+each rather than sampling**
+
+Method rebuilt rather than reused. Both pipelines run in one Node process over
+one `globalThis.fetch` stub, so both go through the same `sendWithFetch`; I
+checked rather than assumed that the wire layer is shared, and
+`src/todo-api/fetchTransport.ts`, `src/todo-api/client.ts` and
+`src/selectors/index.ts` are byte-identical between `a268541` and `HEAD`. The
+old store is `configureStore` with `callAPIMiddleware`, as
+`src/test-support/store.tsx` built it then; the new one is `createTodoStore`'s
+own configuration.
+
+For each of the five in turn, a reducer throws a `TypeError` on that
+operation's settled action, the operation is started through the name
+`src/actions/index.ts` exports, and the dispatch result is discarded exactly as
+the four component call sites discard it, with `process.on('unhandledRejection')`
+armed. Old and new agree, for every one of the five, on: unhandled rejections
+(none), the app's own `console.error` argument, `errorMessage`'s `name` and
+`message`, the whole of `exec`, `todos`, and the wire requests.
+
+Two differences, both already documented and both accepted: the record is a
+serialized error rather than an `Error` (`instanceof Error` true before, false
+after), and the old store emits two Redux Toolkit non-serializable warnings on
+that path where the new one emits none. Nothing else differs. That is the
+answer to "restored the old behavior or chose a new one": restored, with the one
+documented difference and no other.
+
+*The probe detects before it confirms.* With `src/actions/api.ts` reverted to
+`git show 0ab8e05`, all five leak `Cannot read properties of null (reading
+'id')`, nothing is logged, `errorMessage` stays `null` and `exec` stays in
+flight - the regression exactly as the fifth-round note describes it.
+
+*Reachable without a stand-in reducer, through `createTodoStore` and the real
+reducers:* four of the five.
+
+| operation | route | leaks pre-repair | recorded now |
+| --- | --- | --- | --- |
+| add | a load answered `5` leaves `todos` non-iterable, then `[...state, payload]` throws `state is not iterable` | yes | yes |
+| edit | QA's route: an add answered `null`, then a settled edit | yes | yes |
+| mark | same | yes | yes |
+| delete | same | yes | yes |
+| load | none | - | - |
+
+**Load has no reachable route, and cannot have one as the reducers stand.**
+`loadTodosOperation.fulfilled` is `(_state, action) => action.payload` and reads
+nothing off it; `executing` writes a boolean; `errorMessage` ignores a fulfilled
+action. I drove seven answer bodies (`5`, `null`, `"a string"`, `{}`, `[]`,
+`true`, `[null]`) through a real store and no reducer threw on any of them. So
+load's share of the claim is a generalisation rather than a reproduction, and
+the hardening test pinning it with a throwing double is the right shape for it -
+worth saying out loud, because "all five reproduced" would have been the
+comfortable sentence and it is not the true one.
+
+**2. The five bypasses, re-checked one at a time**
+
+Each applied separately to `src/actions/api.ts` and reverted:
+
+| bypass | unit | properties | hardening | my probe |
+| --- | --- | --- | --- | --- |
+| `loadTodos` | green | green | **1 red** | red, load only |
+| `addTodo` | **1 red** | green | **1 red** | red, add only |
+| `editTodo` | green | green | **1 red** | red, edit only |
+| `completeTodo` | **1 red** | green | **1 red** | red, mark only |
+| `removeTodo` | green | green | **1 red** | red, delete only |
+
+Confirms both halves of the sixth-round note independently: the unit suite holds
+only add and mark, so load, edit and delete really were free after the repair,
+and the one test added in pass 2 is what holds all five now.
+
+**3. The predecessor's differential conclusion survives the seam - and one
+clause of it does not**
+
+Rebuilt at 320 scripts rather than trusted. A seeded 32-bit LCG,
+`seed = index * 7919 + 13`, the first 20 six steps long and the rest fourteen,
+over the eight names `src/actions/index.ts` exports, with answers held as
+deferreds so operations overlap and settle out of order: ten bodies including
+`null`, `"a string"`, `{"id":0}`, `5`, unparseable bytes and the empty body,
+four statuses including 404 and 500, and 15% of calls rejected at the transport.
+After every step and again after settlement I compared four buckets separately,
+so that a difference in one could not be reported as a difference in another.
+
+- **User-visible - `todos`, `visibilityFilter`, `getVisibleTodos`, every wire
+  request including whether the response body was read, and every synchronous
+  throw at the dispatch site: identical in all 320.** The conclusion survives
+  the `recording` seam sitting in that path.
+- Number of the app's own `console.error` calls, per step: identical in all 320.
+- Unhandled rejections: **0 on both sides in all 320**. These scripts do reach
+  reducer throws, so that is the repair working generatively rather than only in
+  the cases someone named.
+
+*The clause that does not survive, and it is small.* 50 of the 320 disagree on
+the **text** of an error message - in `console.error` and, identically, in
+`state.errorMessage`. Old: `state.map is not a function`. Current:
+`todos.map is not a function`; likewise `state.filter` and `todos.filter`. V8
+names the local the failing call was made on, and the cleaner's `changing` and
+`without` helpers renamed that local from `state` to `todos`. Same error name,
+same place, same count, and undoing that one substitution makes **every** one of
+the 100 disagreements vanish - checked mechanically, not by eye.
+
+This qualifies the predecessor's "every `console.error` argument ... still
+matches argument for argument in all 320": the arguments match in count, type
+and position, not in message text. It predates the repair - it arrived with
+`e6b4d8f` - so it was equally true of the tree the predecessor measured. Both
+values are read by nobody, it is reachable only after a backend answers a load
+with a non-array, and no gate moves. Recorded, not routed.
+
+*Detect check.* Replacing `action.meta.arg.id` with `action.payload.id` in the
+two PATCH `fulfilled` handlers makes the differential report a user-visible
+divergence in 25 of 80 scripts, and turns exactly the coder's two new
+`todos.spec.ts` tests red and nothing else. Both fifth-round findings are
+closed, and the second is closed by tests that fail the wrong implementation.
+
+**4. The "one operation where it should be every operation" scan - one finding**
+
+Clean where it was fixed. `hardening/todo-operations.hardening.test.ts` asserts
+all fifteen phase names and iterates all five wrappers from one `uiActions`
+table. `src/actions/index.spec.ts` is already a table over the five. The
+`meta.arg.id` claim in `todos.spec.ts` reaches every operation that keys off it:
+edit and mark have the coder's differing-id tests, and a delete cannot take the
+mutant at all, because its `payload` is `undefined` and `payload.id` throws in
+every delete test.
+
+**The wrapper argument is where it survives.** `api.spec.ts` asserts `meta.arg`
+for `addTodo` and for nobody else. Eleven hand mutants of `src/actions/api.ts`,
+each applied to the real source and reverted; two live through the unit suite,
+the properties, the hardening suite and acceptance together:
+
+| mutant | unit | properties | hardening | acceptance | e2e |
+| --- | --- | --- | --- | --- | --- |
+| `editTodo` freezes its text (`{ id, text: 'x' }`) | green | green | green | green | **2 red** |
+| `completeTodo` freezes its flag (`{ id, completed: true }`) | green | green | green | green | **3 red** |
+
+The other nine die in the unit suite: `addTodo`'s text, all three frozen ids,
+and each of the five thunks running `loadTodosCall()` in place of its own call.
+The ids die because `index.spec.ts` asserts each operation's method and path -
+its table stops at the path and never reads a body, which is exactly why the
+text and the flag get through it.
+
+So nothing is unpinned: the E2E regression suite holds both, and it is a gate on
+every task after task 1. But two of the five wrappers' arguments are held one
+layer further out than their three siblings, which is the same shape a fourth
+time. Part of the reason is in the vocabulary: `todo-state-operations` says
+"marking todo N complete" and has no "not complete" phrasing, so no scenario can
+see a frozen flag. One more assertion on the existing `uiActions` table - each
+wrapper's `meta.arg` is the argument it was called with - closes it in one place
+for all five. **Owner: the project manager to route.** It is not a failing gate,
+and the sixth-round note says to tell you before anything further is fixed.
+
+**5. What the two changes did not invalidate**
+
+- Only five files differ between `9136aac` and `HEAD`: `src/actions/api.ts`,
+  `src/actions/api.spec.ts`, `src/reducers/todos.spec.ts`,
+  `hardening/todo-operations.hardening.test.ts` and this task file.
+- `api.ts` gained no module dependency - the diff's only new imports are types
+  from `@reduxjs/toolkit` - so no boundary rule's graph moved. `obeys every
+  boundary rule` runs over the real repository in `npm test` and is green.
+- `git log a268541~1..HEAD -- qa/` is still empty, and `features/` has not
+  changed since the predecessor's run. Procedures 16 to 20 still assert the
+  absence of error UI and it is still absent; the visible surface is identical
+  in 320 scripts. No procedure needed editing and none should have.
+- The declared equivalent mutant is still equivalent: seeding `runCall`'s
+  accumulator with a real `TodoApiOutcome` leaves the unit suite and my
+  differential green.
+- `return await started` to `return started` turns 2 unit tests, 1 hardening
+  test and 10 of my 11 probes red, so the `await` that makes the `catch`
+  reachable is itself pinned.
+
+**CRAP gate and DRY**
+
+`npx eslint . --rule '{"complexity":["error",{"max":10}]}'` exits 0 over the
+repository. I changed no source, so the coverage figures the pass-2 hardener
+measured stand - `src/actions/api.ts` at 100/100/100 - and CRAP is the
+complexity: `recording` 2, `runCall` 2, the worst thing in the repository 9. DRY:
+I authored nothing that survives.
+
+I installed nothing. `package.json` md5 `4fad73d5...` and `package-lock.json`
+md5 `29184ac9...`, the values every role since the cleaner has recorded,
+unchanged.
+
+**Verified**
+
+Every command run from the working tree as it stands, with the tree clean apart
+from this note.
+
+- `npm run lint` 0, `npm run format:check` 0, `npm run typecheck` 0 in six projects.
+- `npm test`: 19 files / 169 tests. `npm run properties`: 6 / 48.
+  `npm run hardening`: 7 / 60. `npm run acceptance`: 7 / 57.
+- `npm run build` passes.
+- `npm run test:e2e` 22 passed; `test:e2e:dev` and `test:e2e:preview` 21 passed,
+  1 skipped each. The full regression suite from `qa/procedures/` runs green
+  against the built app, the dev server and the preview server.
+- My harness lived in `build/qa-reverify/` and is deleted, for the reason the
+  coder and the predecessor deleted theirs. The method is above in enough detail
+  to rebuild; the generator is `seed = index * 7919 + 13` through a 32-bit LCG.
+
+Branch `claude/react-modernization-plan-u7dgen` at `eb12786`; nothing committed,
+nothing reset.
+
+**Open questions for the project manager**
+
+None blocking. The task's done criteria are met and every gate is green. Three
+recorded rather than guessed at.
+
+1. **The wrapper-argument gap in item 4 needs a routing decision.** `editTodo`'s
+   text and `completeTodo`'s flag are held only by the E2E suite, where their
+   three siblings are held by a unit test. One assertion on the `uiActions`
+   table closes it. Whether that is worth a fourth reopening of this task, or a
+   line for task 11 to pick up, is yours - I did not touch it.
+2. **The error-message text difference in item 3 wants a decision only about
+   the record.** Nothing reads either value and no gate moves. If the accepted
+   statement is to stay "the app's own `console.error` is identical across the
+   change", it now needs the qualifier; if it is to stay unqualified, that is
+   wrong by 50 scripts in 320.
+3. **Load cannot be made to throw in a reducer as the reducers stand.** That is
+   fine, and the hardening test is right to state the claim for all five anyway.
+   It is worth knowing that the claim is a generalisation for one of the five,
+   because if a later task gives `loadTodosOperation.fulfilled` anything to read
+   off its payload, that fifth case becomes reachable and the test that already
+   covers it will not need to change.
+
+### Coder (pin: meta.arg for all five)
+
+The finding QA routed, closed in one place. `src/actions/api.ts` is untouched;
+the only source file I changed is
+`hardening/todo-operations.hardening.test.ts`.
+
+**QA's proposal, judged and taken.** One assertion on the existing `uiActions`
+table is the right answer, and the hardening file is the right home for it: that
+table is already this module's one-list-for-all-five, the file's whole subject is
+this exact failure shape said once per operation, and `api.spec.ts` is organised
+around what the boundary does rather than around the five as peers - a second
+five-way table there would be the sixth operation arriving in two places, which
+is the thing the standing rule exists to prevent.
+
+**One thing QA's proposal needed before it would hold.** A single call per
+wrapper cannot pin a constant: whichever value the table passes, the mutant that
+freezes to *that* value matches it. The old table called `completeTodo(1, true)`,
+so `{ id, completed: true }` would have gone on surviving. The table now carries
+two calls per wrapper, differing in every field, and the claim is read off both.
+`loadTodos` has one call because it has no argument to vary - stated in the
+comment rather than papered over.
+
+**What changed in the file**
+
+- `uiActions` entries are now `{ operation, calls: [{ start, argument }] }`.
+  Two calls each except `loadTodos`.
+- `dispatchedWhenReducersThrowOn` is now `dispatchedBy(action, reducers?)` with
+  a `throwingOn(type, thrown)` reducer - the same shape and the same name
+  `api.spec.ts` already uses. The new test needed the non-throwing form of the
+  same helper; nothing else was touched.
+- New: `the argument each backend operation is started with` /
+  `is the one its wrapper was called with, across all five`. It asserts the two
+  action types and then `meta.arg` on *both* the pending and the settled action,
+  with `toStrictEqual` rather than `toMatchObject`, so a field added or dropped
+  fails too.
+
+**Verified by mutation, all five wrappers, no sampling.** Eight hand mutants,
+each applied to the real `src/actions/api.ts` and reverted. For each I ran the
+hardening suite twice - once with the file exactly as it stands at `eb12786`,
+once with mine - and the unit suite:
+
+| mutant | hardening at HEAD | hardening now | unit |
+| --- | --- | --- | --- |
+| `loadTodos` passes `{ id: 1 }` instead of nothing | green | **1 red** | 1 red |
+| `addTodo` freezes its text | green | **1 red** | 2 red |
+| `editTodo` freezes its text (QA's) | green | **1 red** | green |
+| `editTodo` freezes its id to `1` | green | **1 red** | green |
+| `completeTodo` freezes its flag to `true` (QA's) | green | **1 red** | green |
+| `completeTodo` freezes its flag to `false` | green | **1 red** | green |
+| `completeTodo` freezes its id to `1` | green | **1 red** | 1 red |
+| `removeTodo` freezes its id to `1` | green | **1 red** | green |
+
+Every one dies, and every one dies in the hardening suite rather than the E2E
+suite. Not one of the eight was caught by anything in the hardening suite before
+this change - 60/60 green in all eight columns - so the new assertion is doing
+all of the work, not sharing it.
+
+**A correction to QA's item 4, found by running the id mutants rather than
+assuming them.** QA reports that all three frozen ids die in the unit suite
+because `index.spec.ts` asserts each operation's path. That holds only for an id
+frozen to a value the unit table does not itself use: `index.spec.ts` drives
+edit, mark and delete with `id` 1, so freezing an id to `1` leaves every path
+identical and the whole unit suite green. Two of my three frozen-id mutants
+survive it. They die here, on the second call, which uses `id` 2. It is the same
+lesson as the flag: a table that passes one value cannot pin a pass-through.
+
+**The assertion fails for the right reason, checked and not assumed.** Every one
+of the eight failures lands on the `meta.arg` line and reports the argument, not
+the action types or a request id:
+
+- `editTodo` frozen text: `expected [ { id: 1, text: 'x' }, ... ] to strictly
+  equal [ { id: 1, text: 'Ship it' }, ... ]`
+- `completeTodo` frozen `true`: `expected [ { id: 2, completed: true }, ... ] to
+  strictly equal [ { id: 2, completed: false }, ... ]` - the second call, which
+  is the one that had to exist.
+- `loadTodos`: `expected [ { id: 1 }, { id: 1 } ] to strictly equal [ undefined,
+  undefined ]`.
+- `removeTodo` frozen id: `expected [ { id: 1 }, { id: 1 } ] to strictly equal
+  [ { id: 2 }, { id: 2 } ]`.
+
+**Verified**, from the working tree as it stands.
+
+- `npm run lint` 0, `npm run format:check` 0, `npm run typecheck` 0 in six
+  projects.
+- `npm test` 19 files / 169 tests. `npm run properties` 6 / 48.
+  `npm run hardening` 7 files / **61** tests (was 60). `npm run acceptance`
+  7 / 57. `npm run build` passes.
+- `npm run test:e2e` 22 passed; `test:e2e:dev` and `test:e2e:preview` 21 passed,
+  1 skipped.
+- I installed nothing: `package.json` md5 `4fad73d5...`, `package-lock.json`
+  md5 `29184ac9...`, both the values every role since the cleaner has recorded.
+- Working tree: `hardening/todo-operations.hardening.test.ts` and this file.
+  Nothing committed, branch not reset.
+
+**Left for the next role**
+
+1. **`features/todo-state-operations.feature` should gain a "not complete"
+   phrasing, and I did not write it.** Its vocabulary offers only "marking todo
+   <id> complete", so no scenario can ask for `completed: false` and acceptance
+   structurally cannot see a frozen flag. The flag is now pinned by a unit-level
+   suite either way, so this is not a hole - but the feature currently describes
+   half of an operation the app has, and that is a specifier's line to write.
+2. **The standing rule now has three claims under it in this file**, all read
+   off one table: the operation's name in each phase, what it does with a
+   throwing reducer, and the argument it was started with. A sixth operation
+   arrives in `uiActions` once and gets all three.
+3. Nothing else is open from my side. `src/actions/api.ts`, `qa/` and
+   `features/` are as I found them.
+
 ## Project manager notes
 
 **On the specifier's three questions, all answered so none blocks the coder.**
