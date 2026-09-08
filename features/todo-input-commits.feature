@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T19:57:07Z","feature_name":"Todo text field commits","feature_path":"features/todo-input-commits.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"sha256:3a45fd76cfa286a37842e4158a69dc38f22ce78f5d64b9b2c5e7434a5a731268","scenarios":[{"index":0,"name":"todo-input-commits 1","scenario_hash":"abb0ab849bd97bf630e59afac0e0f70c52a704330ca1a47009ef141b106d71df","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-08T19:57:07Z"},{"index":1,"name":"todo-input-commits 2","scenario_hash":"46d24b0585bbcac8e647a61d1c531566deca3ad1ad81fc8825af6c384cc0dfad","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-08T19:57:07Z"}]}
+# acceptance-mutation-manifest-end
+
 # todo-input-commits
 #
 # Scenarios in this feature are named "todo-input-commits <n>". The name is a

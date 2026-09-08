@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T19:57:40Z","feature_name":"Todo committed text effects","feature_path":"features/todo-input-effects.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"sha256:ce8ffb5504834ea0edca941a171d4d2e971695045050d136e59772275dfb97d8","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 # todo-input-effects
 #
 # Scenarios in this feature are named "todo-input-effects <n>". The name is a

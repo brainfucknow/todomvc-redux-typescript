@@ -1,5 +1,5 @@
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-09-08T12:01:10Z","feature_name":"Todo backend operations","feature_path":"features/todo-state-operations.feature","background_hash":"b417a1730d0c186557c6a7e1d46f2db4eb24e94fc2d1599b25512e9fa5b266dd","implementation_hash":"sha256:beb7f8921f8bea9fe995d5f610aae9eccb18fe3dde302f80eba13c22ceebe4a9","scenarios":[]}
+# {"version":1,"tested_at":"2026-09-08T19:58:26Z","feature_name":"Todo backend operations","feature_path":"features/todo-state-operations.feature","background_hash":"b417a1730d0c186557c6a7e1d46f2db4eb24e94fc2d1599b25512e9fa5b266dd","implementation_hash":"sha256:0891ec6dc2451674209300d348a84cc52c48e848b5775cd3aac5dda0c74cd8f0","scenarios":[{"index":8,"name":"todo-state-operations 9","scenario_hash":"c1a6360a88f6a1843db86746f894b9a468dff5f504309c84de8b7ff8b2aac6da","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-09-08T19:58:26Z"}]}
 # acceptance-mutation-manifest-end
 
 # todo-state-operations

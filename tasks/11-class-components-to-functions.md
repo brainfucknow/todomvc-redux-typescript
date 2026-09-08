@@ -971,6 +971,415 @@ could check it.
 
 ### Hardener
 
+Mutation hardening of what this task created and changed. Two new source
+modules mutated one at a time and both clean, one changed rule table mutated and
+two of its four survivors killed, three feature files put through
+`gherkin-mutator --level soft` after a baseline each, the routed
+`key`-versus-`which` gap pinned and shown to fail, and one routed worry checked
+and found not to be a worry. No `src/` module's behavior moved. Nothing under
+`qa/` was touched and no authored line of any feature file was edited.
+
+**The branch moved under me, and I left it alone**
+
+The architect's note ends "my changes are in the working tree". They are not:
+the branch is at `1143b7d`, "Enforce the input rules' isolation and prove the
+properties fail", which is that work committed, and the working tree was clean
+when I started. That is the fifth role in a row to report this, and the third on
+this task. I read the commit as the architect's change and hardened it in place.
+I committed nothing and reset nothing; my changes are in the working tree.
+
+**Method, and the baseline read on every run**
+
+*Language mutation.* Stryker 10.0.0 with the `command` runner,
+`coverageAnalysis: "off"`, configuration, temp directory and JSON reports all
+outside the repository. The net for a `src/todo-input/` module is everything
+this project runs over one:
+
+    npx vitest run --project unit --reporter=dot
+      && npx vitest run --config vitest.properties.config.mts --reporter=dot
+      && npx vitest run --config vitest.hardening.config.mts --reporter=dot
+
+For `scripts/architecture/rules.mjs` the net is the two suites that read it:
+
+    npx vitest run --project scripts --reporter=dot architecture/boundaries
+      && npx vitest run --config vitest.hardening.config.mts --reporter=dot
+
+The `scripts` project is narrowed to the boundaries spec for the reason task 10
+recorded: `scripts/typecheck-gate.spec.mjs` asserts the compiler resolves to
+`<repo>/node_modules/typescript/bin/tsc`, which is false inside a Stryker
+sandbox, and the whole dry run goes red. "Initial test run succeeded" was read
+on every run below.
+
+**A first configuration produced a perfect score I did not believe, and the
+fault was mine rather than the tool's.** The first `field.ts` run reported 21 of
+21 - one killed and **twenty timed out**. Stryker counts a timeout as a kill, so
+a misconfiguration read as a flawless result. The net takes about 14 seconds
+unloaded and the default timeout is 5s plus 1.5x that, so four sandboxes running
+it at once could not finish inside it. Concurrency 2 and `timeoutMS: 180000`
+produced 21 real kills and no timeouts. Worth recording beside task 10's
+sandbox failure, because the two fail in opposite directions: that one refused
+to produce numbers at all, this one produced numbers that looked ideal. A score
+made mostly of timeouts is not a score.
+
+**Language mutation, one file at a time**
+
+| module | mutants | killed | survived |
+| --- | --- | --- | --- |
+| `src/todo-input/field.ts` | 21 | 21 | 0 |
+| `src/todo-input/effects.ts` | 16 | 16 | 0 |
+| `scripts/architecture/rules.mjs` | 123 | 121 | 2 declared |
+
+`rules.mjs` is the after figure; it was 119 killed and 4 survived, and the two
+sections below say what closed the gap. The two `src/todo-input/` modules were
+clean on the first run - the coder's specs, the architect's 19 properties and
+the two feature families between them leave nothing. They were not re-run after
+I added two unit tests, because the sources are byte-identical and a module
+already at 21 of 21 and 16 of 16 has an empty set of mutants whose status could
+move.
+
+Not mutated, deliberately: the three components (my brief excludes components,
+and the cleaner's scan already counted them - 16, 18 and 7), the four acceptance
+step files (adapters, and what they are worth is measured from the other side by
+the gherkin run below), and `src/todo-input/tsconfig.json`, which is config and
+gets its own section.
+
+**`scripts/architecture/rules.mjs`: the four survivors, two killed**
+
+Every one was re-applied by hand before I acted on it.
+
+*Killed - the glob-trap pair again, this time from the `except` side.* Blanking
+the second pattern of
+`except: ['src/todo-input/*.spec.ts', 'src/todo-input/**/*.spec.ts']` changed no
+answer anywhere. That is the shape task 10 found eight times in the two rules it
+added: the rule names both spellings of a path and the planted violations name
+one, so exactly one of each pair is held. Here `**` stands for at least one
+segment, so the second pattern covers only a spec sitting *under* a
+subdirectory - and this directory has none, which is precisely why the architect
+wrote it and precisely why nothing exercised it. Closed by naming a third
+module, `src/todo-input/editing/rules.spec.ts`, in the same practice as the
+architect's own "a module the directory does not have yet" test. Verified as a
+kill: blanking the pattern now turns that test red.
+
+*Killed - an allow entry with no caller.* `'src/todo-input/*'` in the hardening
+suite's allow list could be blanked with the whole net green, because no file in
+`hardening/` imports those modules. The architect widened the list so that this
+pass could import what it was asked to break; the pass then found no survivor to
+write such a file for, so the entry arrived without the call that `rules.mjs`'s
+own doc asks to arrive with it. I kept it rather than narrowing it - the next
+survivor in those modules should not also need a rule change - and pinned it
+with a planted module, with a comment saying that the file named does not exist
+and why the entry does. Verified: blanking the entry now turns that test red.
+
+*Declared, twice, and both the same thing.* `allow: []` seeded with a junk
+pattern survives, on the todo API rule (which task 10 already declared) and now
+on the todo input rule. I re-checked the new one by hand rather than inheriting
+the declaration, three ways:
+
+| change to `allow: []` on *the todo input rules depend on nothing* | result |
+| --- | --- |
+| seeded with a pattern nothing imports | green everywhere - this is the survivor |
+| the key deleted outright | 2 hardening tests red |
+| seeded with a pattern something really imports (`'react'`) | 2 hardening tests red |
+
+So the empty list is pinned against being removed and against gaining anything
+real. What no finite test can see is an empty list against one holding a pattern
+no module names, which is the same statement for both rules. Declared.
+
+**Gherkin mutation, `--level soft`, per feature**
+
+Baseline first, every run, and read: each feature parsed on its own with
+`.aps/bin/gherkin-parser` into a scratch IR directory, generated on its own into
+a scratch generated directory, and one job driven by hand through `node
+scripts/acceptance/runner-worker.mjs` against the **unmutated** IR before any
+mutation.
+
+    baseline-todo-input-commits      test_success
+    baseline-todo-input-effects      test_success
+    baseline-todo-state-operations   test_success
+
+Only then `gherkin-mutator`, with `-runner-worker "node
+scripts/acceptance/runner-worker.mjs"` - the `node` command directly, never
+through npm.
+
+| feature | mutations | killed | survived |
+| --- | --- | --- | --- |
+| `todo-input-commits` | 16 | 12 | 4 declared |
+| `todo-input-effects` | 2 | 1 | 1 declared |
+| `todo-state-operations` | 23 | 17 | 6, all previously reported |
+
+The other six feature files carry task 09's and task 10's manifests and nothing
+this task did touches them, so they were not re-run. The mutator wrote its own
+manifest block into all three files above and I hand-edited none of it; the
+manifest and nothing else is what changed in those files.
+
+*The four in `todo-input-commits` are both declared columns.* Scenario 4 row 2's
+`committed`, and all three of scenario 6's `key` cells. The feature's own header
+declares both: scenario 4's `committed` is input and expectation at once, and
+scenario 6's two columns are free "unavoidably so", because the claim is a
+negative universal about every key there is.
+
+*The one in `todo-input-effects` is the declared column too*, scenario 3 row 2's
+`text`, in the same practice.
+
+*The six in `todo-state-operations` are all scenario 8, and all six are the six
+task 10's hardener reported.* Five `error` cells, declared in the header, plus
+the `operation` cell whose *payload* is free while its identity is not - the
+header sentence that is slightly wider than the fact. Unchanged by this task and
+still the specifier's line. **Scenario 9, which is what this task added there,
+is 8 of 8 killed.**
+
+**Two things about these kills that matter more than the counts**
+
+Both are for the specifier and the next hardener rather than for me to fix.
+
+1. *Several kills here are syntax kills rather than assertion kills.* Every text
+   cell in the `todo-input-*` family is JSON, so a mutation landing on a quote -
+   `"  Buy oats  " -> "  Buy oats  x` - makes the cell unparseable and the
+   handler throws. That is what killed `todo-input-commits` scenario 4 row 1 and
+   `todo-input-effects` scenario 3 row 1, while the row whose mutation stayed
+   valid JSON survived in each. Read as a pair, both rows of both columns are
+   free, which is exactly what the two headers already say. The counts above
+   flatter those two columns; the declarations are the truth.
+2. *Two columns that are declared free are in fact killed, and killed that same
+   way.* `todo-input-commits` scenario 6's `kind` (all three cells) and
+   `todo-state-operations` scenario 9's `flag` (both cells) die because the step
+   vocabulary refuses `newxtodo` and `coMplete`, not because any assertion tells
+   a new-todo field from an edit field or a marking-complete from a
+   marking-active in those scenarios. The declarations are substantively right
+   and the mutation numbers do not contradict them; they are wider than the fact
+   in the same way task 10 recorded for scenario 8's `operation` column. One
+   sentence per header would make all three read as declared rather than as
+   gaps to whoever runs this next.
+
+**The `key`-versus-`which` gap: reproduced, pinned, and the pin shown to fail**
+
+This was the routed job, and it is closed.
+
+*Where it went, and why not `hardening/`.* It is a claim about which field of a
+real event a component reads, so only a rendered component can make it.
+`hardening/**` runs in Node with no DOM, and `scripts/architecture/rules.mjs`
+refuses `src/components/**` to that suite - with a test asserting the refusal,
+which task 10's hardener added on purpose. Widening that to render a component
+would contradict the rule's own stated reason, that a mutant killed by a
+rendered component measures the component, and moving it is not a hardener's
+line. The unit suite is the only suite in this repository allowed to render, so
+that is where the two tests are, in `src/components/TodoTextInput.spec.tsx`.
+**`npm test` therefore goes from 193 to 195**, which I am flagging rather than
+assuming, in the practice task 10's note asks for.
+
+*What they say, and why there are two.* `pressReturn` sends `key`, `code`,
+`keyCode` and `which` together, which is what a real Enter carries, so every
+other test in that file passes against a component reading any one of the four.
+The two new ones use events a real keyboard never produces:
+
+- a numpad Enter - `{ key: 'Enter', code: 'NumpadEnter' }`, carrying no legacy
+  code at all - which must save;
+- `{ key: 'a', code: 'KeyA', keyCode: 13, which: 13 }` - a key that is not Enter
+  arriving with Enter's legacy code - which must not.
+
+*Falsified rather than assumed.* Three wrong readings planted in
+`src/components/TodoTextInput.tsx` in place of `e.key`, each with the unit suite
+run and the source restored afterwards:
+
+| planted reading | what went red |
+| --- | --- |
+| a `which`-derived key, which is the project manager's reproduction | both new tests, **and nothing else in the file** |
+| `e.code` | the numpad test only |
+| `e.key`, falling back to `which === 13` | the second test only |
+
+Row 1 is the finding: the thirteen tests that were already there stay green
+under it, which is why the gap existed at all. Rows 2 and 3 are why this is a
+pair rather than one test - either test alone leaves one of the two wrong
+readings alive, and a component that reads `code` renders the numpad Enter dead
+in a real browser.
+
+The helper is unchanged for its existing callers, per the ruling. It gains a
+doc comment recording what it sends, that this is deliberately more than any
+component needs so that pressing Enter is not also an assertion about the event,
+and where the discriminating claim now lives - so that the next reader is told
+rather than having to find it out with a mutation again.
+
+**The architect's routed worry about `src/todo-input/tsconfig.json`: checked,
+and there is nothing to close**
+
+The note says that config is a gate whose failure mode is silent - "delete its
+`types: []` and nothing goes red". It is not silent, and the reason is worth
+having on the record. A probe project extending the real config and compiling
+one file that names `Response` - the exact name `@types/node` was supplying
+behind task 09's false claim - built and deleted outside the repository's
+tracked tree:
+
+| the config | compiling a file that names `Response` |
+| --- | --- |
+| as it stands | TS2304 Cannot find name 'Response' |
+| `types: []` deleted | TS2304, unchanged |
+| `typeRoots: []` deleted | TS2304, unchanged |
+| both deleted | red anyway, and louder - `@types/react-dom` itself fails to compile without a DOM lib, inside `node_modules` |
+
+The two keys are belt and braces: either one alone refuses the ambient packages,
+so deleting one weakens nothing, and deleting both cannot pass quietly because
+the type packages that come flooding in need the DOM lib this project
+deliberately withholds. `KeyboardEvent` also still fails under the real config.
+So there is no silent weakening to guard against and no test to write, and I did
+not mutate the config - my brief excludes it.
+
+**Mixed-job scan on what this task created**
+
+Mutants counted with Stryker's instrumenter, not run.
+
+| source | mutants | one job? |
+| --- | --- | --- |
+| `src/todo-input/field.ts` | 21 | yes |
+| `src/todo-input/effects.ts` | 16 | yes |
+| `src/components/TodoTextInput.tsx` | 16 | yes |
+| `src/components/TodoItem.tsx` | 18 | yes |
+| `src/components/Header.tsx` | 7 | yes |
+| `scripts/architecture/rules.mjs` | 123 | yes |
+| `scripts/typecheck.mjs` | 22 | yes |
+| `acceptance/steps/todo-input-commits.ts` | 81 | yes |
+| `acceptance/steps/todo-input-effects.ts` | 69 | yes |
+| `acceptance/steps/cells.ts` | 25 | yes |
+
+Nothing to split, and the counts say why rather than my judgment saying it.
+`field.ts`'s 21 fall in three clusters - lines 34-38, 46-48, 55-57 - which are
+`openingText`, `commitOnKey` and `commitOnBlur`; that is three functions and one
+subject, and the thing the file exists to show is the difference between the
+middle cluster and the last one. `effects.ts`'s 16 are two functions and the
+`isEmpty` both of them call, which is the whole point of the file. `rules.mjs`'s
+123 are almost exactly one per line across lines 43 to 169 with no cluster
+anywhere, which is the signature of a data table rather than of two jobs, and
+task 10 already split the deciding half out of it.
+
+The hint has produced its finding on this task already: it was the cleaner's,
+the 172-mutant step file in two neighbourhoods that became
+`todo-input-commits.ts` and `todo-input-effects.ts`. Re-applying it over the
+tree after that split finds nothing further, which is the outcome a split is
+supposed to produce.
+
+One judgment recorded rather than acted on. `properties/todo-input.property.test.ts`
+is 205 mutants and is the only property file that drives two modules, where the
+convention here is one per module. It is one job: its generators are shared, and
+its last property composes `field` and `effects` into the statement no feature
+file can reach - whitespace committed by Enter deletes the todo and the same
+characters committed by losing focus save a blank row. Split it and that
+property has no home. It is a test file rather than a source in any case.
+
+**CRAP gate on changed files**
+
+Coverage, unit suite over `src/`: 95.53% statements / 90% branches / 97.63%
+functions, identical to the figure the cleaner left, because I changed no `src/`
+module. Every file this task created or changed is at 100% on all four measures:
+`src/todo-input/` and `src/components/` do not appear in the uncovered report at
+all. The three files that do are the ones already routed - `src/index.tsx`, the
+entry adapter; `src/containers/FilterLink.ts:21`, task 12; and
+`src/selectors/index.ts:15-19`, task 13.
+
+Complexity from ESLint's own rule as a gate:
+
+    npx eslint . --rule '{"complexity":["error",{"max":10}]}'
+
+Exit 0 across the repository. The highest anywhere is still `classifyRun` at 9;
+the highest in anything this task touched is 5, in `acceptance/steps/todo-state.ts`
+and pre-existing; `src/todo-input/` is 1 to 2, and both tests I added are 1. At
+100% coverage CRAP is the complexity, so the worst of mine is 1 against a gate
+of 10.
+
+**DRY**
+
+Nothing to change. My two additions to `hardening/rules.hardening.test.ts` are
+modules added to tests that already existed, and the two new component tests
+build two different events, which is the opposite of a duplication - one call
+cannot pin which field is read, which is the whole finding. `keyCode` and
+`which` now appear in exactly two places in the repository, the helper and the
+test that exists to disagree with it.
+
+Two duplications left alone deliberately, both for reasons this project has
+already ruled on:
+
+- `COMMIT_KEY = 'Enter'` is written in `src/todo-input/field.ts` and again in
+  `properties/todo-input.property.test.ts`. Importing the module's constant
+  would make the negative universal about keys a tautology, which is exactly
+  the reason task 10 gave for leaving `absentFrom` mirroring `nextId`.
+- the list of the two field kinds appears in `field.spec.ts`, in the property
+  file and in `acceptance/steps/todo-input-commits.ts`. Three suites that may
+  not import each other's helpers, which is the same call the cleaner and task
+  10's hardener both made.
+
+**Verified**
+
+Every command run from the working tree as it stands, after `npm ci`, after the
+last edit.
+
+- `npm run lint` and `npm run format:check`: pass.
+- `npm run typecheck`: 0 errors in seven projects.
+- `npm test`: 21 files / **195 tests**. Was 193; two new tests in
+  `src/components/TodoTextInput.spec.tsx` and the reason is in the section
+  above. Nothing existing was changed, weakened or removed.
+- `npm run build`: passes.
+- `npm run properties`: 7 files / 67, unchanged.
+- `npm run hardening`: 7 files / 65, unchanged - my two additions are modules
+  inside existing tests, so the count does not move even though what those
+  tests claim does.
+- `npm run acceptance`: 9 files / 75, unchanged.
+- `npm run test:e2e`: 22 passed. `test:e2e:dev` and `test:e2e:preview`: 21
+  passed, 1 skipped each. No `qa/` file was read or edited.
+- `@stryker-mutator/core@10` and `@vitest/coverage-v8@5` installed in **one**
+  `npm install --no-save`, so neither pruned the other; finished with `npm ci`,
+  and `node_modules/@stryker-mutator` is gone again. `package.json` md5
+  `4fad73d5...` and `package-lock.json` md5 `29184ac9...` identical before and
+  after. No Stryker configuration, temp directory or report was written inside
+  the repository, and the gherkin IR, generated trees and work directories all
+  went to a scratch directory outside it.
+
+Branch `claude/react-modernization-plan-u7dgen` at `1143b7d`; nothing committed,
+nothing reset. Working tree: modified `hardening/rules.hardening.test.ts`,
+`src/components/TodoTextInput.spec.tsx`, `src/test-support/keyboard.ts`, and the
+manifest block of `features/todo-input-commits.feature`,
+`features/todo-input-effects.feature` and
+`features/todo-state-operations.feature`. No new file.
+
+**Left for QA**
+
+1. The finding worth re-checking independently, and it takes two minutes:
+   replace `e.key` with `e.which === 13 ? 'Enter' : String(e.which)` in
+   `src/components/TodoTextInput.tsx` and run `npm test`. Two tests red now;
+   check out the tree as the architect left it and the same change is green
+   everywhere, `npm run test:e2e` included.
+2. The two declared survivors, both `allow: []` seeded with a junk pattern in
+   `scripts/architecture/rules.mjs`. The three-row table above is the whole
+   argument and each row is a one-line edit.
+3. Nothing under `qa/` changed and no user-visible surface moved. The bundle is
+   the one the architect left; all three E2E suites pass at the recorded counts.
+4. The three feature files differ from the architect's tree by their manifest
+   block only. `git diff features/` should show nine added lines and one
+   changed, all inside `acceptance-mutation-manifest` delimiters.
+
+**Open questions for the project manager**
+
+None blocking. Three recorded rather than guessed at.
+
+1. **`npm test` moves from 193 to 195.** The two tests pin which field of a
+   keyboard event `TodoTextInput` reads, and they are in the unit suite because
+   the hardening suite may not render a component and I did not think a
+   hardener should widen that rule to make room for itself. If you would rather
+   this claim lived in `hardening/` with the rule widened and the suite given a
+   DOM, say so and it is a small move; the reasoning against is in the section
+   above.
+2. **Three free-cell declarations are wider than the fact**, in the way task 10
+   already reported for `todo-state-operations` scenario 8's `operation` column:
+   `todo-input-commits` scenario 6's `kind` and `todo-state-operations` scenario
+   9's `flag` are declared free but are killed by the step vocabulary refusing
+   the mutated word, and the JSON text columns in both `todo-input-*` features
+   are killed in one row and free in the other purely by where the mutation
+   landed. Nothing is wrong in any of them; the headers are the specifier's
+   lines and I did not touch them.
+3. **The hardening suite's `src/todo-input/*` allow entry has no caller.** The
+   architect widened the list for a hardening test that the clean mutation runs
+   made unnecessary. I kept it and pinned it rather than narrowing it, because
+   the alternative is that the next survivor found in those modules needs a rule
+   change before it can be killed. Say if you would rather an allow entry never
+   ran ahead of its call.
+
 ### QA
 
 ## Project manager notes
@@ -1123,3 +1532,48 @@ question and task 12 rewrites how these components get their props.
 **Recorded for task 13.** Two of task 10's eight re-derivation cases are closed
 by this task, both now in `effects.ts`; one moved line; the other five stand. No
 new cases found.
+
+## Project manager notes, fifth round
+
+**A seventh false green, and this one is in the mutation tooling.** The first
+`field.ts` run reported a perfect score made of **twenty timeouts**: four
+sandboxes running a 14-second net against a ~26s default, and Stryker counts a
+timeout as a kill. So a misconfigured run reads as flawless. Concurrency 2 plus
+a 180s timeout produced 21 real kills.
+
+Worth stating in general terms, because this project keeps meeting it in new
+disguises. Every false green so far has been a measurement reporting success for
+work it never did: a typecheck that never ran, a runner that found no tests, a
+rule nothing violates, a suite whose net was too generous, and now a mutant that
+timed out. The shape is always "absence of evidence recorded as evidence of
+absence". The defence is always the same: prove the instrument can report
+failure, in the exact configuration you are about to trust.
+
+This is also the opposite direction from task 10's flake, where a sandbox
+occasionally ran *without* the active mutant and could only invent survivors.
+That one is loud, since a survivor demands investigation. This one is silent.
+
+**The `key`-versus-`which` gap is closed, verified.** I planted the same
+`which`-derived reading that passed both suites before: `npm test` now reports
+2 failed of 195, and only those two. The tests use events a real keyboard never
+produces — a numpad Enter with no legacy code, and `key: 'a'` carrying
+`which: 13` — which is the only way to separate readings that a real browser
+always sets together. Falsified three ways rather than one.
+
+**On those tests living in the unit suite rather than in hardening.** Correct.
+The hardening suite has no DOM and is refused `src/components/**` by a rule that
+has its own test; widening that to place two tests is not a hardener's line, and
+proposing it rather than doing it was right. `npm test` moving 193 to 195 is
+fine on the standing reading: the pin is that acceptance and property tests stay
+out of that count, not that the number holds.
+
+**On the architect's routed tsconfig worry: it does not exist, and that is a
+finding too.** Deleting `types: []` alone changes nothing because `typeRoots: []`
+still blocks; deleting `typeRoots: []` alone changes nothing; deleting both
+turns the typecheck red inside `@types/react-dom`. No silent weakening and no
+test needed. Checking a worry and reporting its absence is as useful as
+confirming it, and cheaper than carrying it forward.
+
+**The mixed-job hint reports nothing further on this task**, and said so with
+per-line distributions rather than judgment. Its finding here was the cleaner's
+172-mutant step-file split. Four for four still stands.

@@ -61,6 +61,44 @@ describe('components', () => {
       expect(props.onSave).not.toBeCalled()
     })
 
+    /**
+     * Which field of the event the component reads, pinned - because nothing
+     * else pins it. `pressReturn` sends `key`, `code`, `keyCode` and `which`
+     * together, which is what a real Enter carries and what Playwright sends
+     * too, so every other test in this file passes against a component reading
+     * any one of the four. Replacing `e.key` with a `which`-derived value left
+     * the unit suite and all three E2E suites green; for a browser that is
+     * inherent, since a real event sets both.
+     *
+     * These two say it with events that name the key and the legacy code
+     * differently, and they are a pair. The first is the numpad Enter, whose
+     * `code` is `NumpadEnter` and which carries no legacy code here at all: it
+     * refuses a component reading `which`, and a component reading `code`. The
+     * second is the other direction, a key that is not Enter arriving with
+     * Enter's legacy code, which only a `which` or `keyCode` reader would act
+     * on. Either alone leaves one of the two wrong readings alive.
+     *
+     * `commitOnKey` takes a key by name, which is why `src/todo-input/field.ts`
+     * has no DOM type in its signature. This is the one place that says the
+     * component hands it the right field of the event.
+     */
+    it('saves on an Enter named as Enter, carrying no legacy key code', () => {
+      const { input, props } = setup()
+      fireEvent.keyDown(input, { key: 'Enter', code: 'NumpadEnter' })
+      expect(props.onSave).toBeCalledWith('Use Redux')
+    })
+
+    it("saves nothing for another key arriving with Enter's legacy code", () => {
+      const { input, props } = setup()
+      fireEvent.keyDown(input, {
+        key: 'a',
+        code: 'KeyA',
+        keyCode: 13,
+        which: 13,
+      })
+      expect(props.onSave).not.toBeCalled()
+    })
+
     it('should call onSave on return key press', () => {
       const { input, props } = setup()
       pressReturn(input)

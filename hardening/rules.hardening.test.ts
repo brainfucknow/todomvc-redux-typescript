@@ -85,11 +85,24 @@ describe('the todo input rules depend on nothing', () => {
     ).toStrictEqual([])
   })
 
-  it('lets a spec import the module it drives, and Vitest with it', () => {
+  /**
+   * Both spellings of the exception, because they are a pair and the directory
+   * as it stands exercises only one. The first covers a spec sitting in the
+   * directory, which is where both of today's are; the second covers a spec
+   * under it, and needs saying separately because `**` stands for at least one
+   * segment here and so matches nothing this directory has. Without the third
+   * module below, dropping the second pattern changes no answer anywhere -
+   * which is how a mutation scan found it.
+   */
+  it('lets a spec import the module it drives, wherever under the directory it sits', () => {
     expect(
       judged(
         module('src/todo-input/field.spec.ts', 'src/todo-input/field'),
         module('src/todo-input/effects.spec.ts', 'src/todo-input/effects'),
+        module(
+          'src/todo-input/editing/rules.spec.ts',
+          'src/todo-input/editing/rules',
+        ),
       ),
     ).toStrictEqual([])
   })
@@ -374,6 +387,15 @@ describe('the hardening suite drives modules, never the network shell', () => {
     ])
   })
 
+  /**
+   * The last module named here is one this directory does not have. Task 11
+   * widened this rule to `src/todo-input/*` so that a hardening test could
+   * import the modules it was asked to break, and then the mutation run found
+   * no survivor to write one for - so the entry has no caller, and a mutation
+   * scan showed that blanking it changed no answer anywhere. It stays, because
+   * the next survivor in those modules should not also need a rule change; the
+   * module below is what says so.
+   */
   it('allows the tooling it exists to break, which the other two may not touch', () => {
     expect(
       judged(
@@ -389,6 +411,11 @@ describe('the hardening suite drives modules, never the network shell', () => {
         module(
           'hardening/todo-operations.hardening.test.ts',
           'src/actions/api',
+        ),
+        module(
+          'hardening/todo-input.hardening.test.ts',
+          'src/todo-input/field',
+          'src/todo-input/effects',
         ),
       ),
     ).toStrictEqual([])
