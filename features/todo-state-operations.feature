@@ -32,8 +32,8 @@
 #                                          answered it yet. O is one of:
 #                                          loading every todo; adding the todo
 #                                          <text>; editing todo <id> to <text>;
-#                                          marking todo <id> complete;
-#                                          deleting todo <id>
+#                                          marking todo <id> complete; marking
+#                                          todo <id> active; deleting todo <id>
 #   the backend answers with B             the call completes, B is the body it
 #                                          returned, and the operation is left
 #                                          to settle before the next step
@@ -87,9 +87,10 @@ Feature: Todo backend operations
     And the last todo is {"id":9,"text":"Ship it now","completed":true}
     And no operation is left in flight
 
-  # todo-state-operations 4: an edit, and a marking, replace that todo with what
-  # came back, whole. The answer here contradicts the flag the list held, and
-  # the answer wins, so an implementation that merges only the text fails.
+  # todo-state-operations 4: an edit replaces that todo with what came back,
+  # whole. The answer here contradicts the flag the list held, and the answer
+  # wins, so an implementation that merges only the text fails. A marking
+  # replaces it the same way; that is scenario 9.
   Scenario: todo-state-operations 4
     When the app starts editing todo 2 to Buy oats
     Then the update of todo 2 is in flight
@@ -143,3 +144,27 @@ Feature: Todo backend operations
       | editing todo 2 to Buy oats | the update of todo 2 | Failed to fetch |
       | marking todo 2 complete    | the update of todo 2 | it broke        |
       | deleting todo 1            | the update of todo 1 | Failed to fetch |
+
+  # todo-state-operations 9: a marking replaces that todo with what came back,
+  # whole, the way scenario 4's edit does, and it runs in both directions. It is
+  # numbered last so the handles above it do not move; it belongs beside 4.
+  # Until it existed the vocabulary could only ask for one half of an operation
+  # the app has both halves of.
+  #
+  # The flag column is a free input, declared. State-side the two directions
+  # differ only in what is sent, and what is sent is todo-api-requests 4, which
+  # already covers both values; here the answer decides the list. It is a column
+  # so that both phrasings exist and both are driven, rather than one of them
+  # being unreachable from any scenario.
+  Scenario Outline: todo-state-operations 9
+    When the app starts marking todo <id> <flag>
+    Then the update of todo <id> is in flight
+    And the todo list has not changed
+    When the backend answers with <answer>
+    Then the todo list is <list>
+    And no operation is left in flight
+
+    Examples:
+      | id | flag     | answer                                          | list                                                                                            |
+      | 1  | complete | {"id":1,"text":"Buy milk","completed":true}     | [{"id":1,"text":"Buy milk","completed":true},{"id":2,"text":"Write tests","completed":true}]    |
+      | 2  | active   | {"id":2,"text":"Write tests","completed":false} | [{"id":1,"text":"Buy milk","completed":false},{"id":2,"text":"Write tests","completed":false}]  |
