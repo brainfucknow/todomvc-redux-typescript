@@ -57,14 +57,15 @@ async function runCall<T>(call: TodoApiCall, send: SendRequest): Promise<T> {
   return settled.carried['json'] as T
 }
 
-export interface TodoText {
+/** What each thunk is asked for: the operation's own fields, and nothing else. */
+interface TodoText {
   text: string
 }
-export interface TodoId {
+interface TodoId {
   id: number
 }
-export type TodoEdit = TodoId & TodoText
-export type TodoMarking = TodoId & { completed: boolean }
+type TodoEdit = TodoId & TodoText
+type TodoMarking = TodoId & { completed: boolean }
 
 export const loadTodosOperation = createTodoThunk<Todo[], void>(
   'todos/load',

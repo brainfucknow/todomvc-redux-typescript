@@ -34,6 +34,12 @@ const failingWith =
   () =>
     Promise.reject(error)
 
+/**
+ * `api.ts` writes a failure to the console before it dispatches one. Every test
+ * below that fails a call says so here, so a passing run prints nothing.
+ */
+const silenced = () => vi.spyOn(console, 'error').mockImplementation(() => {})
+
 const run = async (
   operation: unknown,
   send: SendRequest,
@@ -46,7 +52,7 @@ const run = async (
     return action
   }
   const resolved = await (operation as Thunk)(dispatch, () => ({}), { send })
-  return { dispatched, order, resolved }
+  return { dispatched, resolved }
 }
 
 const typesOf = (dispatched: UnknownAction[]) =>
@@ -89,14 +95,10 @@ describe('the todo backend operations', () => {
       order.push('log')
     })
 
-    const { dispatched, order: dispatches } = await run(
-      loadTodos(),
-      failingWith(error),
-      order,
-    )
+    const { dispatched } = await run(loadTodos(), failingWith(error), order)
 
     expect(logged).toHaveBeenCalledWith(error)
-    expect(dispatches).toStrictEqual(['dispatch', 'log', 'dispatch'])
+    expect(order).toStrictEqual(['dispatch', 'log', 'dispatch'])
     expect(typesOf(dispatched)).toStrictEqual([
       'todos/load/pending',
       'todos/load/rejected',
@@ -105,7 +107,7 @@ describe('the todo backend operations', () => {
   })
 
   it('records a failure as a serialized error that keeps the message', async () => {
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const logged = silenced()
 
     const { dispatched } = await run(
       loadTodos(),
@@ -122,7 +124,7 @@ describe('the todo backend operations', () => {
   })
 
   it('resolves with the action it settled on rather than throwing', async () => {
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const logged = silenced()
 
     const { resolved } = await run(
       loadTodos(),

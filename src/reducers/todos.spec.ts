@@ -19,16 +19,16 @@ import { Todo } from '../models/Todo'
  * `features/todo-state-operations.feature` specify both.
  */
 
-const seed: Todo[] = [{ text: 'Use Redux', completed: false, id: 0 }]
 const useRedux: Todo = { text: 'Use Redux', completed: false, id: 0 }
 const runTests: Todo = { text: 'Run the tests', completed: false, id: 1 }
+const seed: Todo[] = [useRedux]
 
 describe('todos reducer', () => {
-  it('should handle initial state', () => {
+  it('holds the one seeded todo before anything happens', () => {
     expect(todos(undefined, { type: 'NONE' })).toEqual(seed)
   })
 
-  it('should handle ADD_TODO', () => {
+  it('appends a locally added todo, numbered one past the highest id', () => {
     expect(todos([], local.addTodo('Run the tests'))).toEqual([
       { text: 'Run the tests', completed: false, id: 0 },
     ])
@@ -54,17 +54,17 @@ describe('todos reducer', () => {
     ).toEqual([5, 2, 6])
   })
 
-  it('should handle DELETE_TODO', () => {
+  it('drops the todo a local delete names', () => {
     expect(todos([useRedux, runTests], local.deleteTodo(1))).toEqual([useRedux])
   })
 
-  it('should handle EDIT_TODO', () => {
+  it('rewrites the text a local edit names and keeps the flag', () => {
     expect(
       todos([runTests, useRedux], local.editTodo(1, 'Fix the tests')),
     ).toEqual([{ text: 'Fix the tests', completed: false, id: 1 }, useRedux])
   })
 
-  it('should handle COMPLETE_TODO', () => {
+  it('writes the flag a local marking carries onto the todo it names', () => {
     expect(todos([runTests, useRedux], local.completeTodo(1, true))).toEqual([
       { text: 'Run the tests', completed: true, id: 1 },
       useRedux,
@@ -77,7 +77,7 @@ describe('todos reducer', () => {
     expect(todos(complete, local.completeTodo(1, true))).toEqual(complete)
   })
 
-  it('should handle COMPLETE_ALL_TODOS', () => {
+  it('marks every todo, and unmarks them all when they are already marked', () => {
     expect(
       todos(
         [{ text: 'Run the tests', completed: true, id: 1 }, useRedux],
@@ -112,7 +112,7 @@ describe('todos reducer', () => {
     ).toEqual([true, true])
   })
 
-  it('should handle CLEAR_COMPLETED', () => {
+  it('keeps only the todos that are not complete', () => {
     expect(
       todos(
         [{ text: 'Run the tests', completed: true, id: 1 }, useRedux],
@@ -121,7 +121,7 @@ describe('todos reducer', () => {
     ).toEqual([useRedux])
   })
 
-  it('should not generate duplicate ids after CLEAR_COMPLETED', () => {
+  it('does not reuse an id after the completed todos are cleared', () => {
     const edits = [
       local.completeTodo(0, true),
       local.clearCompleted(),

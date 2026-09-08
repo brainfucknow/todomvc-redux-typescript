@@ -638,6 +638,327 @@ None blocking. One recorded:
 
 ### Cleaner
 
+Behavior-preserving cleanup of what the coder left. One split, one DRY pass,
+and a handful of renames. Nothing in `features/` or `qa/` was touched; both were
+run.
+
+**The branch moved under me, and I left it alone**
+
+The coder's note ends "branch at a268541, unmoved; nothing committed". It is at
+`d92221b`, "Replace the bespoke middleware with RTK slices and thunks", which is
+that work committed. The working tree was clean when I started, so I read the
+commit as the coder's change and cleaned it in place. I committed nothing and
+reset nothing; my changes are in the working tree.
+
+**The mixed-job split: `src/reducers/apis.ts` was two**
+
+It held two `createSlice` calls with nothing in common: `executing`, which knows
+all five operations and tracks what is running, and `errorMessage`, which knows
+none of them. The file name named neither, and the spec was already two
+`describe` blocks that shared one `const failed`.
+
+- `src/reducers/executing.ts` and `src/reducers/errorMessage.ts` replace it,
+  with `apis.spec.ts` split the same way. No assertion changed and no test was
+  added or dropped: `npm test` goes 18 files to 19, 165 tests to 165.
+- The split says something the single file hid. `errorMessage` matches
+  `isRejected`, so it records **any** rejected action and imports nothing from
+  `../actions/api`. In one file with `executing`'s five imports at the top that
+  was invisible; alone, the module's whole dependency list is
+  `@reduxjs/toolkit`. Its doc comment now says so, because "the last failure,
+  whatever failed" is a different claim from "the last failure of one of these
+  five".
+- `initialState` in `executing.ts` is a `const initialState: Executing` instead
+  of an `as Executing` cast. `as` on an object literal permits a missing field
+  and an annotation does not, which is the whole difference; the value is
+  identical apart from the key order, which now matches the interface. Nothing
+  stringifies that object, so key order reaches nobody.
+- The four repeated `(state) => ({ ...state, isLoadingAll: true })` bodies
+  became `running('isLoadingAll', true)` and friends, and
+  `isAnyOf(op.fulfilled, op.rejected)` written out four times became
+  `isAnyOf(...settled(op))`. "An operation settles when it is fulfilled and when
+  it is rejected alike" is now stated once, in the module whose entire subject
+  is started-versus-settled.
+
+The state keys are untouched: `exec` and `errorMessage`, same shapes, same
+`combineReducers` call with two imports where there was one. No container,
+component, selector or step moved.
+
+**DRY: "the todo with this id" was written six times in `todos.ts`**
+
+Two local edits and two settled operations each wrote their own
+`state.map((todo) => todo.id === x ? ... : todo)`, and a local delete and a
+settled remove each wrote their own `filter`. There are now three helpers -
+`changing`, `replacing` (which is `changing` with a change that ignores what was
+there), and `without` - and each of the six branches says which of the three it
+wants. The two families reading identically is the point: the file's own doc
+comment says a local edit and a settled operation are two questions about one
+list, and now the shared half of the answer is written once.
+
+Measured, not asserted: `todos.ts` generates 64 mutants where it generated 72,
+for byte-identical behavior. Eight of them were duplicate ways to break the same
+`todo.id === id`.
+
+**Test readability**
+
+- `todos.spec.ts` had eight tests named after constants this task deleted -
+  `should handle ADD_TODO`, `should handle COMPLETE_ALL_TODOS`, `should not
+  generate duplicate ids after CLEAR_COMPLETED` and five more.
+  `src/constants/ActionTypes.ts` is gone, so those names pointed at nothing.
+  Each now says what it asserts; the assertions are untouched. The mapping, for
+  QA: initial state -> "holds the one seeded todo before anything happens";
+  ADD_TODO -> "appends a locally added todo, numbered one past the highest id";
+  DELETE_TODO -> "drops the todo a local delete names"; EDIT_TODO -> "rewrites
+  the text a local edit names and keeps the flag"; COMPLETE_TODO -> "writes the
+  flag a local marking carries onto the todo it names"; COMPLETE_ALL_TODOS ->
+  "marks every todo, and unmarks them all when they are already marked";
+  CLEAR_COMPLETED -> "keeps only the todos that are not complete"; the duplicate
+  id test -> "does not reuse an id after the completed todos are cleared". The
+  two invariant tests the brief names kept the names they already had.
+- `todos.spec.ts` declared the seed todo twice, once as `seed` and once as
+  `useRedux`. `seed` is now `[useRedux]`, which is also what the reducer says.
+- `api.spec.ts`: `run` took an `order` array, pushed into it, and handed it back,
+  so its one caller passed `order` in and destructured it out as `dispatches` -
+  two names for one array. `run` no longer returns it and the test reads its own
+  `order`. The two tests that silence `console.error` without asserting on it
+  now say `silenced()`, which is where the reason lives.
+
+**Renames in `acceptance/steps/todo-state.ts`**
+
+`RunningOperation.settled` was set to `true` by `oldestRunning` *before* the
+operation settled - it meant "a step has claimed this one", not "this one has
+settled", while `settle()` sat three lines below meaning the other thing. The
+field is `answered`, the finder is `takeUnanswered`, and its doc says it takes
+the operation rather than only finding it. The function's own error message,
+"No operation is waiting for an answer", is what named them. `settle`'s second
+parameter is `respond` rather than `answer`, because `answer(operation.call)`
+and `call.answer(...)` were two different answers within three lines.
+
+Behavior is untouched: 57 acceptance executions, same features, no feature file
+read differently.
+
+**`src/actions/local.ts`: touched, and what I checked**
+
+One line, the import path to `../reducers/errorMessage`. The wrappers stay. I
+checked the trap rather than taking it on faith: `MainSection.tsx` line 25 is
+`onClick={actions.completeAllTodos}` and `MainSection.tsx` line 33 hands
+`actions.clearCompleted` to `Footer`'s `onClearCompleted`, both through
+`bindActionCreators(TodoActions, dispatch)`, so a `createSlice` creator in that
+position would receive the React event and put it in `action.payload`. The
+wrappers take no arguments and drop it. `resetErrorMessage` stays too: it is the
+callerless-but-specified branch, and `features/todo-state-failures.feature` 4
+plus `errorMessage.spec.ts` are what drive it.
+
+**Two smaller edits**
+
+- `src/actions/api.ts` exported `TodoText`, `TodoId`, `TodoEdit` and
+  `TodoMarking`, and nothing imported any of them. They are module-local types
+  now, with one line saying what they are for. `TodoApiExtra` stays exported -
+  `src/store/index.ts` and `api.spec.ts` use it.
+- `src/actions/index.ts` had no doc comment, and it is the module that decides
+  why four reducer branches have no caller. It has four lines now, including the
+  one thing a reader trips over: `deleteTodo` is the app's word and
+  `api.removeTodo` is the operation's, after the client call it runs.
+
+**What I did not do, deliberately**
+
+- **Nothing specified-and-uncalled was deleted.** `errorMessage` and `exec` are
+  still computed and still read by no UI; `resetErrorMessage` is still a live
+  branch with no caller; `addTodo`, `deleteTodo`, `editTodo` and `completeTodo`
+  are still in the todos slice with the id rule inside one of them. The two doc
+  comments that say so are still there and I added a third in `./index`.
+- **`acceptance/steps/todo-state.ts` is not split**, for the reason task 09's
+  cleaner declined to split `todo-api.ts`: it is 370 lines but one job, bind a
+  feature vocabulary to the thing it describes, and pulling the world and the
+  deferred transport out would export a dozen helpers across a seam to save a
+  scroll. Its mutant count is high (275) because a step vocabulary is mostly
+  string literals, not because it decides two things.
+- **`wholeNumber` is duplicated** between `todo-api.ts` and `todo-state.ts`,
+  five identical lines. I left it. The neighbouring `flag` differs between the
+  two on purpose - the API family admits `null` and `undefined` and this one
+  does not - so a shared cell module would hold one of the three parsers and
+  invite the other two in after it, which merges two vocabularies the specifier
+  separated on purpose.
+- **`removeTodo` versus `deleteTodo` is not renamed.** One user action has two
+  names, but they meet in exactly one module, `./index`, whose job is to be that
+  map; renaming `api.removeTodo` would move the seam into `api.ts` next to
+  `removeTodoCall`, which is the client's name and not this task's to change. A
+  doc line now says which word belongs to whom.
+- **`exec.t` keeps its name.** It is a state path, the shape is the architect's
+  to rule on for task 12, and renaming it would move a path this task is told
+  not to move without asking.
+- **`PLAN.md` still names `src/reducers/apis.ts`.** That line is in "Known
+  defects carried by the baseline", under "Verified on the unmodified repository
+  at `66d36ad`". It is a record of what the baseline held, not a claim about the
+  tree, and editing it would falsify the record. The defect it names - the stray
+  `console.log` - is gone, which is what the done criteria asked.
+
+**Coverage, with a provider installed and not persisted**
+
+The established route, unchanged: `npm install --no-save @vitest/coverage-v8@5.0.0`,
+`package.json` md5 `4fad73d5...` and `package-lock.json` md5 `29184ac9...`
+identical before and after, nothing persisted, finished with `npm ci`.
+
+    npx vitest run --project unit --coverage.enabled --coverage.provider=v8 \
+      --coverage.reporter=text --coverage.include='src/**'
+
+`src/` before this pass: 95.16% statements / 87.5% branches / 97.45% functions.
+After: 95.27% / 86.53% / 97.47%. **Read the branch number as arithmetic, not as
+a regression.** Uncovered statements 12 before and 12 after, uncovered branches
+7 and 7, uncovered functions 3 and 3 - the same lines in the same four files.
+What moved is the denominator: 56 branches to 52, because the `changing`
+extraction deleted four duplicate ternaries. Fewer places to be wrong, the same
+places uncovered, a slightly smaller percentage.
+
+Every module this task created or changed is at 100% statements, branches and
+functions under the unit suite. Every uncovered line in `src/` belongs to a
+later task and I left it alone: `src/index.tsx` (the entry adapter),
+`src/containers/FilterLink.ts` line 21 (task 12), `src/selectors/index.ts` 15-19
+(task 13), one branch of `src/components/TodoTextInput.tsx` (task 11).
+
+Acceptance-side, unchanged by this pass: `acceptance/steps/todo-state.ts`
+92.52% / 66.66% / 100%, `todo-api.ts` 93.9%, `runtime.ts` 88.23%. Every
+uncovered line in `todo-state.ts` is one of its eight `throw`s - the vocabulary
+refusing a phrase a feature file does not use.
+
+**CRAP, measured**
+
+With coverage in hand, CRAP reduces to complexity across everything this task
+owns, because all of it is at 100%. Complexity came from ESLint's own
+`complexity` rule run at `max: 1`, which reports every function:
+
+    npx eslint src acceptance --rule '{"complexity":["error",{"max":1}]}'
+
+In `src/` and `acceptance/` together, 51 functions exceed complexity 1: 36 at 2,
+10 at 3, 4 at 4, and one at 5. The gate is 10 and the worst thing in the
+repository is `isRunning` in `todo-state.ts` at 5, whose CRAP is
+`5 + 25 x (1/6)^3 = 5.1` - one uncovered `throw` of its six statements. In
+`src/`, this task's modules top out at complexity 2 (`runCall`, and `changing`),
+at 100% coverage, so CRAP 2. Nothing is near the gate and nothing needed
+splitting to get there; the split above was the mixed-job hint, not CRAP.
+
+`src/reducers/todos.ts` now holds exactly one function above complexity 1 where
+it held three, which is the same finding as the mutant count from the other
+side.
+
+**The mixed-job scan**
+
+Mutants counted, not run - no mutation testing, per the brief. Stryker's
+instrumenter drives it directly, so no test executes at all:
+
+    npm install --no-save @stryker-mutator/core@10.0.0
+    # scratch script: new Instrumenter(logger).instrument(files, opts), count result.mutants
+
+| module | before | after |
+| --- | --- | --- |
+| `src/actions/api.ts` | 30 | 30 |
+| `src/actions/local.ts` | 8 | 8 |
+| `src/actions/index.ts` | 0 | 0 |
+| `src/reducers/todos.ts` | 72 | **64** |
+| `src/reducers/apis.ts` | 29 | split |
+| `src/reducers/executing.ts` | - | 26 |
+| `src/reducers/errorMessage.ts` | - | 6 |
+| `src/reducers/visibilityFilter.ts` | 4 | 4 |
+| `src/store/index.ts` | 6 | 6 |
+| `acceptance/steps/todo-state.ts` | 275 | 275 |
+
+What the scan said about `apis.ts`: its 29 mutants fell into two neighbourhoods
+with nothing between them, roughly 25 around the executing slice and 4 around
+the error slice, matching the two `describe` blocks in its spec exactly. Two
+falsifiability stories in one file is the shape task 09 found in
+`boundaries.mjs`, so I split it. `src/actions/index.ts` generates no mutants at
+all, which is what a module of re-exports should generate and is why its one
+real decision is pinned by a spec that drives a store rather than by anything
+mutable in the file.
+
+**A caution on the install route, extending the hardener's**
+
+Task 09's hardener recorded that `npm install --no-save --no-package-lock`
+prunes an earlier unsaved package, and that plain `--no-save` "is enough and
+leaves the lockfile alone". Plain `--no-save` prunes it too: installing
+`@stryker-mutator/core` after `@vitest/coverage-v8` removed the coverage
+provider from `node_modules`, and the next coverage run failed with `MISSING
+DEPENDENCY`. The lockfile and `package.json` stayed byte-identical throughout,
+so nothing was at risk, but a role wanting both measurements should install them
+in one command - `npm install --no-save @vitest/coverage-v8@5.0.0
+@stryker-mutator/core@10.0.0` - or take the two measurements in either order and
+reinstall in between.
+
+**Inherited threads, from where I sit**
+
+Nothing I did moves any of the three, and I checked rather than assumed.
+
+- *Floating promises.* Unchanged. I introduced no `await`, no `.then` and no
+  `.unwrap`; `unwrap` still appears nowhere in `src/`, `acceptance/`,
+  `properties/`, `hardening/` or `qa/`. The one promise-shaped thing I touched
+  is `settle`'s parameter name in the acceptance steps, which still awaits
+  `operation.done` inside a `try/finally`.
+- *Dispatch result.* Unchanged and still unread: `dispatch(anApiAction)` resolves
+  to the settled action. `api.spec.ts` still pins both halves of that, under the
+  same two test names.
+- *Serializability.* Unchanged. `errorMessage` still stores whatever
+  `action.error` holds, which is `createAsyncThunk`'s serialized error. Moving
+  the slice to its own file changed no branch of it.
+
+**Verified**
+
+Every command below was run from the working tree as it stands, after `npm ci`,
+after the last edit.
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in six projects.
+- `npm test`: 19 files / 165 tests. One more file than the coder left, the same
+  165 tests: `apis.spec.ts` became `executing.spec.ts` and
+  `errorMessage.spec.ts` with nothing added, dropped or weakened.
+- `npm run acceptance`: 7 files / 57 executions, unchanged.
+- `npm run properties`: 26. `npm run hardening`: 50. Both unchanged.
+- `npm run test:e2e`: 22 passed. `test:e2e:dev` and `test:e2e:preview`: 21
+  passed, 1 skipped each. No `qa/` file was edited.
+- `package.json` and `package-lock.json` md5-identical to their values at the
+  start, with both measurement packages installed and again after `npm ci`.
+
+**Left for the architect**
+
+- The three questions the coder left you are untouched and still yours: whether
+  `RootState` should derive from `createTodoStore` (task 12), the four
+  callerless branches, and whether `preloadedState` is production surface or a
+  test seam.
+- One thing my split hands you that the coder's shape did not: `errorMessage` is
+  a slice that no operation reaches. It matches `isRejected`, so any rejected
+  action anywhere writes it, and its module now imports nothing but
+  `@reduxjs/toolkit`. Whether that is the boundary you want - a failure recorder
+  that knows no operations - or an accident of `isRejected` being convenient, is
+  a dependency-direction question and therefore yours.
+- `src/reducers/` now has one module per state key: `todos`, `visibilityFilter`,
+  `errorMessage`, `executing`. `combineReducers` still maps the last to `exec`,
+  which is the only place the two names differ.
+- The widened acceptance allow list in `scripts/architecture/rules.mjs` still
+  covers everything the acceptance suite imports; my split added no import that
+  crosses it, and `boundaries.spec.mjs`'s exact-edge assertions name no reducer
+  file, so they still hold as written.
+
+**Left for the hardener**
+
+Your list of new and changed modules is the coder's, with one substitution:
+`src/reducers/apis.ts` is now `src/reducers/executing.ts` and
+`src/reducers/errorMessage.ts`. Counts and the route are in the scan section
+above. The coder's note about `reported[reported.length - 1]` in
+`src/actions/api.ts` still stands; I did not touch that function's body.
+
+**Open questions for the project manager**
+
+None blocking. Two recorded rather than guessed at silently.
+
+1. `npm test` moves from 18 files to 19, with the test count unchanged, because
+   I split one spec to match a source split. That is the third task in a row to
+   move a file count and you have asked twice to be told rather than have it
+   assumed, so: the split is one source into two, the spec followed it, and no
+   test was added.
+2. I renamed eight tests in `todos.spec.ts` that were named after action-type
+   constants this task deleted. The full mapping is above so QA can check that
+   nothing was weakened rather than discover it. If you would rather a cleaner
+   left test names alone as a trace back to the pre-RTK suite, say so and I will
+   note it for tasks 11 to 13, which will each face the same thing.
+
 ### Architect
 
 ### Hardener
@@ -723,3 +1044,33 @@ and has a brief line aimed squarely at it: policy used only by tests while an
 adapter reimplements it gets wired or deleted. Note these are not quite that
 case, since no adapter reimplements them; they are specified behavior with no
 caller. Decide deliberately and say why.
+
+## Project manager notes, third round
+
+**On renaming stale test titles: yes, that is a cleaner's call.** Your brief
+lists test readability and stale comments in scope and says to rename anything
+when a better name clarifies intent. Eight titles named action-type constants
+this task deleted, so they described a vocabulary that no longer exists. Leaving
+them would have been leaving a stale comment that happens to be a string
+literal. The mapping is recorded, which is what makes it checkable.
+
+**On `npm test` moving 18 to 19 files.** Fine, same reading as every time
+before: the pin is that acceptance and property tests stay out of that count,
+not that the number holds. Splitting a mixed-job source into two necessarily
+splits its spec.
+
+**On `npm install --no-save` pruning an earlier `--no-save` package.** Recorded
+for later roles, and thank you for finding it the expensive way. Task 09's note
+warned about the `--no-package-lock` form; the plain form does it too, so adding
+Stryker silently removed the coverage provider. Install both in one command.
+Task 14, which decides whether either should be persisted, now has a concrete
+reason why the current arrangement is awkward.
+
+**On what the split revealed.** `errorMessage` matching `isRejected` means it
+records any rejected action, and its entire import list is `@reduxjs/toolkit`.
+That is equivalent to the old behavior, which returned `action.error` whenever
+an action carried one, so nothing changed. Worth stating because it is the third
+time on this project that splitting a source with two jobs exposed something the
+combined file hid, after task 09's boundary rules and this task's own reducers.
+The architect should note that `errorMessage` now depends on nothing in this
+codebase at all.

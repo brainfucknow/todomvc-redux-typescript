@@ -34,7 +34,7 @@ interface PendingCall {
 interface RunningOperation {
   call: PendingCall
   done: Promise<unknown>
-  settled: boolean
+  answered: boolean
 }
 
 export interface TodoStateWorld {
@@ -90,15 +90,19 @@ const start = (world: TodoStateWorld, operation: Operation) => {
   if (world.calls.length === sent) {
     throw new Error('The operation sent no request')
   }
-  world.operations.push({ call: world.calls[sent], done, settled: false })
+  world.operations.push({ call: world.calls[sent], done, answered: false })
 }
 
-const oldestRunning = (world: TodoStateWorld): RunningOperation => {
-  const operation = world.operations.find((running) => !running.settled)
+/**
+ * The operation the next answering step is about: the oldest one no step has
+ * answered yet, taken so that the step after it gets the one behind.
+ */
+const takeUnanswered = (world: TodoStateWorld): RunningOperation => {
+  const operation = world.operations.find((running) => !running.answered)
   if (!operation) {
     throw new Error('No operation is waiting for an answer')
   }
-  operation.settled = true
+  operation.answered = true
   return operation
 }
 
@@ -112,11 +116,11 @@ const oldestRunning = (world: TodoStateWorld): RunningOperation => {
  */
 const settle = async (
   operation: RunningOperation,
-  answer: (call: PendingCall) => void,
+  respond: (call: PendingCall) => void,
 ) => {
   const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
   try {
-    answer(operation.call)
+    respond(operation.call)
     await operation.done
   } finally {
     logged.mockRestore()
@@ -267,19 +271,19 @@ const definitions: Definition[] = [
   {
     pattern: /^the backend answers with (.+)$/,
     handle: ({ world, expandJson }, body) =>
-      settle(oldestRunning(world), (call) =>
+      settle(takeUnanswered(world), (call) =>
         call.answer({ status: 200, body: expandJson(body) }),
       ),
   },
   {
     pattern: /^the backend answers$/,
     handle: ({ world }) =>
-      settle(oldestRunning(world), (call) => call.answer({ status: 200 })),
+      settle(takeUnanswered(world), (call) => call.answer({ status: 200 })),
   },
   {
     pattern: /^the call fails with error (.+)$/,
     handle: ({ world, expand }, message) =>
-      settle(oldestRunning(world), (call) =>
+      settle(takeUnanswered(world), (call) =>
         call.fail(new Error(expand(message))),
       ),
   },

@@ -34,8 +34,18 @@ const initialState: Todo[] = [
 const nextId = (todos: Todo[]) =>
   todos.reduce((maxId, todo) => Math.max(todo.id, maxId), -1) + 1
 
+/**
+ * "The todo with this id" is the question both families ask, and these are the
+ * three answers to it: change that todo, put another one in its place, drop it.
+ */
+const changing = (todos: Todo[], id: number, change: (todo: Todo) => Todo) =>
+  todos.map((todo) => (todo.id === id ? change(todo) : todo))
+
 const replacing = (todos: Todo[], id: number, replacement: Todo) =>
-  todos.map((todo) => (todo.id === id ? replacement : todo))
+  changing(todos, id, () => replacement)
+
+const without = (todos: Todo[], id: number) =>
+  todos.filter((todo) => todo.id !== id)
 
 const todosSlice = createSlice({
   name: 'todos',
@@ -47,16 +57,17 @@ const todosSlice = createSlice({
     ],
 
     deleteTodo: (state, { payload: id }: PayloadAction<number>) =>
-      state.filter((todo) => todo.id !== id),
+      without(state, id),
 
     editTodo: {
       reducer: (
         state,
         { payload }: PayloadAction<{ id: number; text: string }>,
       ) =>
-        state.map((todo) =>
-          todo.id === payload.id ? { ...todo, text: payload.text } : todo,
-        ),
+        changing(state, payload.id, (todo) => ({
+          ...todo,
+          text: payload.text,
+        })),
       prepare: (id: number, text: string) => ({ payload: { id, text } }),
     },
 
@@ -65,11 +76,10 @@ const todosSlice = createSlice({
         state,
         { payload }: PayloadAction<{ id: number; completed: boolean }>,
       ) =>
-        state.map((todo) =>
-          todo.id === payload.id
-            ? { ...todo, completed: payload.completed }
-            : todo,
-        ),
+        changing(state, payload.id, (todo) => ({
+          ...todo,
+          completed: payload.completed,
+        })),
       prepare: (id: number, completed: boolean) => ({
         payload: { id, completed },
       }),
@@ -96,7 +106,7 @@ const todosSlice = createSlice({
         replacing(state, action.meta.arg.id, action.payload),
       )
       .addCase(removeTodoOperation.fulfilled, (state, action) =>
-        state.filter((todo) => todo.id !== action.meta.arg.id),
+        without(state, action.meta.arg.id),
       )
   },
 })

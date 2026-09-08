@@ -1,6 +1,6 @@
 import TodoFilters from '../constants/TodoFilters'
 import { todoActions } from '../reducers/todos'
-import { errorActions } from '../reducers/apis'
+import { errorActions } from '../reducers/errorMessage'
 import { visibilityFilterActions } from '../reducers/visibilityFilter'
 
 /**
