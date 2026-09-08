@@ -1878,6 +1878,85 @@ move, is not stale - its `scenario_hash` for requests 2 still matches. The six
 so. Class A (the ten deliberate `status`/`body` survivors) is likewise
 untouched. Nothing is open for me.
 
+### Coder (correction: README)
+
+`README.md` only, plus this note. `git status` lists those two files and
+nothing else; the branch is where I found it, `1c37550`, and I have committed
+nothing.
+
+**QA's four findings, each checked against the repository rather than the
+report.** All four hold, and the count of six is right: `npm run typecheck`
+prints `0 error(s) in tsconfig.json, qa/tsconfig.json, acceptance/tsconfig.json,
+properties/tsconfig.json, hardening/tsconfig.json, tsconfig.tools.json`, which
+is the same six `scripts/typecheck.mjs` lists. `package.json` has `properties`
+and `hardening` as scripts and the workflow runs both, between `typecheck` and
+`npm test`. Fixed: the stack table's `Types` row and the `npm run typecheck`
+section now name six projects one per line; `npm run properties` and
+`npm run hardening` have sections of their own; the CI paragraph lists both
+steps.
+
+**Three more staleness items I found while reading the rest of the file, none of
+them QA's to catch.**
+
+1. *The reason the projects are split was wrong, and was wrong when there were
+   four.* The file said "only the tooling gets `"types": ["node"]`". Five of the
+   six do - `qa/`, `acceptance/`, `properties/`, `hardening/` and the tooling.
+   The app is the exception, and it declares `"types": ["vitest/globals"]`. The
+   split's actual purpose survives the correction; only the sentence stating it
+   was false. Rewritten to say which project is the odd one out.
+2. *The tooling project's file list was two files short.* It named
+   `vitest.acceptance.config.mts` and not `vitest.properties.config.mts` or
+   `vitest.hardening.config.mts`, both of which `tsconfig.tools.json` includes.
+   Now "the three `vitest.*.config.mts` files".
+3. *The lint section named four kinds of code out of seven.* `eslint.config.js`
+   has blocks for `src/`, `qa/**/*.ts`, `qa/stub/`, the
+   `acceptance/`+`properties/`+`hardening/` trio, `*.mts` and `scripts/**/*.mjs`,
+   and the two CommonJS root configs. The sentence now covers them.
+
+**"Every step is one of the commands above" is now true with one stated
+exception.** Adding the two sections does not by itself make it true: the
+`propTypes` grep is a workflow step and not an npm script, and never was one.
+The sentence now reads "Every step but that grep", which is checkable against
+the workflow.
+
+**The three facts I was told are easy to get wrong, and where each landed.**
+`npm run acceptance:install` needs Go and clones APS into gitignored `.aps/bin/`
+- I also added `$GO_BIN` and the `/usr/local/go/bin/go` fallback, which
+`scripts/acceptance/install-aps.mjs` resolves before a bare `go`, since the
+section already documented `$APS_SOURCE` and `$APS_BIN_DIR`. Generating mutants
+needs `@stryker-mutator/core`, deliberately unsaved, while the hardening tests
+need only Vitest: that contrast is the second paragraph of the `hardening`
+section and the second bullet of the CI list, because it is the whole reason one
+is a step and the other is not. The dev and preview E2E variants and procedure
+20's proxy skip were already correct in the file and are unchanged; the CI list
+now says the variants are outside the workflow on purpose, quoting task 08's
+reason.
+
+The CI section now ends with three bullets rather than one paragraph about
+acceptance: acceptance, the mutation runs, the two E2E variants. That is the
+same three the previous two handoffs both counted.
+
+**What I verified.** `npm run format:check` exit 0 and `npm run lint` exit 0,
+both read from `$?` after a redirect to a file, never after a pipeline. Markdown
+is excluded from Prettier by `*.md` in `.prettierignore`, which I checked rather
+than assumed - which is also why `format:check` passing does not mean my tables
+are formatted, only that Prettier does not own them. No code, test, config or
+workflow file was touched, so no other gate could have moved; `git diff
+--name-only` is `README.md` and this file.
+
+**Left for the next role.** Nothing open on the README. Two observations, both
+cosmetic and neither mine to change:
+
+- `eslint.config.js`'s last-but-one block is commented "Loose files at the root
+  that belong to no tsconfig project", but it matches `scripts/**/*.mjs`, and
+  `tsconfig.tools.json` includes exactly that glob. The comment is stale; the
+  config is right. A cleaner's, if anyone's.
+- `PLAN.md`'s task-14 paragraph is the project manager's and I did not read it
+  for accuracy; I am told it has already been corrected.
+
+No code defect found. I looked only at what the README claims, and every claim I
+checked is now true of the repository as it stands at `1c37550`.
+
 ## Project manager notes
 
 **On the specifier's open question about `undefined`.** Keep the row. The guard
