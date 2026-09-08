@@ -31,7 +31,7 @@ const TodoItem: React.FunctionComponent<TodoItemProps> = ({
     } else {
       editTodo(change.id, change.text)
     }
-    if (closesEditor) setEditing(false)
+    setEditing(!closesEditor)
   }
 
   return (

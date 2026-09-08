@@ -511,6 +511,253 @@ behind and the feature file names keys by name.
 
 ### Cleaner
 
+Behavior-preserving cleanup of what the coder left. One split, one DRY pass, one
+unreachable branch removed and one doc comment added. No feature file, no QA
+procedure, no manifest, no config and no dependency changed; the suites that
+read them were all run.
+
+**The branch had moved, and I left it alone.** The coder's note ends "nothing
+committed"; the branch is at `3977066`, which is that work committed, and the
+working tree was clean when I started. I read the commit as the coder's change
+and cleaned it in place. I committed nothing and reset nothing; my changes are
+in the working tree.
+
+**The routed job: `wholeNumber`. Shared, narrowly, and the module says what may
+follow it in.**
+
+`acceptance/steps/cells.ts` now holds `wholeNumber`, `text` and `textOrNothing`,
+and the four step files import what they need. Task 10's cleaner left the two
+copies alone and gave a reason worth answering rather than overruling silently:
+a shared cell module would hold one of the three flag parsers and invite the
+other two in after it, merging vocabularies the specifier separated on purpose.
+
+The answer is that the reason applies to `flag` and not to `wholeNumber`. The
+three `flag`-shaped parsers differ because the features differ - `todo-api-*`
+spells a missing flag as `null` and `undefined`, `todo-state-*` takes `true` and
+`false` only, and `completedFlag` beside it reads the words `complete` and
+`active`. `wholeNumber` differs in nothing: three independent authorings
+produced the same six lines with the same error message, because "this cell is a
+whole number" is a question about how the feature files spell a number and not
+about what any family means. A todo id, a count and an HTTP status are one
+reading. Divergence there would be a defect, not a dialect.
+
+So the module's doc states its charter and names what stays out and why, which
+is where task 10's warning now lives instead of in a task file: what belongs is
+a reading that asks one question no matter which feature file asks it; the three
+flag parsers are named as the thing that must not follow it in.
+
+`text` and `textOrNothing` moved too. They are the JSON-text convention the
+`todo-input-*` features declare, and after the split below they have two callers
+rather than one, so leaving them in one of the two files would have made that
+file the other's library.
+
+**The mixed-job scan: the third step vocabulary was two.**
+
+Mutants counted with Stryker's instrumenter, not run - no mutation testing, per
+the brief, and no test executes.
+
+| source | before | after |
+| --- | --- | --- |
+| `src/todo-input/field.ts` | 21 | 21 |
+| `src/todo-input/effects.ts` | 16 | 16 |
+| `src/components/TodoTextInput.tsx` | 16 | 16 |
+| `src/components/TodoItem.tsx` | 20 | **18** |
+| `src/components/Header.tsx` | 7 | 7 |
+| `acceptance/steps/todo-input.ts` | 172 | split |
+| `acceptance/steps/todo-input-commits.ts` | - | 81 |
+| `acceptance/steps/todo-input-effects.ts` | - | 69 |
+| `acceptance/steps/cells.ts` | - | 25 |
+| `acceptance/steps/todo-api.ts` | 253 | 242 |
+| `acceptance/steps/todo-state.ts` | 274 | 263 |
+| `acceptance/steps/index.ts` | 12 | 13 |
+
+The two new `src/todo-input/` modules are small and each has one subject, so
+neither was split - splitting `effects.ts` in particular would destroy the thing
+it exists for, which is that both callers of `isEmpty` are visible in one file.
+The one source the scan flagged is `acceptance/steps/todo-input.ts`: 172
+mutants, eight times the next new file, in two neighbourhoods with nothing
+between them.
+
+It is the same shape as task 10's `apis.ts`. Its world held six fields in two
+groups - `field`, `held`, `heldBefore`, `event` on one side, `added` and
+`edited` on the other - and no handler, helper or assertion read across the line.
+The two halves import different modules, bind different feature files, and throw
+error messages that are meaningless to each other. It is now
+`acceptance/steps/todo-input-commits.ts` and
+`acceptance/steps/todo-input-effects.ts`, named after the feature files a reader
+arrives from, with `acceptance/steps/index.ts` composing four worlds where it
+composed three. All 18 step patterns are byte-identical to the coder's and no
+handler body changed; I diffed them both ways to be sure.
+
+**Why this is not the split task 09 and task 10 declined.** Both declined to
+split a step file, and both gave the same reason: one job, bind a feature
+vocabulary to the thing it describes. That reason holds for `todo-api.ts`, whose
+three feature files build a request and then execute it through one world, and
+for `todo-state.ts`, whose four drive one store. The unit that has actually held
+constant across this suite is not one file per family - it is **one file per
+world**, and a world is whatever one module under test needs remembered between
+steps. `todo-input.ts` was the first file holding two, because its two feature
+files cut the pipeline in half on purpose: `todo-input-commits` stops at the
+text a field hands on and `todo-input-effects` starts there, using deliberately
+different sentences for the one event so that no pattern matches both. Splitting
+the file restores the convention rather than breaking it, and `index.ts` now
+says so in as many words.
+
+What the split shows that the combined file hid is small but real: the commits
+half never reads a todo id, and the effects half never knows a field exists. The
+`todo-input-*` family is one family asked of two modules that do not import each
+other, and the vocabulary is now shaped like the thing it describes.
+
+**One unreachable branch, in `TodoItem`.** `commitFromEditField` always answers
+`closesEditor: true`, so `if (closesEditor) setEditing(false)` had a false arm
+nothing could reach - the one uncovered branch in `src/components/` and the
+reason that directory sat at 95.83%. It is `setEditing(!closesEditor)`, which is
+the same behavior for the answer the module gives and the same behavior for the
+answer it does not: a commit only happens while the editor is open, so "editing
+is now whatever the rule left it" and "close it if the rule said to, otherwise
+leave it" are the same statement. `src/components/` is at 100% on all four
+measures. **This is the only edit I made that touches a code path rather than a
+name, a file boundary or a comment, and it is the one to look at first if
+anything downstream disagrees.**
+
+**`Header` says why it asks the module.** The other two components got doc
+comments explaining their relationship to `src/todo-input/`; `Header` was left
+with a bare `commitFromNewTodoField` call and a reader has to guess why a
+component defers a `length` test. It now says: refusing an empty commit is the
+module's answer rather than a test in this file, because the edit field asks the
+same question and is answered the other way. See the warning below - that
+sentence is deliberate, and it is the asymmetry stated out loud.
+
+**Coverage.** Provider installed and not persisted, the established route:
+`npm install --no-save @vitest/coverage-v8@5.0.0`, `package.json` md5
+`4fad73d5...` and `package-lock.json` md5 `29184ac9...` identical before and
+after, finished with `npm ci`. Whether to persist it is task 14's question.
+
+`src/`, under the unit suite, before this pass 95.55% statements / 88.7%
+branches / 97.63% functions; after 95.53% / 90% / 97.63%. The one statement and
+the two branch arms that left are the `if` above. `src/components/` drops off
+the report entirely: every file in it is at 100%. Every remaining uncovered line
+in `src/` belongs to a later task, unchanged from task 10's list except that
+`TodoTextInput`'s branch is now covered - `src/index.tsx` (the entry adapter),
+`src/containers/FilterLink.ts` line 21 (task 12), `src/selectors/index.ts` 15-19
+(task 13).
+
+Acceptance-side, after the split: `todo-input-commits.ts` 90.9% statements,
+`todo-input-effects.ts` 91.3%, `cells.ts` 70%, `todo-api.ts` 94.93%,
+`todo-state.ts` 93.26%, `runtime.ts` 88.23%. Every uncovered line in all of them
+is a `throw` - the vocabulary refusing a phrase no feature file uses - which is
+the same reading task 10 recorded. `cells.ts` looks worst at 70% because it is
+nine lines of parsing and two of those throws.
+
+**CRAP, measured.** Complexity from ESLint's own rule at `max: 1`, which reports
+every function:
+
+    npx eslint src acceptance scripts qa properties hardening \
+      --rule '{"complexity":["error",{"max":1}]}'
+
+189 functions exceed complexity 1 across the whole repository: 111 at 2, 48 at
+3, 19 at 4, 6 at 5, 2 at 6, 2 at 7, one at 8 and one at 9. Everything this task
+created or changed is at complexity 1 or 2 and at 100% coverage, so CRAP 1 or 2;
+`TodoItem`'s `save` went from 3 to 2. Above complexity 4, and with coverage in
+hand: `classifyRun` at 9 and `readRunReport` at 8 are in
+`scripts/acceptance/runner-protocol.mjs` at 97.95% statements / 100% lines, so
+CRAP 9.0 and 8.0; `forAll` at 7 in `properties/tiny-check.ts` at 96.8%, CRAP
+7.0; `boundaries.mjs`'s `walk` and `todo-state.ts`'s `isRunning` at 5, CRAP 5.0.
+Nothing is at the gate.
+
+The functions above complexity 4 that no unit suite covers are all adapter
+shells that a suite runs as a process rather than imports - `runner-worker.mjs`,
+`aps.mjs`, `qa/stub/`. That is task 09's arrangement working as intended: the
+decisions were pulled out into `runner-protocol.mjs`, which is the module at
+98%, and the brief says to keep the shells out of the test tooling. I left them.
+
+**What I did not do, deliberately**
+
+- **Nothing specified was made kinder.** Enter trims and blur does not; `Header`
+  refuses an empty commit and `TodoItem` deletes on one; Escape does nothing in
+  either field; an edit committed with Enter on three spaces deletes the todo
+  while the same edit committed by clicking away saves three spaces and leaves a
+  row whose label renders blank. All of it is exactly where the coder left it.
+- **Two of my edits make the asymmetry easier to see, which is the point of
+  saying so here.** `todo-input-effects.ts` is now a file whose entire content
+  is the two opposite answers to one question, with nothing else in it, and the
+  `Header` doc comment states in one sentence that the edit field asks the same
+  question and is answered the other way. A reader who did not know now finds out
+  in two places instead of none. That makes it more tempting to fix and no more
+  fixable: the project manager's ruling stands, `qa/procedures/06` and `07`,
+  `todo-input-commits 4` and `todo-input-effects 3` all pin it, and a fix needs
+  a specifier to move first.
+- **`memo` on `TodoItem` and not on `TodoTextInput`, and `FieldKind` as an
+  argument, are untouched** - both comments, both reasons, both files. They are
+  the two places where consistency would have been worse than the asymmetry.
+- **`TodoTextInput` still reads the DOM for the value it already holds.**
+  `onBlur` passes `e.target.value` and `onKeyDown` passes `e.currentTarget.value`
+  to rules the acceptance suite drives with the held text, and the component
+  holds that same text in `held`. Feeding both from `held` would be tidier and
+  would make the component and the step handler feed the rule identically. I did
+  not, because they are not provably identical under an IME: React can leave
+  state a composition behind the DOM value, and the current code commits what
+  the user sees. The two ways of reading it are forced apart by React's types -
+  `KeyboardEvent.target` is untyped, which is why the class cast it - not by
+  anything this repository chose.
+- **`e.which` to `e.key` was not revisited.** The project manager accepted it in
+  the second round; `src/test-support/keyboard.ts` still sends `key`, `code`,
+  `keyCode` and `which` together, which is what a real Enter carries. Worth one
+  note for the hardener: because the helper still sends all four, the unit suite
+  cannot tell a `key`-reading component from a `which`-reading one. Nothing is
+  wrong today - the rule lives in a module that has no DOM in its signature at
+  all - but a mutation of that reading is not something the component specs can
+  catch.
+- **The component specs were not restyled.** `setup` in three of them still uses
+  `Object.assign` and `props: props`. It is pre-existing shape from task 02,
+  identical in all three, and rewriting one of the three would have made the set
+  less consistent, not more.
+- **`field.spec.ts` still lists `Tab` among the keys that commit nothing**, where
+  `todo-input-commits 6` deliberately does not. That is right at the module's
+  level: `commitOnKey` has never heard of focus, and the specifier's reason for
+  dropping the row - a Tab in a browser also blurs, so the scenario would assert
+  two rules at once - applies to the scenario and not to the function.
+- **`scripts/architecture/rules.mjs` is unchanged.** Its acceptance reason talks
+  about three families of feature, which is still true after the split; the file
+  layout is `index.ts`'s story and that is where I put it.
+
+**Verified**
+
+`npm run lint`, `npm run format:check`, `npm run typecheck` (six projects, 0
+errors), `npm test` 21 files / 193 tests, `npm run build`, `npm run acceptance` 9
+files / 75 tests, `npm run properties` 6 / 48, `npm run hardening` 7 / 61,
+`npm run test:e2e` 22 passed, `test:e2e:dev` and `test:e2e:preview` 21 passed / 1
+skipped. Every count is the one the coder left. All 18 step patterns diffed
+identical across the split, and the handler bodies diffed to nothing but the
+reordering and one parameter rename. Lockfile and `package.json` byte-unchanged,
+nothing committed, nothing reset.
+
+**Left for the next roles**
+
+- Architect: the two allow lists the coder routed to you are still as he left
+  them - `properties/**` and `hardening/**` do not name `src/todo-input/*`, and
+  the hardener needs the second widened before it can scan the new modules at
+  all. The `acceptance/**` list already covers the files I added, because it
+  allows `acceptance/**`. The "`src/todo-input/**` depends on nothing" rule the
+  coder says the graph would support is still yours to write, and it is still
+  true: neither module imports anything.
+- Hardener: the mutant counts above are a scan, not a run - `field.ts` 21 and
+  `effects.ts` 16 - and nothing has been proved about survivors. Two places to
+  look that this pass created rather than inherited: `setEditing(!closesEditor)`
+  in `TodoItem`, and `cells.ts`, whose three parsers are now the only copy in the
+  suite and are reached by all four step vocabularies.
+- QA: no procedure changed and no user-visible surface moved. The acceptance run
+  still reports 9 files and 75 tests named after the feature files, so the split
+  is invisible in its output; what moved is which file a step handler lives in.
+
+**Open questions**
+
+None blocking. One judgment recorded rather than guessed at: the `if
+(closesEditor)` branch, removed because nothing could reach its false arm. If
+the architect or the hardener would rather the component tested the answer than
+assigned it, it is a one-line revert and the only cost is one uncoverable branch
+coming back.
+
 ### Architect
 
 ### Hardener
@@ -586,3 +833,48 @@ builds.
 hardener needs that widened before it can scan the new modules; and a
 `src/todo-input/**` "depends on nothing" boundary rule is supportable but is the
 architect's line to write.
+
+## Project manager notes, third round
+
+**The `key`-versus-`which` gap is real, and wider than the cleaner reported.**
+It noted that the test-support keyboard helper sends `key`, `code`, `keyCode`
+and `which` together, so the unit suite cannot tell which one a component reads.
+I checked, and the E2E suite cannot either: I replaced `e.key` with a
+`which`-derived value in `TodoTextInput` and **both `npm test` and
+`npm run test:e2e` stayed green**.
+
+For E2E that is inherent rather than a defect — a real browser sets both, so no
+UI-level test could ever separate them. For the unit suite it is a helper that
+is more generous than any real event. The consequence: the one implementation
+detail this task changed is pinned by nothing at all. It is still correct, since
+the two are equivalent for Enter, but nothing would catch a change back or
+sideways.
+
+**Hardener: this is yours.** The cleaner already flagged it to you and I am
+confirming it with a reproduction. The fix is not to weaken the helper for its
+existing callers; it is to pin what the component reads, which is a claim no
+current suite makes.
+
+**On the removed unreachable branch.** Accepted, with one thing on the record
+that the cleaner's note implies but does not say. `if (closesEditor)
+setEditing(false)` and `setEditing(!closesEditor)` are identical while
+`commitFromEditField` always answers `true`, which it does. They differ in the
+unreachable case: the old form ignores a `false`, the new one honours it by
+reopening the editor. Honouring the flag is the better of the two, and the
+branch was the only uncovered one in `src/components/`. The architect may revert
+it in one line if it disagrees.
+
+**On sharing `wholeNumber` across the step families.** The right call, and the
+reasoning is what makes it safe rather than the outcome. Task 10's cleaner
+declined a similar DRY, and this one did not overrule that: it distinguished the
+cases. The three *flag* parsers differ because the features differ, so unifying
+them would erase a real distinction. `wholeNumber` is three independent
+authorings of the same line because "this cell is a whole number" is a question
+about how feature files spell a number, not about what any family means. The new
+module's doc names the flag parsers as what must not follow it in, which is the
+part that keeps the distinction alive after everyone forgets.
+
+**The mixed-job hint has now paid off four times**, on task 09's boundary rules,
+task 10's two-slice reducer file, task 10's `errorMessage`, and this task's step
+file at 172 mutants in two neighbourhoods. It has produced a real finding every
+time it has been applied on this project.

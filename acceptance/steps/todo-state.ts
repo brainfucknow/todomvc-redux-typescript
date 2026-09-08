@@ -12,6 +12,7 @@ import { getVisibleTodos } from '../../src/selectors'
 import { createTodoStore, type TodoStore } from '../../src/store'
 import type { Todo } from '../../src/models/Todo'
 import type { SendRequest, TodoApiAnswer } from '../../src/todo-api/client'
+import { wholeNumber } from './cells'
 import type { StepDefinition, StepSuite } from '../runtime'
 
 /**
@@ -184,13 +185,6 @@ const isRunning = (world: TodoStateWorld, subject: string) => {
   const update = /^the update of todo (\d+)$/.exec(subject)
   if (update) return running.t[update[1]]?.isUpdating
   throw new Error(`Not something that runs: ${subject}`)
-}
-
-function wholeNumber(value: string): number {
-  if (!/^-?\d+$/.test(value)) {
-    throw new Error(`Not a whole number: ${value}`)
-  }
-  return Number(value)
 }
 
 /** `true` and `false`, the two values a todo can be marked completed to. */

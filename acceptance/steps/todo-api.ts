@@ -11,6 +11,7 @@ import {
   type TodoApiOutcome,
   type TodoApiRequest,
 } from '../../src/todo-api/client'
+import { wholeNumber } from './cells'
 import type { StepContext, StepDefinition, StepSuite } from '../runtime'
 
 /**
@@ -93,13 +94,6 @@ const outcomeOf = (
     )
   }
   return outcome
-}
-
-function wholeNumber(value: string): number {
-  if (!/^-?\d+$/.test(value)) {
-    throw new Error(`Not a whole number: ${value}`)
-  }
-  return Number(value)
 }
 
 /** `true`, `false`, and the two ways the features spell "no flag at all". */
