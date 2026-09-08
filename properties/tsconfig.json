@@ -4,9 +4,10 @@
   // acceptance/ is a fourth - it needs Node's globals for $PROPERTY_SEED, and
   // the app must never see them.
   //
-  // No DOM lib, deliberately. The suite may only reach
-  // src/todo-api/client.ts, which is the policy module; a property that
-  // reached the fetch transport would stop compiling here, and
+  // No DOM lib, deliberately. The suite may reach the modules that decide
+  // without an environment - src/todo-api/client.ts and the state layer's
+  // reducers and operations - and nothing else; a property that reached the
+  // fetch transport or a component would stop compiling here, and
   // scripts/architecture/boundaries.spec.mjs states the same rule as an
   // import rule.
   "compilerOptions": {

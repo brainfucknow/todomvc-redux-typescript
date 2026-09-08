@@ -9,6 +9,16 @@
  * the policy rather than the network shell. Every one of them was a comment in
  * a handoff note, and a comment cannot fail.
  *
+ * Task 10 added the two that separate the state layer from the UI, in both
+ * directions: a reducer or an operation may not reach outward to a component,
+ * and a component may not reach past `src/actions/` and `src/selectors/` into
+ * the slices, the store or the API client.
+ *
+ * One trap in the vocabulary, learned here: `a/**` matches what is under `a`
+ * and not `a` itself, so a directory that has an `index.ts` - `src/reducers`,
+ * `src/containers` - has to be named twice to be refused. `matches` in
+ * `boundaries.mjs` is right about that; a rule that means both says both.
+ *
  * A rule is intent, not scripture. When the correct inward call changes the
  * graph, widen the list in the same change and say why in the reason - that is
  * the point of keeping the intent as data. What must not happen is the graph
@@ -39,6 +49,38 @@ export const BOUNDARY_RULES = [
     allow: ['src/todo-api/client'],
     reason:
       'The adapter performs a request and hands back a status and bytes. Anything else it imported would be a domain decision moving into the shell.',
+  },
+  {
+    name: 'the state layer knows no UI and no transport',
+    files: ['src/reducers/**', 'src/actions/**'],
+    deny: [
+      'react',
+      'react-dom',
+      'react-dom/*',
+      'react-redux',
+      'src/components',
+      'src/components/**',
+      'src/containers',
+      'src/containers/**',
+      'src/todo-api/fetchTransport',
+      'src/index',
+    ],
+    reason:
+      'Task 10 required the slice reducers and the operations to be testable modules with no network, framework-IO or UI dependency, and until this rule that requirement had no check. What is allowed is what the state layer legitimately decides with: Redux Toolkit, the domain types, the todo API client and the store. What is refused is the direction of the arrow - a reducer or an operation reaching outward to a component, a container, the entry point or the fetch transport. src/selectors/ is deliberately not in files: it imports RootState from src/containers today, which is the hand-written type task 12 replaces with one derived from the store. Add it here in the same change that moves RootState.',
+  },
+  {
+    name: 'the UI reaches the state layer only through actions and selectors',
+    files: ['src/components/**', 'src/containers/**'],
+    deny: [
+      'src/reducers',
+      'src/reducers/**',
+      'src/store',
+      'src/store/**',
+      'src/todo-api',
+      'src/todo-api/**',
+    ],
+    reason:
+      'A slice keeps its own business to itself: which action creators it generates, which key it is combined under, and which client answers for it. What the UI is given instead is a name to dispatch and a selector to ask. This is also what keeps a DOM event out of the store - React calls a click handler with its event, so the only creators a component may bind are the ones in src/actions/, which take no argument they do not want; properties/ui-bound-actions.property.test.ts states that, and this rule is what stops a component importing the slice creator and going around it.',
   },
   {
     name: 'shipped code never reaches into test support',
@@ -83,9 +125,17 @@ export const BOUNDARY_RULES = [
   {
     name: 'the property suite drives the policy, not the network shell',
     files: ['properties/**'],
-    allow: ['src/todo-api/client', 'properties/**', 'vitest'],
+    allow: [
+      'src/todo-api/client',
+      'src/reducers/*',
+      'src/actions',
+      'src/actions/*',
+      'src/models/*',
+      'properties/**',
+      'vitest',
+    ],
     reason:
-      'Same boundary as acceptance, for the same reason: a property that needed the network would be a property of the network.',
+      'Same boundary as acceptance, for the same reason: a property that needed the network would be a property of the network. Widened in task 10 to the state layer, whose reducers are pure functions of a state and an action and are exactly what a property is for - the id rule and the toggle-all rule are statements about every list, which no table of examples can make. What stays out is unchanged: src/todo-api/fetchTransport, src/components and src/containers. src/store stays out too, though nothing forbids it elsewhere - a property here is a statement about a function, not about a running store.',
   },
   {
     name: 'the hardening suite drives modules, never the network shell',

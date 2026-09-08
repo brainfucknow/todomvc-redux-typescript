@@ -961,6 +961,412 @@ None blocking. Two recorded rather than guessed at silently.
 
 ### Architect
 
+Behavior-preserving throughout: no reducer, operation, component, container,
+selector or state path changed. What I added is checking - four property files
+over the state layer, two boundary rules that turn this task's own done
+criterion into a gate, and two doc lines. Every suite is green and no source
+module's behavior moved.
+
+**The branch moved under me, and I left it alone**
+
+The cleaner's note ends "my changes are in the working tree". They are not: the
+branch is at `e6b4d8f`, "Split the two-job reducer file and dry the todo list
+operations", which is that work committed, and the working tree was clean when I
+started. Same shape as the cleaner's own report of the coder. I read the commit
+as the cleaner's change and reviewed it in place. I committed nothing and reset
+nothing; my changes are in the working tree.
+
+**1. The four uncalled reducer branches: keep, and here is the argument**
+
+`addTodo`, `deleteTodo`, `editTodo` and `completeTodo` stay in the todos slice.
+Not because they are specified, and not because deleting uncalled code is
+someone else's job. The argument is about what the module is.
+
+The todos slice answers one question - what does the list become - for two
+families of change, and the two differ in *who decides*: a local edit decides
+the whole change itself, a settled operation writes down what the backend
+decided. `src/actions/index.ts` is the switchboard that picks a decider per
+name, one line each, and it currently picks the backend for four of them. That
+is a coherent architecture, not an accident: the mechanics the two families
+share are already shared (the cleaner's `changing`, `replacing`, `without`), and
+what is not shared is the decision, which is the thing that genuinely differs.
+
+So the branches are not dead code; they are the other implementation behind a
+seam that exists and works. Deleting them would delete the only id allocation in
+this codebase - `nextId` has no other caller, because every id in the running app
+comes from the backend - and would leave `src/actions/index.ts` with nothing to
+switch between, which turns a seam into a straight line without saying so. The
+brief's line about policy an adapter reimplements does not reach this: nothing
+in this repository reimplements `max(ids, -1) + 1`. The other system does, and
+that is not an adapter, it is a different program.
+
+The other available move, giving them a caller, is a behavior change - a local
+add would stop asking the backend - and belongs to the specifier, not to me.
+
+What I did instead of deleting or wiring is raise what keeping them buys. The id
+rule was three rows in a feature table and two examples in a spec; it is now a
+statement about every list (below). If a later task ever does propose deleting
+this family, the cost is now legible: it is the properties in
+`properties/todos-reducer.property.test.ts` that go with it.
+
+**2. The coder's allow-list widening was correct, not merely recorded**
+
+Confirmed on the merits, and I have made the confirmation checkable rather than
+leaving it as my opinion.
+
+The rule's intent is "drives the policy, not the network shell". The widened
+entries are `src/store`, `src/actions/*`, `src/selectors`, `src/models/*` and
+`src/constants/*`. Every one of them is imported by
+`acceptance/steps/todo-state.ts` today, so the list is not wider than the graph;
+and none of them can reach the network, because `createTodoStore` takes its
+transport as an argument and `src/todo-api/fetchTransport` is imported by
+exactly three modules - `src/index.tsx`, `src/test-support/store.tsx` and its own
+spec - none of which is reachable from `acceptance/`. The refusals that carry the
+intent are all still refusals: the hardener's two planted violations,
+`src/todo-api/fetchTransport` and `src/reducers/todos`, both still fail under the
+wider list, and `src/components` and `src/containers` are still out.
+
+This is the model the project manager described, and it is the right one: the
+correct inward call changed the graph and the list moved with it, in the same
+change, with the reason written down and the rule's identity kept.
+
+Two things I would not have left as they are, and did not:
+
+- The hardening test for that rule allowed a module importing the client, the
+  runtime, Vitest and Node - which was already true before the widening. It now
+  drives the whole widened list, so emptying any newly allowed entry is caught
+  in `npm run hardening` rather than only by the repository scan. That is the
+  planted-positive the coder offered to the hardener; it was cheap and it is
+  what makes the widening checked rather than recorded.
+- `src/actions/*` does not match `src/actions`. Nothing imports the directory
+  today so nothing is wrong, but a future step handler writing
+  `from '../../src/actions'` would be refused for no reason anyone intended. See
+  the glob trap below.
+
+**3. `src/actions/local.ts`: the wrapper is the right shape, and it now has a
+gate under it**
+
+Right shape. `local.ts` is an adapter between two call vocabularies: React hands
+a click handler its DOM event, and the store wants an action whose payload is
+domain data. Translating that away is exactly an adapter's job, and doing it at
+the UI-facing edge is exactly where an adapter belongs. Having all eight exports
+be plain functions of the arguments the app has - rather than six creators and
+two wrappers - is also what lets `src/actions/index.ts` map either family to a
+name without a reader having to know which kind each one is.
+
+What was wrong is not the shape but that the duty was invisible. It held because
+each wrapper happened to declare the right arity, and nothing failed if one were
+replaced by the slice's own creator: the payload would become a SyntheticEvent,
+Redux Toolkit's development middleware would warn on every toggle-all, and lint,
+typecheck, `npm test`, acceptance and the E2E suite would all stay green. A trap
+with no gate behind it, in the project manager's words.
+
+There are now two, one from each side, and together they close it without anyone
+having to remember:
+
+- `properties/ui-bound-actions.property.test.ts` states it: for every argument a
+  UI event handler might be handed - an event-like object, a function, a symbol,
+  a string, null - `completeAllTodos` and `clearCompleted` answer the same action
+  they answer with no argument at all, and that action survives a JSON round trip
+  as `{type}`. Replace either wrapper with `todoActions.completeAllTodos` and this
+  file goes red. Verified by doing exactly that; see the mutation table.
+- The new rule `the UI reaches the state layer only through actions and
+  selectors` stops a component going around `src/actions/` to the slice creator
+  in the first place.
+
+I considered and rejected the other structural fix, a zero-argument `prepare` on
+those two `createSlice` reducers so the creator itself drops what it is handed.
+It works, and it would hold even for a direct binding. I did not take it because
+it puts a fact about React inside the policy slice: the slice would be declaring
+"someone might hand me a DOM event", which is the UI's problem arriving in the
+module that should not know a UI exists. The adapter is where a transport shape
+gets translated away, and the two checks above make the adapter trustworthy
+without teaching the slice about browsers.
+
+**4. `errorMessage` depending on nothing in this codebase is the right coupling**
+
+It is also not quite "nothing", and saying what it actually is was the useful
+part.
+
+`isRejected` with no arguments is `hasExpectedRequestMetadata(action,
+['rejected'])`: it asks whether the action carries a string `meta.requestId` and
+`meta.requestStatus === 'rejected'`. So the module's dependency is on Redux
+Toolkit's rejected-thunk protocol - a shape - and not on a list of operations.
+That is the direction I want. A recorder of "the last failure the app recorded"
+that enumerated the five operations would be a general policy depending on a
+specific enumeration, and would have to be edited to learn about a sixth; as
+written, the operations do not know the recorder exists and the recorder does not
+know the operations exist. Neither can break the other.
+
+The exact predicate is worth stating because it is *not* identical to the old
+one, even though the behavior of this app is. The old reducer returned
+`action.error` whenever an action carried one; the new one records whenever an
+action is a rejected thunk. An action carrying an error that is not a rejected
+thunk is now ignored, and a rejected thunk carrying no error would record
+`undefined`. Neither exists in this app - nothing dispatches a hand-built error
+action, and nothing uses `rejectWithValue` or a `condition` - so nothing observable
+moved, which is what the project manager's third-round note says. The difference
+is latent, not live, and it is now written down where it can be read: the module's
+doc comment says which claim it makes, and
+`properties/error-message-reducer.property.test.ts` drives a rejected action from
+a thunk this module has never heard of, built by hand from that protocol. Narrow
+the matcher to one operation and that property goes red.
+
+**5. Recorded for task 13, not acted on**
+
+Cases where the UI re-walks a fact the domain already knows. I changed none of
+them; this task may not touch components, containers or selectors, and 13 is the
+task named for it.
+
+- `src/components/MainSection.tsx:17`, `checked={completedCount === todosCount}`.
+  This is "are all the todos marked" - the same question
+  `todosSlice.completeAllTodos` asks as `state.every((todo) => todo.completed)`.
+  One question, two answers, in two layers. It is the strongest case in the file:
+  the domain function that knows it already exists and the view re-derives it
+  from two counts.
+- `src/components/MainSection.tsx:32`, `activeCount={todosCount - completedCount}`.
+  "How many are not done", by arithmetic on two other numbers. `getVisibleTodos`
+  with the active filter is the domain function that knows which todos those are.
+- `src/containers/MainSection.ts:9`, `todosCount: state.todos.length`. The
+  container walks `state.todos` itself, one line above a call to
+  `getCompletedTodoCount`, which is a selector doing the same kind of work.
+- `src/containers/FilterLink.ts:13`,
+  `active: ownProps.filter === state.visibilityFilter`. "Is this the chosen
+  filter", answered by comparing a raw state value in a container.
+- `src/components/TodoItem.tsx:54`,
+  `onChange={() => completeTodo(todo.id, !todo.completed)}`. The view decides
+  that clicking a checkbox means "the other flag". The reducer deliberately
+  writes what it is given rather than toggling - `features/todo-state-edits`
+  scenario 6 exists only to fail a toggle - so the toggle is a domain decision
+  currently living in a view. Whichever way 13 takes it, it should be taken
+  deliberately.
+- `src/components/TodoItem.tsx:26-33` ("an edit to empty text deletes the todo")
+  and `src/components/Header.tsx:11-15` ("an empty new todo is not added") are the
+  same class one layer up. Task 11 is chartered to extract input rules, so those
+  two are 11's before they are 13's.
+
+Not on the list, deliberately: `Footer.tsx:13`, `activeCount === 1 ? 'item' :
+'items'`. That is presentation of a number the domain supplied, not a re-derived
+fact.
+
+**Property tests, which were my bullet**
+
+Four new files, 22 properties, run by `npm run properties` alongside the two from
+task 09. The suite goes from 26 to 48.
+
+- `properties/todos-reducer.property.test.ts` (11). The id rule as a statement
+  about every list: an add appends one todo whose id is strictly greater than
+  every id already there. The toggle-all truth table as a statement about every
+  mixture: every flag becomes the negation of "were all marked", and ids, texts
+  and order are conserved; a list whose todos already agree survives two toggles
+  unchanged. Conservation for the rest: a marking writes rather than toggles and
+  is therefore idempotent, an edit rewrites one text and keeps every flag and
+  every id, a delete drops one todo and keeps the rest in order, a clear keeps
+  exactly the todos that are not complete and is idempotent, and any local edit
+  naming a todo the list does not hold is the identity. Then the two that hold
+  whatever happens: no pending and no rejected operation moves the list, and
+  every id stays unique through any run of locally decided changes.
+- `properties/executing-reducer.property.test.ts` (4). Start any sequence of
+  operations and exactly those read as in flight, with the per-id map holding
+  exactly the ids of the updates - which is the statement a single "which id is
+  updating" field fails. Settle every one of them, in any order, with any mixture
+  of answers and failures, and nothing is left in flight. A failure and an answer
+  are the same news. Settling an operation nobody started leaves nothing running.
+- `properties/error-message-reducer.property.test.ts` (4). Any operation's
+  rejection is recorded over whatever was held; anything that did not fail leaves
+  the record exactly as it was; forgetting is idempotent; and the boundary
+  property described in item 4.
+- `properties/ui-bound-actions.property.test.ts` (2), described in item 3.
+
+**The properties can fail. Eight mutations, each killed**
+
+A property suite that has never gone red is a suite nobody has checked. Each
+mutation below was applied to the real source, `npm run properties` was run, and
+the source restored; the working tree holds none of them.
+
+| mutation | properties failing |
+| --- | --- |
+| `nextId` returns `todos.length` | 2 |
+| toggle-all reads `some` instead of `every` | 1 |
+| a marking toggles instead of writing the flag | 1 |
+| an operation settles on `fulfilled` only | 2 |
+| `errorMessage` matches `isRejected(loadTodosOperation)` | 2 |
+| the two UI-bound wrappers replaced by the slice creators | 2 |
+| clear-completed keeps the completed half | 1 |
+| a pending load empties the list (optimism) | 1 |
+
+The first is the one the specifier said a table cannot catch on its own, and it
+is caught here for every list rather than for the three the feature names.
+
+**Two boundary rules, both with planted violations**
+
+`scripts/architecture/rules.mjs` gains two, and
+`hardening/rules.hardening.test.ts` gains a violation and a passing module for
+each - the cost that file's own comment sets for a new boundary. I edited the
+hardening file only for that; nothing else in it moved.
+
+- `the state layer knows no UI and no transport`. Files `src/reducers/**` and
+  `src/actions/**` may not import React, react-redux, a component, a container,
+  the entry point or the fetch transport. This is this task's second done
+  criterion - "slice reducers are testable modules with no network, framework-IO,
+  or UI dependency" - which until now nothing checked. `src/selectors/**` is
+  deliberately not in `files`: it imports `RootState` from `src/containers`, so it
+  would be red today. The reason string says to add it in the same change that
+  moves `RootState`, which is task 12.
+- `the UI reaches the state layer only through actions and selectors`. Files
+  `src/components/**` and `src/containers/**` may not import `src/reducers`,
+  `src/store` or `src/todo-api`. Information hiding in the other direction: which
+  creators a slice generates, which key it is combined under and which client
+  answers for it are the state layer's own business. It is also the structural
+  half of item 3.
+
+Both are true of the repository as it stands - no component or container imports
+a reducer, the store or the client, and no reducer or operation imports React or
+a component - so neither rule required a source change to satisfy. I checked
+that each can fail against the real repository as well as against planted
+modules: `import 'react-redux'` added to `src/reducers/visibilityFilter.ts` turns
+`npm test` red at `obeys every boundary rule`.
+
+**A trap in the rule vocabulary, found the expensive way**
+
+`a/**` compiles to `^a/.*$`, which does not match `a`. So `src/containers/**`
+does not refuse an import of `src/containers`, and `src/reducers/**` does not
+refuse `src/reducers` - and both of those directories have an `index.ts`, so both
+are real importable modules. `src/containers/index.ts` is where `RootState`
+lives, which makes it the single most likely thing a reducer would wrongly reach
+for. Both new rules now name the directory and its contents. The matcher is not
+wrong; a rule that means both has to say both, and the file's header comment now
+says so. No existing rule has a live hole - `src/test-support`, `acceptance`,
+`properties`, `hardening`, `scripts`, `qa`, `build` and `features` have no index
+module - but the same latent gap is in four of them.
+
+**On `preloadedState`: production surface, with one test as its only caller**
+
+`createTodoStore`'s second parameter is used in exactly one place,
+`acceptance/steps/todo-state.ts:75`, for the step "the state starts with the todo
+list". It is not a back door invented for tests: it is Redux's own way to start a
+store somewhere other than the seed, and the feature's Given is precisely "a
+state nobody reached through an operation", which no dispatch can express. The
+app passes none. I kept it and gave it a doc line in `src/store/index.ts`, which
+is the only source edit in this handoff and adds no behavior.
+
+**On `RootState`, for task 12**
+
+`src/containers/index.ts` declares it by hand with two of the four keys, and
+`src/selectors/index.ts` imports it from there. That is a policy module taking
+its state shape from a module in the UI directory, which is the wrong direction,
+and it is the one thing keeping `src/selectors/**` out of the new state-layer
+rule. `createTodoStore` returns a typed store, so
+`ReturnType<TodoStore['getState']>` is the shape, inferred from the reducers
+rather than restated. That is task 12's item and I left it there; the coder and
+the project manager both routed it that way, and moving a type out of
+`src/containers/` while task 12 is rewriting those files would collide.
+
+**Two findings I am not acting on**
+
+- The list can hold duplicate ids, but only if a backend says so.
+  `addTodoOperation.fulfilled` appends `action.payload` without looking at what
+  is already there. The local family cannot produce a collision - that is what
+  the id rule is for - and the running app never can either, since every id it
+  holds came from the same backend that allocates them. It is why the uniqueness
+  property is scoped to locally decided changes rather than to every change: I
+  found the wider version false before writing it. Nothing to fix here; the
+  reducer trusting the backend is the current specified behavior.
+- The acceptance suite transitively reaches `src/containers/index.ts`, through
+  `src/selectors`. The rule's reason says containers are excluded because they
+  would make the suite a second renderer of the app; that holds only because this
+  particular file is a bare type module misfiled in the containers directory.
+  Task 12 moving `RootState` removes the edge rather than the rule.
+
+**Inherited threads, from where I sit**
+
+All three unchanged, and checked rather than assumed.
+
+- *Floating promises.* I added no `await`, no `.then` and no `.unwrap`; `unwrap`
+  still appears nowhere in `src/`, `acceptance/`, `properties/`, `hardening/` or
+  `qa/`. The new properties are synchronous functions of a state and an action -
+  none of them dispatches, and none of them starts anything that could be left
+  unobserved.
+- *Dispatch result.* Unchanged and still unread. Nothing I added reads one; the
+  property files call reducers directly rather than through a store.
+- *Serializability.* Unchanged in state, and now stated from the other side:
+  `properties/ui-bound-actions.property.test.ts` says an action a component binds
+  bare survives `JSON.stringify`. That is the same anti-pattern the second-round
+  note accepted the removal of, arriving from the UI direction.
+
+**Verified**
+
+Every command run from the working tree as it stands, after the last edit. No
+package was installed; `package.json` md5 `4fad73d5...` and `package-lock.json`
+md5 `29184ac9...`, the cleaner's recorded values, unchanged.
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in six projects.
+- `npm test`: 19 files / 165 tests, unchanged - the same count the cleaner left.
+  The two new rules are checked by `boundaries.spec.mjs`'s existing "obeys every
+  boundary rule" over the real repository, so they add no test there, and their
+  planted violations live in the hardening suite, which `npm test` does not run.
+- `npm run acceptance`: 7 files / 57 executions, unchanged. No feature file read.
+- `npm run properties`: 6 files / 48. Was 2 files / 26.
+- `npm run hardening`: 6 files / 54. Was 50; the four are the two planted
+  violations and two planted positives for the new rules.
+- `npm run test:e2e`: 22 passed. `test:e2e:dev` and `test:e2e:preview`: 21
+  passed, 1 skipped each. No `qa/` file was edited.
+
+Branch `claude/react-modernization-plan-u7dgen` at `e6b4d8f`; nothing committed,
+nothing reset. Working tree: four new files under `properties/`, and modified
+`scripts/architecture/rules.mjs`, `hardening/rules.hardening.test.ts`,
+`properties/tsconfig.json` and `src/store/index.ts`.
+
+**Left for the hardener**
+
+- Your list of new and changed modules is unchanged from the cleaner's. I changed
+  no `src/` module's behavior; `src/store/index.ts` gained four comment lines and
+  nothing else, so its mutant count should still be 6.
+- What is new to scan is `scripts/architecture/rules.mjs`, which is data: it
+  gained two rules, and task 09's finding about that file stands - mutations of
+  rule data survive a repository that obeys the rules, which is why each new rule
+  has a planted violation in `rules.hardening.test.ts`. If a mutation of either
+  new rule's `deny` list survives, that is a gap in my planted violations and I
+  would want it reported rather than worked around.
+- I edited `hardening/rules.hardening.test.ts`: two new describe blocks, two
+  strengthened positive assertions on the widened acceptance and property rules,
+  and two names added to the `proven` list. Nothing else in that file moved. The
+  coder's note that `src/constants/ActionTypes` is a deleted path used as a
+  string stand-in is still true and still harmless.
+- The four new property files are harness code, not `src/`. They are worth a look
+  for the opposite reason to mutation: their falsifiability is evidenced by the
+  eight-mutation table above rather than by a scan, and re-running any row of it
+  is about two minutes.
+
+**Open questions for the project manager**
+
+None blocking. Three recorded rather than guessed at silently.
+
+1. I added two boundary rules, which required editing
+   `hardening/rules.hardening.test.ts` to plant their violations - that file
+   belongs to the role after me in this chain. The rules file's own design makes
+   this unavoidable: a rule without a planted violation turns that file red, and
+   leaving a red gate for the hardener to discover is worse than editing their
+   file with the reason written down. You ruled that the architect owns the
+   rules; I have read that as owning the proof that a rule can fail, since the
+   two cannot be separated. Say if you would rather the architect add the rule
+   and the hardener plant the violation, in which case the two roles have to hand
+   a red suite between them for one step.
+2. The property suite now imports `src/reducers/*` and `src/actions/*`, so
+   `properties/` is no longer only about `src/todo-api/client.ts`. `tiny-check`'s
+   own doc comment says "every property in properties/ is a statement about a
+   pure function over simple values", which is still exactly true of the new ones
+   - a reducer is a pure function of a state and an action. I did not rewrite that
+   comment, because it still describes what the runner supports. Tasks 11 to 13
+   will each create modules worth properties; if you would rather the suite were
+   organised by subject rather than by module as it grows, that is a decision
+   better made once than three times.
+3. `npm run properties` goes from 26 to 48 and `npm run hardening` from 50 to 54.
+   You have asked to be told when a count moves rather than have it assumed: no
+   existing property or hardening test was changed, weakened or removed, and both
+   increases are additions.
+
 ### Hardener
 
 ### QA
@@ -1074,3 +1480,43 @@ time on this project that splitting a source with two jobs exposed something the
 combined file hid, after task 09's boundary rules and this task's own reducers.
 The architect should note that `errorMessage` now depends on nothing in this
 codebase at all.
+
+## Project manager notes, fourth round
+
+**Correction to my own note.** In the third round I wrote that `errorMessage`
+matching `isRejected` is "equivalent to the old behavior, which returned
+`action.error` whenever an action carried one, so nothing changed." The
+architect checked and that is wrong. The old predicate was *carries an error*;
+the new one is *is a rejected thunk*. Those coincide for every action this
+application currently dispatches, which is why nothing went red, but they are
+not the same predicate. A hand-built foreign rejection separates them, and there
+is now a property that drives exactly that case.
+
+I restated two roles' summaries without checking the claim, and it took a third
+role to catch it. The claim was load-bearing: "nothing changed" is the whole
+basis on which a structural task is accepted.
+
+**On the architect planting violations in `hardening/rules.hardening.test.ts`.**
+Yes, that is the intended split, and it is not the hardener's work being taken.
+Task 09 established that a rule nobody violates on purpose is indistinguishable
+from no rule: emptying `BOUNDARY_RULES` left `npm test` green because only
+conforming input ever reached it. So a new rule arrives with the test that binds
+it, or it arrives vacuous. The architect owns the rule and the proof that the
+rule can fail; the hardener owns finding what the resulting suite still cannot
+kill.
+
+**On organising `properties/` by subject.** Not yet. Tasks 11, 12 and 13 each
+add properties, and the right grouping will be obvious once there is something
+to group. Whoever first finds the flat layout genuinely in the way should
+restructure it and say so; doing it now would be guessing at a shape from one
+example.
+
+**On the property and hardening counts moving.** Fine. Same reading as always:
+the pin is that `npm test` stays free of acceptance and property tests, not that
+any number holds.
+
+**Recorded for task 13.** The architect logged eight cases where the UI
+re-derives a fact the domain already knows, the strongest being
+`MainSection.tsx:17` re-deriving "are all marked" that `completeAllTodos`
+already computes. That is task 13's central job and it now has a concrete list
+rather than a description.

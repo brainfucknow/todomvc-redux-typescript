@@ -70,6 +70,77 @@ describe('the fetch transport translates for the client and knows nothing else',
   })
 })
 
+describe('the state layer knows no UI and no transport', () => {
+  it('refuses a reducer or an operation reaching outward', () => {
+    expect(
+      judged(
+        module('src/reducers/todos.ts', 'react'),
+        module('src/reducers/visibilityFilter.ts', 'react-redux'),
+        module('src/actions/api.ts', 'src/todo-api/fetchTransport'),
+        module('src/actions/local.ts', 'src/components/MainSection'),
+        module('src/reducers/index.ts', 'src/containers'),
+      ).map(([, target]) => target),
+    ).toStrictEqual([
+      'react',
+      'react-redux',
+      'src/todo-api/fetchTransport',
+      'src/components/MainSection',
+      'src/containers',
+    ])
+  })
+
+  it('allows what the state layer decides with', () => {
+    expect(
+      judged(
+        module(
+          'src/reducers/todos.ts',
+          '@reduxjs/toolkit',
+          'src/actions/api',
+          'src/models/Todo',
+        ),
+        module('src/actions/api.ts', 'src/todo-api/client'),
+        module('src/actions/index.spec.ts', 'src/store'),
+      ),
+    ).toStrictEqual([])
+  })
+})
+
+describe('the UI reaches the state layer only through actions and selectors', () => {
+  it('refuses a component or a container going around the seam', () => {
+    expect(
+      judged(
+        module('src/components/MainSection.tsx', 'src/reducers/todos'),
+        module('src/components/Footer.tsx', 'src/reducers'),
+        module('src/containers/VisibleTodoList.ts', 'src/store'),
+        module('src/components/TodoList.tsx', 'src/todo-api/client'),
+        module('src/containers/Header.ts', 'src/todo-api/fetchTransport'),
+      ).map(([, target]) => target),
+    ).toStrictEqual([
+      'src/reducers/todos',
+      'src/reducers',
+      'src/store',
+      'src/todo-api/client',
+      'src/todo-api/fetchTransport',
+    ])
+  })
+
+  it('allows the two seams it is given, and the shapes it renders', () => {
+    expect(
+      judged(
+        module(
+          'src/components/MainSection.tsx',
+          'react',
+          'src/actions',
+          'src/selectors',
+          'src/models/Todo',
+          'src/constants/TodoFilters',
+          'src/containers/VisibleTodoList',
+        ),
+      ),
+    ).toStrictEqual([])
+  })
+})
+
 describe('shipped code never reaches into test support', () => {
   it('refuses each of the three things that do not exist in a bundle', () => {
     expect(
@@ -145,12 +216,18 @@ describe('the acceptance pipeline drives the policy, not the network shell', () 
     ])
   })
 
-  it('allows the client, its own modules, Vitest and Node', () => {
+  it('allows the whole state layer the todo-state family drives', () => {
     expect(
       judged(
         module(
-          'acceptance/steps/todo-api.ts',
+          'acceptance/steps/todo-state.ts',
           'src/todo-api/client',
+          'src/store',
+          'src/actions/api',
+          'src/actions/local',
+          'src/selectors',
+          'src/models/Todo',
+          'src/constants/TodoFilters',
           'acceptance/runtime',
           'vitest',
           'node:fs',
@@ -177,7 +254,7 @@ describe('the property suite drives the policy, not the network shell', () => {
     ])
   })
 
-  it('allows the client, its own runner and Vitest', () => {
+  it('allows the client, the state layer, its own runner and Vitest', () => {
     expect(
       judged(
         module(
@@ -185,6 +262,13 @@ describe('the property suite drives the policy, not the network shell', () => {
           'src/todo-api/client',
           'properties/tiny-check',
           'vitest',
+        ),
+        module(
+          'properties/todos-reducer.property.test.ts',
+          'src/reducers/todos',
+          'src/actions',
+          'src/actions/local',
+          'src/models/Todo',
         ),
       ),
     ).toStrictEqual([])
@@ -236,6 +320,8 @@ describe('the table above', () => {
     const proven = [
       'the todo API policy depends on nothing',
       'the fetch transport translates for the client and knows nothing else',
+      'the state layer knows no UI and no transport',
+      'the UI reaches the state layer only through actions and selectors',
       'shipped code never reaches into test support',
       'the application never imports its own harnesses',
       'the acceptance pipeline drives the policy, not the network shell',

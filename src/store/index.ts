@@ -11,6 +11,11 @@ import type { SendRequest } from '../todo-api/client'
  * Every caller passes one - the app passes `sendWithFetch`, a spec or the
  * acceptance suite passes a stand-in - so nothing has to remember to override a
  * default that talks to the network.
+ *
+ * `preloadedState` is Redux's own way to start a store somewhere other than the
+ * seed, and it is how a scenario says "the state starts with this list" without
+ * inventing a route into the store. The app passes none; the acceptance suite
+ * is its only caller today.
  */
 export const createTodoStore = (
   send: SendRequest,
