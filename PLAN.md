@@ -68,8 +68,8 @@ Serial. Each task assumes every earlier task is merged.
 | 07 | React 18 to 19 and remove prop-types | Tooling | coder -> QA | **done** |
 | 08 | Dependency hygiene and CI release checks | Tooling | coder -> QA | **done** |
 | 14 | Typecheck `qa/stub/` under checkJs, and decide acceptance in CI | Tooling | coder -> QA | pending (deferred, see below) |
-| 09 | Extract the todo API client into a testable module | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | in progress |
-| 10 | Replace callAPIMiddleware with RTK slices and thunks | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |
+| 09 | Extract the todo API client into a testable module | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | **done** |
+| 10 | Replace callAPIMiddleware with RTK slices and thunks | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | in progress |
 | 11 | Convert class components to functions and extract their input rules | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |
 | 12 | Replace connect() containers with react-redux hooks | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |
 | 13 | Move UI-derived observables into domain selectors | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |

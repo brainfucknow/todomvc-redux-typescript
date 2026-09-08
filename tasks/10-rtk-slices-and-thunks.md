@@ -7,7 +7,7 @@ The specifier's job on this track is narrower than the full brief: write Gherkin
 
 The hardener is in this chain because the task creates and changes testable modules.
 
-**Status:** pending
+**Status:** in progress
 
 ## Goal
 
@@ -45,6 +45,20 @@ one place the decision gives up something real: `callapimiddleware.ts` returns a
 You are replacing that middleware with thunks. If the rewrite leaves promises
 whose rejection nobody observes, nothing in this project will tell you. Check by
 hand, and say what you found.
+
+## Inherited from task 09: dispatch no longer resolves to the success action
+
+Task 09's QA drove the old and new API pipelines through 91 differential
+executions and found the dispatched action sequences identical in every one.
+It found exactly one surface change: `dispatch(anApiAction)` used to resolve to
+the success action and now resolves to `undefined`.
+
+Nothing in `src/` or `qa/` reads a dispatch result, so no behavior moved. But
+you own this surface: `createAsyncThunk` returns a promise carrying the action,
+and a component that starts awaiting one would be depending on something that
+was accidentally true, then accidentally false, and is about to become true
+again for a different reason. Say in your handoff what the dispatch result is
+after your change and whether anything reads it.
 
 ## Inherited: the serializability warnings you are about to inherit
 
