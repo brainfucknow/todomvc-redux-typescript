@@ -106,24 +106,33 @@ procedures 16 to 20 first, and the task stops and asks before proceeding.
 
 ## Task 14, added after the tooling track closed
 
-Task 05's QA measured `checkJs` over `qa/stub/**` at 89 diagnostics across nine
-CommonJS files, almost all implicit-any, and recorded it as its own work rather
-than smuggling it into another task. Task 08 was the last task scheduled to look
-at tooling and did not take it, so it is numbered here instead of being lost.
+A holding place for work that no scheduled task owns, so it is deferred rather
+than lost. Every item is genuinely open; resolved ones have been removed.
 
-Task 09 added three more: whether `npm run acceptance` belongs in CI, whether
-`npm run properties` does, and whether the `@vitest/coverage-v8` provider should
-be persisted. They are not equivalent. Properties is unblocked and should simply
-go in: it needs nothing `npm ci` does not already install. Acceptance needs Go
-and a pinned third-party clone inside the gate first.
-Running it there means installing Go and cloning a third-party repository inside
-the gate, so it needs the APS clone pinned to a commit at minimum. Until then
-every QA role on tasks 10 through 13 runs it as a release check.
+**1. Typecheck `qa/stub/` under `checkJs`.** Task 05's QA measured 89
+diagnostics across nine CommonJS files, almost all implicit-any, and recorded it
+as its own work rather than smuggling it into another task. Task 08 was the last
+task scheduled to look at tooling and did not take it. The stub is the one part
+of this repository with no type gate over it at all, and every regression run
+depends on it.
 
-It is listed after 13 because it touches only QA-owned test infrastructure and
-blocks nothing. It is genuinely deferred, not dropped: the stub is the one part
-of this repository with no type gate over it at all, and it is the thing every
-regression run depends on.
+**2. Should `npm run acceptance` run in CI?** It needs Go and a clone of the APS
+repository inside the gate, so the clone wants pinning to a commit at minimum.
+Until it lands, QA runs it as a release check on tasks 10 through 13.
+
+**3. Should `@stryker-mutator/core` and `@vitest/coverage-v8` be persisted
+dependencies?** Both were installed `--no-save` by roles that needed them, with
+the lockfile verified byte-unchanged afterwards. Persisting either changes what
+`npm ci` installs, which is why both were routed here rather than decided in
+passing. Note that the *hardening tests* need neither: Stryker generates
+mutants, and the tests that resulted from it run on Vitest alone.
+
+Two questions that were on this list are now closed and are recorded here so
+they are not reopened by mistake. `npm run properties` and `npm run hardening`
+both run in CI as of task 09: they are ordinary Vitest runs needing nothing
+`npm ci` does not already install, which is not acceptance's position at all.
+
+This task is listed after 13 because nothing blocks on it.
 
 ## Out of scope for the whole plan
 

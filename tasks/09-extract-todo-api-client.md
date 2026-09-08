@@ -1415,6 +1415,321 @@ Three duplications I left, deliberately:
 
 ### QA
 
+Final verification. Nothing in the repository changed: `git status` is clean and
+the branch is where I found it, `370ff60`. Every experiment below was planted,
+measured and reverted, and the working tree was checked clean after each.
+
+**Every release check, from a clean `npm ci` tree, after the last commit**
+
+| command | result |
+| --- | --- |
+| `npm run lint` | 0 |
+| `npm run format:check` | 0 |
+| `npm run typecheck` | 0 errors across six projects |
+| `npm run properties` | 2 files / 26 tests |
+| `npm run hardening` | 6 files / 50 tests |
+| `npm test` | 16 files / 139 tests (13 unit + 3 scripts; no acceptance, property or hardening file in the count) |
+| `npm run build` | 0 |
+| `npm run acceptance` | 3 files / 24 executions |
+| `npm run test:e2e` | 22 passed |
+| `npm run test:e2e:dev` | 21 passed, 1 skipped |
+| `npm run test:e2e:preview` | 21 passed, 1 skipped |
+
+Every baseline holds. `.aps/bin/` was already built, so `acceptance:install` did
+not have to run; `@stryker-mutator` and `@vitest/coverage-v8` are both absent
+from the tree these numbers come from, and nothing above needs them.
+
+**Behavior preservation, decided by execution rather than by reading**
+
+The built artifact is where the earlier tasks put their evidence, and it still
+carries half the answer here, but a source diff that moves logic between modules
+cannot be settled by a byte comparison alone. So I did both.
+
+*The artifact.* I built `5d09b12` - the last commit before any source moved -
+and `HEAD`, unminified, and split each bundle by its rolldown region markers.
+`dist/index.html` and the CSS are identical. **Everything shipped outside the
+API pipeline is byte-identical**, with one exception: the five aliases in
+`src/actions/index.ts` now name `addTodoCall` where they named `addTodo$1`. No
+component, container, reducer or selector moved a byte. Inside the pipeline the
+distinct string literals are the same set - the counts fall (`application/json`
+9 to 2, `Content-Type` 4 to 1) because four header literals and two PATCH
+triples became shared constants - plus `"GET"`, which is now written down.
+`api/todos/` and `api/todos/${id}` both survive as distinct literals.
+
+*The execution.* A byte comparison cannot tell you that a moved `.then` still
+runs in the same order, so I drove both pipelines through the same scenarios and
+compared everything observable. Old `api.ts` and old `callapimiddleware.ts` from
+`5d09b12`, new ones from `HEAD`, one fake `fetch` and one recording store each;
+9 operations (including a text needing JSON escaping, an empty text and id 0)
+against 9 answers (200/404/500, parseable/unparseable/empty body, transport
+rejection), plus the two refusals, a plain action, an unrelated action,
+`dispatch(null)` and four unusable outcome-name shapes. 91 executions, recording
+the request on the wire, every dispatched action with its exact keys and key
+order, every `console.error`, everything passed to `next`, anything thrown, what
+the returned promise resolved to, and **all of it interleaved in one ordered log
+so ordering between kinds counts**.
+
+The dispatched action sequences are identical in all 91, down to key order, down
+to `json` being present-and-undefined on a delete success, down to
+`console.error` running before the failure action.
+
+Three differences exist, and I checked each rather than waving at it:
+
+1. The load descriptor now spells out `method: 'GET'` where it used to omit the
+   key. Same request on the wire; an absent method is a GET. Specified.
+2. A reading call now takes `response.text()` and parses it, where it used to
+   call `response.json()`. Same parse, same `SyntaxError`, same failure action,
+   same console output - asserted, not assumed. One theoretical gap:
+   `response.json()` always decodes UTF-8 while `response.text()` honours a
+   `charset` in the Content-Type. Against this backend, both sides are UTF-8
+   JSON, so nothing observable turns on it. Recorded, not fixed.
+3. **`dispatch(anApiAction)` used to return a promise resolving to the success
+   action; it now resolves to `undefined`.** This is the one real API change in
+   the task. The old middleware `return`ed `api.dispatch(...)` from inside its
+   `.then`; `executeCall`'s `.then` returns nothing. Nothing reads it: there is
+   no `await` or `.then` on a dispatch anywhere in `src/` or `qa/`, every call
+   site goes through `connect()`'s object shorthand, and `TodoItem`, `Header`
+   and `TodoList` all declare these props `void`. The failure path resolved to
+   `undefined` before and still does. It belongs in front of task 10, which owns
+   the dispatch surface and where a thunk's return value starts mattering.
+
+I confirmed the harness could fail before believing it: six planted defects,
+five caught immediately, and the sixth - moving `console.error` after the
+failure dispatch - caught only after I added the interleaved log, which is why
+it is there.
+
+**The three preserved defects are all still present**
+
+- **`response.ok` is never checked.** The status now reaches `TodoApiAnswer` on
+  every answer and nothing reads it: `grep` finds `status` only in the transport
+  that produces it and in a doc comment. Planting the check in `client.ts` turns
+  four properties red with a counterexample; planting it in `fetchTransport.ts`
+  turns the unit suite and the differential red and leaves acceptance and
+  properties green, which is correct - the acceptance and property suites drive
+  the policy, not the shell. E2E procedure 21 passes, both cases, in all three
+  server variants.
+- **`removeTodo` never reads its response body.** `readsResponseBody: false`.
+  Planting `true` turns unit, acceptance, properties *and* hardening red - the
+  most-guarded single fact in the task.
+- **The trailing slash differs.** `api/todos/` for load and add, `api/todos/<id>`
+  per id, visible as two distinct literals in the shipped bundle. Planting the
+  slash away turns unit, acceptance, properties and the differential red.
+
+None of the three has been quietly tidied, and each is now harder to tidy by
+accident than it was before the task.
+
+**Falsifiability matrix: eleven planted defects against five gates**
+
+Each defect planted alone in `src/`, every gate run, then reverted.
+
+| planted defect | unit | acceptance | properties | hardening | differential |
+| --- | --- | --- | --- | --- | --- |
+| trailing slash removed | red | red | red | green | red |
+| delete reads its body | red | red | red | **red** | red |
+| transport checks `response.ok` | red | green | green | green | red |
+| complete gets its own triple | red | red | green | green | red |
+| `console.error` after dispatch | red | green | green | green | red |
+| started reported after the send | red | green | green | green | red |
+| load drops its Accept header | red | red | red | green | red |
+| `== null` tightened to `===` | red | red | red | green | red |
+| delete drops its content type | red | red | green | green | red |
+| edit PATCHes `{id,text}` | red | red | red | green | red |
+| an unparseable body stops failing | red | red | red | green | red |
+
+Every gate caught something no other gate caught, and no gate was silent on
+everything. The three the acceptance suite misses are all outside what the
+features specify - a transport decision, a console call, and ordering against
+the send rather than between outcomes - so they are boundaries, not holes.
+
+**The verification code, given six false greens of history**
+
+I treated every new gate as guilty until it went red. All of them can:
+
+- **The runner adapter.** Eight jobs over the protocol by hand: baseline
+  `test_success`; trailing-slash-mutated IR `test_failure`; an empty
+  `generated_dir` and a mis-spelled one both `infrastructure_error`, `no test
+  files matched, so nothing ran`; `"scenarios": []` and a missing IR both
+  `infrastructure_error`, `1 test file matched, but no test ran`; an unreadable
+  line and a job with no `feature_json` both refused. Nothing on stderr, nothing
+  but protocol lines on stdout. The false kill is gone.
+- **The rule data.** This is the one worth repeating. With `BOUNDARY_RULES`
+  emptied to `[]`, **`npm test` stays green** and `npm run hardening` goes red
+  with 8 failures. Adding a rule with no planted violation turns hardening red on
+  the completeness test; blanking a rule's reason turns it red too. The false
+  green the hardener found is real and is closed, and hardening is the only thing
+  that closes it - which is a good argument for it having landed in CI.
+- **The property runner.** A `forAll` that checks nothing turns 9 of its
+  self-tests red; one that runs a single case turns 4 red. And ignoring
+  `$PROPERTY_SEED` leaves `npm run properties` **green** while turning hardening
+  red - the second place hardening is the only net.
+- **The typecheck gate.** A type error planted in each project in turn: all six
+  report and all six fail the gate. Three false greens' worth of history, and the
+  gate now sees every project it claims.
+- **The lint boundary.** Six environment leaks in one function in `client.ts`
+  produce 7 lint errors where the type gate produces none. The architect's
+  correction of the coder's proof holds, and the replacement works.
+- **The acceptance pipeline.** A stray test file planted in the generated
+  directory is deleted by the next run rather than counted; an unsupported step
+  fails the run by name. `npm run format:check` and `npm run build` also fail
+  when given something to fail on.
+
+I read every step handler for vacuity. `no request is built`, `no call is made`,
+`no outcome is produced` and `the client refuses with M` all fail when the
+client stops refusing - `messageOf(undefined)` is `"undefined"`, which matches
+no expected message. `carries no parsed body` uses `toStrictEqual({json:
+undefined})`, which is the one assertion that can tell the delete's key-present
+case from an omitted key. The stand-in transport withholds the body exactly when
+the call says not to read it, which is what makes the declared `body` survivor a
+survivor and what makes plant 2 above fail. **I found no seventh false green.**
+
+**The two refusals: both correct**
+
+*The repair coder declining a baseline check inside the runner adapter.* Right,
+and for the reason given. The adapter is handed one job at a time and is never
+told which is the original, so the check would need run-level state and a guess;
+the alternative it names - comparing test counts between jobs - would be wrong,
+because a mutation that drops an example row lowers the count legitimately. The
+repair also removed the reason the check was urgent: the misconfigurations that
+used to report a kill now report `infrastructure_error`, verified above. The
+procedure still earns its place, and for a reason nobody wrote down: it is what
+catches the `ACCEPTANCE_IR` footgun. I confirmed the worker sets
+`ACCEPTANCE_IR` for the whole spawned run, so every entry point in the work tree
+reads the mutated IR, and a baseline reporting 30 tests instead of 10 is the
+only visible symptom. That is the hardener's footgun and the coder's procedure
+meeting; both notes are right and neither says they are the same thing.
+
+*The specifier declining the `id` column change.* Right, and the argument is
+sound where the hardener's was not. The hardener's stated benefit - catching a
+client that pads or encodes the id - is already delivered by the placeholder
+form: for a row `| 42 |` the harness asserts `api/todos/42` either way, so a
+client producing `api/todos/042` fails either way. For any transformation `T`,
+the two forms fail on exactly the same set of implementations. The literal adds
+sensitivity to mutation of the example data and nothing else, and the specifier
+is also right that the `body` analogy does not carry: JSON encoding has an
+escaping case and the third row *is* that case, while a whole number in a path
+has none. The ten comment lines added are the right resolution and are in the
+practice the file already follows.
+
+**The E2E procedures: none edited, none needed editing**
+
+`git diff 374f629..HEAD -- qa/` is empty and no commit in the task touched
+`qa/`. 21 procedures, 21 spec files, one-to-one, 22 tests. All three server
+variants pass. I looked for a procedure that *should* have changed and found
+none: the only differences the extraction introduced are the three above, and
+none of them reaches the screen. Procedures 16 to 20 record the failure path as
+silent, which is exactly the property that makes the `text()`-versus-`json()`
+change invisible; procedure 21 depends on the missing `ok` check, which is
+intact.
+
+**The commands, and what is outside CI**
+
+Each one runs what it claims and each one can fail; the matrix and the probes
+above are where each was made to. `npm run acceptance` runs the three features
+through the real APS parser and this project's runtime, rebuilding both derived
+directories each run. `npm run properties` and `npm run hardening` are ordinary
+Vitest runs over their own configs and need nothing `npm ci` does not install -
+I confirmed that from a tree with neither Stryker nor a coverage provider in it.
+`npm run acceptance:install` is an installer, not a gate.
+
+The CI list is accurate. Exactly three verification commands sit outside
+`.github/workflows/nodejs.yml`: `npm run acceptance` (Go plus an unpinned
+clone), the Stryker runs (an unpersisted dependency, and not an npm script at
+all), and `test:e2e:dev` / `test:e2e:preview` (task 08's deliberate call).
+Nothing else fell out: lint, format:check, typecheck, properties, hardening,
+`npm test`, build, the propTypes grep and `test:e2e` are all steps, and
+`test:unit` and `test:scripts` reach CI inside `npm test`.
+
+**CRAP and DRY on the changed files**
+
+Measured with `@vitest/coverage-v8@5.0.0` installed `--no-save` and then removed
+by `npm ci`; `package.json` and `package-lock.json` md5-checked before and
+after, unchanged. `src/` is 87.87% statements / 93.1% functions, reproducing the
+cleaner's and hardener's numbers exactly. Every file this task created or
+rewrote under `src/` is at 100%, so CRAP reduces to complexity: the highest is
+`outcomeNamesOf` at 4. `scripts/architecture/boundaries.mjs` is 100% statements
+/ 86.36% branches with the uncovered branches at lines 89, 109 and 165 - the
+same three the hardener triaged - and `walk` at 5. `runner-protocol.mjs` is 100%
+lines under its own spec plus the hardening suite; `classifyRun` is about 9, one
+`cond` answering one question, which is the exception the definitions name and
+under the gate regardless. Nothing is over 10.
+
+On DRY I agree with what the cleaner and hardener left standing, having checked
+each: the five request builders repeating their shape (a `jsonCall(...)` helper
+would hide the trailing slash and the missing delete body behind a parameter
+list), the header literals written out at each assertion, and
+`readsResponseBody` asserted in both `client.spec.ts` and the hardening file. I
+found nothing new to remove and nothing new to extract.
+
+**One defect found, and it is not in the code**
+
+**The README is stale in four places, and it is the document that tells the next
+role which gates exist.**
+
+1. Line 13 says the type gate has "four projects" and names four. There are six.
+2. Line 67 says "Type-checks all four TypeScript projects" and names the same
+   four. `npm run typecheck` prints six.
+3. `npm run properties` and `npm run hardening` have no section, though every
+   other verification command in the repository has one.
+4. The "Continuous integration" section lists the CI steps without them, and
+   then says "Every step is one of the commands above" - which is now false in
+   two ways at once.
+
+The drift is mechanical: the coder updated the README for the fourth project,
+the architect added the fifth and a command, the hardener added the sixth and a
+command, and the coder who wired both into CI changed only the workflow. No
+single role skipped anything it was told to do. **Owner: a coder.** It is four
+edits with no behavioral content and no test to change.
+
+Related, and the project manager's rather than a coder's: `PLAN.md`'s "Task 09
+added three more" paragraph lists "whether `npm run properties`" belongs in CI
+as an open task-14 question. The fifth-round ruling closed it and a coder
+implemented it, so task 14 no longer owns it. The paragraph also says the same
+thing twice ("Acceptance needs Go and a pinned third-party clone inside the gate
+first." then "Running it there means installing Go and cloning a third-party
+repository inside the gate..."), and it never mentions hardening or persisting
+Stryker, which is what task 14 actually still owns.
+
+Neither is a gate that cannot fail and neither blocks the task; I am not editing
+`README.md` or `PLAN.md` because neither is mine.
+
+**One observation, no action asked**
+
+`scripts/architecture/imports.mjs` reads text, not a syntax tree, and its own
+doc comment says so and says the over-reporting direction is the safe one. It
+is: I planted an `import ... from '...'` inside a string literal in `client.ts`
+and the checker invented two edges and a cycle that do not exist - a loud false
+red, never a false green. There is already one live instance:
+`generate-entrypoints.mjs` writes an import line into the file it generates, so
+its edge list contains a phantom `${runtime}` and a phantom `node:url`. No rule
+denies either, so nothing is affected today. Worth knowing before someone writes
+a rule that a phantom could trip.
+
+**Verdict**
+
+The task's done criteria are met. The module owns request construction and
+response interpretation with no environment; the adapter translates and decides
+nothing that I can find; unit tests fail all eleven plausible wrong
+implementations I could construct; the generated acceptance tests, the property
+tests and the hardening tests pass and each can fail; the mutation survivors are
+the declared ones; and the regression suite from `qa/procedures/` passes
+unchanged, with no procedure edited and none that needed editing. Behavior is
+preserved: identical actions, identical requests, identical console, identical
+throws, in 91 executions and in the shipped bundle, with the single unread
+promise-resolution change recorded above.
+
+**Open questions for the project manager**
+
+1. **The dispatch return value.** `dispatch(anApiAction)` no longer resolves to
+   the success action. Unobservable here and I am recording it rather than
+   treating it as a regression, but task 10 changes exactly this surface and
+   should know it has already moved once.
+2. **The README, above.** Four inaccuracies, a coder's to fix; I have not
+   touched it. If you would rather it wait for task 14 alongside the other
+   "what does CI install" items, it should at least not keep claiming the
+   project count.
+3. **`PLAN.md`'s task-14 paragraph**, above: it names a question you have
+   already ruled on and repeats itself.
+
 ### Coder (CI: properties and hardening)
 
 `npm run properties` and `npm run hardening` are now steps in
