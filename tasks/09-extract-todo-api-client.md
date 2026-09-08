@@ -7,7 +7,7 @@ The specifier's job on this track is narrower than the full brief: write Gherkin
 
 The hardener is in this chain because the task creates a testable module.
 
-**Status:** pending
+**Status:** in progress
 
 ## Goal
 
