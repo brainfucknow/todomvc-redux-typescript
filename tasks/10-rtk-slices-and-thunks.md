@@ -2239,6 +2239,245 @@ Working tree as it stands, nothing installed, `package-lock.json` untouched.
 4. Finding 3 needed no code: it is a correction to a note, and the note is
    already corrected in the fifth-round record.
 
+### Hardener (pass 2: the recording seam)
+
+One narrow pass over the `recording` seam the repairing coder added to
+`src/actions/api.ts` after the main hardening run, and over the tests that came
+with it. The coder asked for a scan rather than reasoning and the scan was worth
+running: the mutants they listed all die, and one they did not list survives.
+Killed with one test added to an existing hardening file. No `src/` module's
+behavior moved and no existing test was changed, weakened or removed.
+
+**The branch moved under me, and I left it alone**
+
+The coder's note ends "three files are modified in the working tree". They are
+not: the branch is at `3b86368`, "Record a reducer throw again, and pin the PATCH
+id", which is that work committed, and the working tree was clean when I started.
+That is the fourth role in a row to report this. I read the commit as the
+coder's change and hardened it in place. I committed nothing and reset nothing;
+my one change is in the working tree.
+
+**Method, unchanged from the main run**
+
+Stryker 10.0.0, `command` runner, `coverageAnalysis: "off"`, concurrency 4, net
+the same three commands run directly rather than through `npm run`:
+
+    npx vitest run --project unit --reporter=dot
+      && npx vitest run --config vitest.properties.config.mts --reporter=dot
+      && npx vitest run --config vitest.hardening.config.mts --reporter=dot
+
+"Initial test run succeeded" read on each of the three runs. Configuration, temp
+directory and JSON reports outside the repository; `@stryker-mutator/core@10` and
+`@vitest/coverage-v8` in **one** `npm install --no-save`, so neither pruned the
+other; finished with `npm ci`. `package.json` md5 `4fad73d5...` and
+`package-lock.json` md5 `29184ac9...` identical before and after, and
+`node_modules/@stryker-mutator` is gone again. Gherkin mutation skipped, per the
+project manager: the main run covered all four features and nothing here touches
+one.
+
+**Language mutation, differential against the main run**
+
+| module | mutants | killed | survived | before |
+| --- | --- | --- | --- | --- |
+| `src/actions/api.ts` | 35 | 34 | 1 declared | 30 / 29 / 1 declared |
+| `src/reducers/todos.ts` | 64 | 64 | 0 | 64 / 64 / 0 |
+
+`api.ts` gains five mutants, all inside `recording` and all killed: the outer
+arrow blanked, the async body emptied, the `try` block emptied, the `catch` block
+emptied, and `console.error(thrown)` removed. The declared survivor is the same
+one the main run declared - `const reported: TodoApiOutcome[] = []` seeded with a
+junk element - and I re-applied it by hand, with a real `TodoApiOutcome` rather
+than Stryker's string, and confirmed it survives. The declaration stands
+unchanged: `executeCall` appends exactly two outcomes, so a seeded prefix can
+never be last.
+
+`todos.ts` was re-run because the brief asks whether the new `todos.spec.ts`
+tests changed any kill status. They cannot have: the source is byte-identical to
+the main run's (`git diff 9136aac..HEAD -- src/reducers/todos.ts` is empty) and
+it was already 64 of 64, so the set of mutants whose status could move is empty
+by arithmetic. The run confirms it rather than assuming it. The PATCH-id mutant
+the fifth-round note asked about is still one Stryker cannot generate - swapping
+`action.meta.arg.id` for `action.payload.id` is a property access for a property
+access - which is exactly why the coder's two new unit tests are the only thing
+that pins it.
+
+**The survivor the scan found, which no mutation runner generates**
+
+Stryker's mutators cannot write "replace a call with the call it wraps", and that
+is the one that lives. Applied by hand to the real source, all four suites run:
+
+| mutation of `src/actions/api.ts` | unit | properties | hardening | acceptance |
+| --- | --- | --- | --- | --- |
+| `loadTodos` bypasses `recording` | green | green | green | green |
+| `editTodo` bypasses `recording` | green | green | green | green |
+| `removeTodo` bypasses `recording` | green | green | green | green |
+| all three at once | green | green | green | green |
+| `addTodo` bypasses `recording` | **red** | green | green | green |
+| `completeTodo` bypasses `recording` | **red** | green | green | green |
+
+It also passes `npm run typecheck` and `npm run lint`. Three of the five UI
+wrappers could go back to calling the operation directly with the whole net
+green - and that is finding 1 again, live, for load, edit and delete. QA's own
+repro was "add answered `null`, then a settled **mark, edit or delete**"; edit and
+delete were the two the repair's tests did not drive.
+
+The shape is the one this file has now produced three times: `api.spec.ts` drives
+the seam with `addTodo` and the store with `completeTodo`, so the three
+operations it happens not to drive are the three where the wrapper costs nothing
+to unwrap. Task 09 recorded it for `readsResponseBody` (four pinned, the fifth
+free) and the main run recorded it for the type prefixes (three pinned, two
+free). Same answer as both times: say it once per operation.
+
+Closed by a second `describe` in `hardening/todo-operations.hardening.test.ts`,
+one test, iterating the five: run the wrapper the UI calls through a dispatch
+that runs thunks and hands plain actions to reducers that throw on that
+operation's `fulfilled`, then assert the three dispatched types are that
+operation's own three phases, that the third carries the `TypeError` serialized,
+that its `requestId` is the one the `pending` started under, and that the throw
+was logged. A real store would have said it more directly, but `src/store` is
+refused to `hardening/**` on purpose and the refusal is right - so the double,
+which is what `api.spec.ts` uses for the same reason.
+
+Verified as a kill rather than assumed: each of the five bypasses applied
+separately turns exactly that one test red, and the failure is the reducer's
+`TypeError: Cannot read properties of null (reading 'id')` escaping - the same
+error, from the same place, that the pre-repair tree produced.
+
+**The coder asked whether their tests fail for the reason they claim. They do**
+
+The brief's warning is the right one for this seam: a catch can look covered
+while never being entered for the right reason. Four probes, each applied to the
+real source with all three suites run:
+
+| probe | result |
+| --- | --- |
+| `src/actions/api.ts` reverted to its pre-repair state (`git show 0ab8e05`) | exactly the coder's two new tests red, both with the reducer's `TypeError` escaping |
+| `recording` kept but its `try/catch` removed | the same two tests red, and **only** those two |
+| `return await started` -> `return started` | the same two red, `TypeError` escaping - the rejection leaves the `try` before the `catch` can see it |
+| `started.requestId` -> `''`; `rejected(null, ...)`; the wrong `argument` | red, each with the assertion that names the thing changed |
+
+The second row is the one that answers the question. If the catch were being
+entered on some other path - a transport failure, say - removing it would have
+disturbed something else; it disturbs nothing else, so the catch is entered on
+the reducer throw and on nothing else. That also confirms the seam adds no second
+`rejected` on a failed request: `createAsyncThunk`'s promise resolves with the
+settled action rather than rejecting, so a transport failure never reaches the
+catch, and the existing "logs the error before dispatching the failure" test
+pins the dispatch count at two.
+
+Of the three mutants the coder reasoned about, two are Stryker mutants and die
+(`console.error` removed; the `catch` block emptied). The third, blanking
+`started.requestId`, is not a Stryker mutant at all - and it dies by hand.
+
+**Mixed-job scan on `api.ts`, recounted**
+
+Four neighbourhoods now: `runCall` 51-59 (11 mutants), the five thunks 74-97
+(10), `recording` 135-149 (5), the five wrappers 162-168 (9). Still one job, and
+still for the main run's reason - client to thunk to wrapper is one chain, and
+`recording` is the wrapper's body rather than a second subject. One thing has
+weakened since that judgment and is worth recording rather than acting on:
+`api.spec.ts` now has two `describe` blocks, not one, and the second drives a
+real store. That is a second *scale*, not a second subject, so I did not split. A
+task that adds a third would be looking at a real split, and the seam it would
+cut is `recording` plus the five wrappers.
+
+**CRAP gate**
+
+`npx eslint . --rule '{"complexity":["error",{"max":10}]}'` exits 0 across the
+repository. In the files this pass touched or read: `recording`'s body is 2,
+`runCall` is 2, the largest thing in `api.spec.ts` is the `run` double at 3, and
+the largest in my own addition is the test body at 4. Coverage of
+`src/actions/api.ts` under the unit suite is 100/100/100, so CRAP is the
+complexity, 4 at worst against a gate of 10. Repository-wide statement coverage
+of `src/` is 95.4%, up from the cleaner's 95.27% because `recording` arrived
+fully covered.
+
+**DRY**
+
+One duplication, in the file I had just added to: `hardening/todo-operations.hardening.test.ts`
+listed the five operations twice, once for the naming tests and once for mine.
+Now one `uiActions` table carries each operation with the action the UI calls it
+by, and the naming tests derive their list from it, so a sixth operation is one
+row rather than two. Falsifiability re-checked rather than assumed afterwards:
+blanking `editTodoOperation`'s or `completeTodoOperation`'s type prefix still
+turns the naming test red, which is the pair that file was written for, and all
+five bypasses still turn mine red.
+
+Left alone, deliberately: `answering` and the dispatch double are near-copies of
+helpers in `src/actions/api.spec.ts`. The hardening suite may not import a `src`
+spec and should not, so this is the same call the main run made for
+`wholeNumber` across the two acceptance step families - duplication forced by a
+suite boundary that exists for a reason.
+
+**Inherited threads, from where I sit**
+
+- *Floating promises.* The repair is the one thing on this task that changed the
+  answer, and it changed it in the right direction: the pre-repair tree leaks an
+  unhandled rejection on a reducer throw and the current tree does not - I
+  reproduced both. My addition introduces no promise of its own that is not
+  awaited. `unwrap` still appears nowhere outside this task file.
+- *Dispatch result.* Unchanged by me. My test reads what a dispatch resolves to
+  through a double; nothing in `src/` reads it.
+- *Serializability.* Unchanged. The `rejected` that `recording` dispatches
+  carries `createAsyncThunk`'s serialized error, which is what my test asserts
+  (`{ name: 'TypeError', message }`, not an `Error` instance).
+
+**Verified**
+
+Every command run from the working tree as it stands, after `npm ci`, after the
+last edit.
+
+- `npm run lint` 0, `npm run format:check` 0, `npm run typecheck` 0 in six projects.
+- `npm test`: 19 files / 169 tests. Unchanged - I added no unit test.
+- `npm run properties`: 6 / 48, unchanged. `npm run acceptance`: 7 / 57, unchanged.
+- `npm run hardening`: 7 files / **60 tests**. Was 7 / 59. One new test in an
+  existing file; no new file, nothing existing changed.
+- `npm run build` passes. `npm run test:e2e` 22 passed; `test:e2e:dev` and
+  `test:e2e:preview` 21 passed, 1 skipped each. No `qa/` file was read or edited.
+- Nothing under `qa/` or `features/` touched; no authored feature line and no
+  manifest block changed.
+
+Branch `claude/react-modernization-plan-u7dgen` at `3b86368`; nothing committed,
+nothing reset. Working tree: one modified file,
+`hardening/todo-operations.hardening.test.ts`.
+
+**Left for the next role**
+
+1. The survivor above is the thing to re-check independently, and it takes two
+   minutes: change `export const editTodo = (id, text) => recording(editTodoOperation, { id, text })`
+   to `editTodoOperation({ id, text })` in `src/actions/api.ts`, run
+   `npm run hardening`, and see one test red; then check out the tree as it was
+   before this pass and see the whole net green.
+2. No defect found in production code. `recording` does what its comment says
+   and what the coder's differential measured; the gap was in what drove it, not
+   in it.
+3. The coder's item 1 stands untouched: a `todo-state-failures` scenario in the
+   specifier's words would put this behavior under the acceptance suite, where
+   my test only puts it under mutation hardening. My test is a net, not a
+   specification.
+
+**Open questions for the project manager**
+
+None blocking. Three recorded.
+
+1. **`npm run hardening` moves from 59 tests to 60**, in an existing file, no new
+   file. Same reading as before, recorded because you have asked to be told.
+2. **The fourth consecutive role has reported the branch moving under it.** Each
+   role writes "my changes are in the working tree" and the next finds them
+   committed and the tree clean. Nothing has gone wrong because of it yet - the
+   commits have been faithful each time - but four in a row means the handoff
+   sentence is describing something that does not happen, and a role that reads
+   it literally will look for uncommitted work and find none. Worth either
+   changing the sentence or finding who is committing.
+3. **This pass is the third time on `src/actions/api.ts` that "four of five
+   operations pinned, the fifth free" has been the surviving mutant**, and the
+   second time it was invisible to the mutation runner. The generalisable rule is
+   narrow enough to write down: on this file, a claim about *an* operation is a
+   claim about *every* operation, and the test should iterate the five rather
+   than name one. Task 11 onwards might adopt it as a standing practice for the
+   operations, rather than rediscovering it per task.
+
+
 ## Project manager notes
 
 **On the specifier's three questions, all answered so none blocks the coder.**
@@ -2426,3 +2665,38 @@ assertions to no-ops and noted that this proves nothing, since removing an
 assertion from a passing suite keeps it passing. Worth keeping in the record:
 this project has spent a lot of effort on gates that cannot fail, and the
 inverse error, a probe that cannot detect, is just as easy to make.
+
+## Project manager notes, sixth round
+
+**The pass-2 hardener found the repair was only half applied, and it matters.**
+Three of the five UI wrappers, `loadTodos`, `editTodo` and `removeTodo`, could
+bypass the `recording` seam entirely with lint, typecheck, unit, properties,
+hardening and acceptance all green. So the regression QA found was still live
+for load, edit and delete after the repair, and **QA's own reproduction named
+edit and delete**. I planted the `loadTodos` bypass myself and confirmed the new
+test catches it.
+
+The repair passed every gate because `api.spec.ts` drives `addTodo` at the seam
+and `completeTodo` at the store, so the three operations nothing drove were free.
+That is not a coincidence: it is the third time this file has produced the same
+shape, after task 09's `readsResponseBody` and this task's main run finding the
+two operation type prefixes free.
+
+**Adopting the hardener's proposal as a standing rule for `src/actions/api.ts`:
+a claim about *an* operation is written as a claim about *every* operation.**
+The five operations are peers; any test that pins one by name is an invitation
+for the other four to drift. The hardener already converted its own file to
+iterate the five, and later tasks touching this file should keep that shape. I
+am recording it here rather than in a role brief because it is specific to this
+module's structure, not to any role's job.
+
+**On four consecutive roles reporting the branch moved under them.** That is me,
+and it is expected: each role leaves work in the tree, I verify and commit it,
+and the next role starts from a clean tree at a new HEAD. Nothing is being lost.
+The roles are right to report it rather than assume, and I would rather have the
+report than silence. I will say so up front in future spawns so the observation
+costs nobody any time.
+
+**Do not fix anything further on this task without telling me first.** The chain
+has now reached QA once and been reopened twice. Each reopening was justified,
+but the cost is real: QA's verification is against a tree that has since moved.
