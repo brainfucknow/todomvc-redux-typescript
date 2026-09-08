@@ -1382,6 +1382,266 @@ None blocking. Three recorded rather than guessed at.
 
 ### QA
 
+Final verification. Every baseline reproduces, all three E2E suites pass with no
+`qa/` file touched, and I built my own differential evidence rather than reading
+the counts back. One finding, and it is a claim in a handoff note rather than a
+defect in code or tests.
+
+**The branch had moved, and I left it alone.** The hardener's note ends "nothing
+committed"; the branch is at `603211f`, "Close the key-versus-which gap and kill
+the rule-data survivors", which is that work committed, and the working tree was
+clean when I started. That is the sixth role in a row. I committed nothing and
+reset nothing; my only change is this note.
+
+**Behavior preservation: 15,955 differential comparisons, old classes against
+new functions**
+
+These are components, so the differential shape task 09 and task 10 used does
+not transfer: there is no pair of implementations to call, there is a pair of
+things to *render*. I extracted the three components as they stood at `3707884`
+into a scratch directory, drove each implementation through identical scripts,
+and compared traces - the rendered markup of the `input`, `li` or `header`, plus
+every callback the implementation made, recorded after **every single step**
+rather than at the end.
+
+| suite | comparisons | result |
+| --- | --- | --- |
+| `TodoTextInput`, every field kind x opening text x typed value x gesture | 3 x 3 x 8 x 7 x 8 = 4,032 scripts | agree |
+| `TodoTextInput`, seeded random interleavings, 3-9 steps | 150 scripts | agree |
+| `TodoItem`, whole row: toggle, double-click, type, commit, re-open, toggle, destroy | 4 x 7 x 8 = 224 scripts | agree |
+| `TodoItem`, seeded random interleavings over 14 gestures, 4-11 steps | 150 scripts | agree |
+| `Header`, typed value x gesture, committed twice | 56 scripts | agree |
+
+Texts include `undefined`, `""`, `"   "`, `"\t\n "`, `"  Buy oats  "`, `" x"`
+and `"x "`; keys include Enter, Escape, ArrowUp, Tab, space, a letter, and a
+numpad Enter. Every keydown carries `key`, `code`, `keyCode` and `which`
+consistently, which is what a real keyboard and Playwright both send - which
+field the component reads is a separate claim, pinned separately, and a
+differential that sent only one field would have been asserting it by accident.
+
+**The harness was falsified before I believed it.** Seven behavior changes
+planted one at a time in `src/todo-input/`, each reverted afterwards:
+
+| planted | suites that diverged |
+| --- | --- |
+| `commitOnBlur` trims - the asymmetry "cleaned up" | 4 of 5 |
+| Enter does not trim | 5 of 5 |
+| `isEmpty` trims - edit deletes on spaces | 2 of 5 |
+| Escape also commits | 5 of 5 |
+| the new-todo field commits on blur | 3 of 5 |
+| the edit field clears after Enter too | 2 of 5 |
+| `openingText` trims | 4 of 5 |
+
+And two controls, both of which **agree**, which is the useful half: reverting
+`setEditing(!closesEditor)` to `if (closesEditor) setEditing(false)`, and
+removing `memo` from `TodoItem`. So the cleaner's branch rewrite and the coder's
+`memo` decision are both confirmed unobservable by a harness that detects
+everything else - the first independently of the property that holds the flag
+shut, the second by measurement rather than by reasoning about `connect`.
+
+*One trap worth recording, because it cost me a run and looks exactly like a
+regression.* Mounting the old and the new component at the same time is wrong:
+both fields carry `autoFocus`, so the second mount steals focus from the first
+and fires its blur rule, and the old implementation appears to have saved before
+any interaction. Drive one implementation at a time.
+
+**Every asymmetry, observed rather than inferred**
+
+Driven through the new components directly. All confirmed present:
+
+    edit "  Buy oats  " + Enter        -> EDIT 5 "Buy oats"
+    edit "  Buy oats  " + click away   -> EDIT 5 "  Buy oats  "
+    edit "   " + Enter                 -> DELETE 5
+    edit "   " + click away            -> EDIT 5 "   "
+    new-todo "   " + Enter             -> added=[] field=""      (Header refuses)
+    edit field "   " + Enter           -> DELETE 5               (TodoItem deletes)
+    new-todo + Escape                  -> added=[] field="Ship it"
+    edit + Escape                      -> acted=[] still editing=true
+    new-todo + Enter                   -> field=""               (cleared)
+
+The sharp end is intact in both directions. The blank *row* the project manager
+describes is one step further than an unconnected `TodoItem` can show - it keeps
+its `todo` prop, so its label cannot update - and that half is `qa/procedures/06`
+and `07`, which pin it through the UI and pass.
+
+**The `key`-versus-`which` gap: reproduced, and the pair is genuinely a pair**
+
+The hardener's three rows reproduce exactly, each against the full `npm test`:
+
+| planted reading | result |
+| --- | --- |
+| `e.which === 13 ? 'Enter' : String(e.which)` | **2 failed of 195**, and they are exactly the two new tests |
+| `e.code` | 1 failed - the numpad test only |
+| `e.key` with a `which === 13` fallback | 1 failed - the legacy-code test only |
+
+So the pin closes the gap for the right reason, and neither test is redundant.
+`keyCode`, `charCode`, `which` and `=== 13` appear in exactly two files in the
+whole repository: `src/test-support/keyboard.ts` and the test that exists to
+disagree with it. No production code reads a legacy key code anywhere.
+
+**The boundary claim: real, and wider than claimed**
+
+`npx tsc -p src/todo-input/tsconfig.json --listFiles` compiles `field.ts` and
+`effects.ts` and pulls in **no** `.d.ts` outside `typescript/lib` - so the
+project is neither empty nor quietly picking up ambient packages. Eighteen names
+planted one at a time:
+
+    refused: document (TS2584), window, fetch, Response, KeyboardEvent,
+             localStorage, XMLHttpRequest, navigator, URL, setTimeout,
+             queueMicrotask, structuredClone, console (TS2584),
+             process/require/Buffer (TS2591), import("node:fs") (TS2307)
+    compiles: globalThis
+
+`globalThis` compiling is correct - it is an ES2022 language global that carries
+no typed members, so nothing environmental is reachable through it without a
+cast. DOM, network, Node, filesystem, timers and console are all refused, which
+is broader than the three names the config's own comment records.
+
+The complementarity is real too, and I checked the half that would have been
+easy to overstate: `import { useState } from 'react'` and an import of a domain
+type both **compile** under the tsconfig, and both are refused by the boundary
+rule (`boundaries` goes red, 2 tests). Neither half replaces the other, exactly
+as the architect wrote it.
+
+**Rule data, mutated independently**
+
+| change to `scripts/architecture/rules.mjs` | result |
+| --- | --- |
+| blank `'src/todo-input/*.spec.ts'` | killed (boundaries + hardening) |
+| blank `'src/todo-input/**/*.spec.ts'` | killed (hardening) - the hardener's fix holds |
+| `files` pointed at a directory that does not exist | killed (hardening) |
+| blank the `src/todo-input/*` allow entry, acceptance rule | killed (boundaries) |
+| blank the same, properties rule | killed (boundaries) |
+| blank the same, hardening rule | killed (hardening only - the declared no-caller entry, pinned by the planted module) |
+| `allow: []` seeded with a junk pattern | **survives** - the declared survivor |
+| `allow: []` seeded with `'react'` | killed |
+| `allow` key deleted outright | killed |
+
+The declaration is honest: an allow list holding a pattern nothing imports is
+behaviorally identical to an empty one, and no finite test can separate them.
+
+**The three corrections, judged**
+
+- *The architect's glob bug, caught by its own binding test.* Right, and it
+  matters. Run against the repository's real `matches`:
+  `src/todo-input/**/*.spec.ts` does **not** match `src/todo-input/field.spec.ts`
+  and does match `src/todo-input/editing/rules.spec.ts`; `src/todo-input/*.spec.ts`
+  is the other way round. The pair is necessary, not belt-and-braces.
+- *The hardener finding the architect's tsconfig worry does not exist.* Right,
+  reproduced four ways with a file naming `Response`, `fetch` and
+  `KeyboardEvent`: with both keys, refused; `types: []` deleted, refused
+  unchanged; `typeRoots: []` deleted, refused unchanged; both deleted, red
+  anyway and inside `node_modules/@types/react-dom`. No silent weakening.
+- *The cleaner distinguishing its DRY case from the one task 10 declined.*
+  Right, and the evidence is in the history: at `3977066` the three
+  `wholeNumber` copies were byte-identical, six lines and the same error
+  message. The three flag parsers are not - `todo-api`'s admits `null` and
+  `undefined`, `todo-state`'s takes `true`/`false`, `completedFlag` reads
+  `complete`/`active`. Unifying the first erases nothing; unifying the second
+  would erase three vocabularies. It distinguished rather than overruled.
+
+**Finding: one claim in the architect's plant table is wrong**
+
+The table says plant 7, `isEmpty` trims in the new-todo caller only, "leaves
+both spec files green" and is "caught only by the biconditional". Both halves
+are false. I planted it and ran the specs:
+
+    src/todo-input/effects.spec.ts  1 failed
+      x asks for a text of spaces: emptiness is length, not blankness
+    npm run properties              2 failed
+      x refuses from the new-todo field exactly when it deletes from the edit field
+      x treats a text of whitespace as a text, because emptiness is length and not blankness
+
+`effects.spec.ts:20` asserts `commitFromNewTodoField('   ')` adds, and `:42`
+asserts the edit half, so a one-caller trim is caught by an example either way -
+I planted the mirror version too and `:42` goes red. Within the property suite
+it is two, not one.
+
+This is a note correction, not a defect: no code, test or property is wrong, and
+the biconditional still earns its place - it states the relationship over
+generated texts, where the two examples name one string. What is wrong is the
+argument given for its uniqueness. **Owner: architect**, non-blocking, and I did
+not edit the table.
+
+**Everything else checked**
+
+- *E2E procedures.* None changed, none needed to: 21 procedures, 21 spec files,
+  every procedure has a test, and `qa/` does not appear in the task diff at all.
+  22 / 21+1 skipped / 21+1 skipped, the skip being `20-delete-failure`'s
+  pre-existing proxied-backend skip.
+- *Would E2E catch a regression here?* Planting "blur trims" turns
+  `npm run test:e2e` red (1 of 22). Planting "`isEmpty` trims" does **not** -
+  it is caught by `npm test` (8), `npm run properties` (2) and
+  `npm run acceptance` (1) instead. Worth knowing which net holds which claim;
+  nothing is unheld.
+- *The two step vocabularies.* Read as adapters and they are: `todo-input-commits.ts`
+  asks the rule and applies `clearsField` the way the component does,
+  `todo-input-effects.ts` performs the answer, and every assertion reads a value
+  `src/` returned. 11 + 5 = 16 executions from the two new features, the
+  specifier's numbers. Every uncovered line in both files and in `cells.ts` is a
+  `throw` refusing a phrase no feature uses.
+- *The seventh project.* Dropping it from `scripts/typecheck.mjs` turns
+  `typecheck-gate.spec.mjs` red; the exact seven-project line is asserted inside
+  "gives the same verdict from a subdirectory as from the root".
+- *Features.* `git diff 1143b7d..HEAD -- features/` is nine added lines and one
+  changed, every one inside `acceptance-mutation-manifest` delimiters. No
+  authored line moved. No Gherkin or language mutation run; none was requested.
+- *The bundle.* Digest over the sorted file digests is
+  `5a06164fe810dd25fe2ad9331005cdb3`, identical to the architect's recorded
+  value. Four class declarations, all dependencies; one `PureComponent`, React's
+  own; no `state={...}` or `handleX=` class-field lowering. No class declaration
+  anywhere under `src/`, and the only two mentions of `PureComponent` are the
+  two comments explaining `memo`.
+- *CRAP gate on changed files.* `npx eslint . --rule '{"complexity":["error",{"max":10}]}'`
+  exits 0. Across the 21 changed sources the highest complexity is 5, in
+  `acceptance/steps/todo-state.ts` and pre-existing, at 93.26% - CRAP 5.0. The
+  new `src/` files are complexity 1-2 at 100%. Unit coverage over `src/` is
+  95.53 / 90 / 97.63, the figure the cleaner and hardener recorded, with
+  `src/components/` and `src/todo-input/` absent from the uncovered report.
+- *DRY.* A repeated-block scan over every changed source finds only import
+  statements, closing punctuation, and one pre-existing pair in
+  `boundaries.spec.mjs` this task did not touch. Nothing to fix. The hardener's
+  two deliberate duplications - `COMMIT_KEY` mirrored in the property file, and
+  the two field kinds listed in three suites that may not import each other -
+  are the calls this project has already made twice.
+- *A near miss worth passing on.* My first plant run used
+  `--reporter=basic`, which this vitest does not have: the run exits 1 with a
+  startup error and **zero tests executed**. It was loud, so it cost a minute -
+  but a `|| true`, or reading `$?` after a pipe, would have turned "no tests
+  ran" into "nothing failed". That is the eighth false green in the family the
+  project manager names, caught only because the exit code was read directly.
+
+**Verified**
+
+Final state, clean working tree, after `npm ci`: `npm run lint` 0,
+`npm run format:check` 0, `npm run typecheck` 0 errors in seven projects,
+`npm test` 21 files / 195 tests, `npm run build`, `npm run properties` 7 / 67,
+`npm run hardening` 7 / 65, `npm run acceptance` 9 files / 75, `npm run test:e2e`
+22 passed, `test:e2e:dev` and `test:e2e:preview` 21 passed / 1 skipped. Every
+count is the one this task recorded.
+
+`@vitest/coverage-v8@5.0.0` installed with `npm install --no-save`, used, and
+removed with `npm ci`; Stryker was not needed, so nothing else was installed.
+`package.json` md5 `4fad73d5bf6ea48cb2d4ebd4a21c23b3` and `package-lock.json`
+md5 `29184ac99f9b7c80f6ba41f163b1eb5b` byte-identical before and after, the same
+pair the cleaner and the hardener recorded. Every source I planted into was
+restored and `git status` is clean apart from this note. All scratch files -
+the differential harness, the extracted old components, the tsconfig probes -
+were written outside the tracked tree or deleted.
+
+**Verdict: this task passes.** No behavior moved, the extraction is real and
+enforced, and the one implementation detail that changed is now pinned by two
+tests that fail for the right reasons. The single finding is a wrong sentence in
+the architect's plant table, owned by the architect, and it blocks nothing.
+
+**Open questions for the project manager**
+
+None blocking. One recorded.
+
+1. The architect's plant-table claim above. Correcting the note is a one-line
+   edit and I did not make it, because it is another role's handoff. Say if you
+   would rather QA edited such things in place.
+
 ## Project manager notes
 
 **On whether `Header`'s refusal belongs inside the new module: yes.** It is the
@@ -1577,3 +1837,42 @@ confirming it, and cheaper than carrying it forward.
 **The mixed-job hint reports nothing further on this task**, and said so with
 per-line distributions rather than judgment. Its finding here was the cleaner's
 172-mutant step-file split. Four for four still stands.
+
+## Project manager notes, sixth round
+
+**Correcting my own fourth-round note, and the architect's table it came from.**
+I wrote that the mutant where only one caller trims "leaves both spec files
+green and is caught only by the biconditional property". QA found both halves
+false and I reproduced it: planting `isEmpty(text.trim())` in the new-todo
+caller fails **one unit test** and **two properties**.
+
+That is the second time I have restated a role's claim without checking it and
+been wrong, after the `isRejected` predicate on task 10. Both times the claim
+was about how well the tests hold, which is exactly the class of claim this
+project has been most wrong about, and both times a later role caught it. The
+biconditional property still earns its place; the sentence describing why did
+not.
+
+The architect's table is another role's writing, and QA was right not to edit
+it. This note is the correction.
+
+**On QA's method.** 15,955 comparisons across 4,612 scripts, with the harness
+falsified seven ways before it was trusted, and one design decision worth
+keeping: it drove each implementation **alone** rather than mounting both at
+once, because `autoFocus` steals focus and fires the first field's blur rule. A
+naive side-by-side harness would have produced differences that were artefacts
+of the harness.
+
+It also ran two controls that measure rather than argue: reverting the cleaner's
+`setEditing(!closesEditor)` and removing `memo` are both confirmed unobservable.
+
+**Another instrument that fails silently, recorded.** `--reporter=basic` does
+not exist in this Vitest: it exits 1 having run zero tests, and QA noticed only
+because it read the exit code directly rather than scanning output for a
+summary. Same family as the seven false greens, arriving through a typo in a
+flag rather than a misconfiguration.
+
+**The boundary is broader than claimed, which is the right direction.** 17 of 18
+planted environment globals are refused; only `globalThis` compiles, correctly.
+`import React` compiles under the tsconfig and is refused by the boundary rule,
+so the two halves are complementary rather than redundant.
