@@ -70,8 +70,8 @@ Serial. Each task assumes every earlier task is merged.
 | 14 | Typecheck `qa/stub/` under checkJs, and decide acceptance in CI | Tooling | coder -> QA | pending (deferred, see below) |
 | 09 | Extract the todo API client into a testable module | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | **done** |
 | 10 | Replace callAPIMiddleware with RTK slices and thunks | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | **done** |
-| 11 | Convert class components to functions and extract their input rules | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | in progress |
-| 12 | Replace connect() containers with react-redux hooks | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |
+| 11 | Convert class components to functions and extract their input rules | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | **done** |
+| 12 | Replace connect() containers with react-redux hooks | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | in progress |
 | 13 | Move UI-derived observables into domain selectors | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |
 
 ### Why this order

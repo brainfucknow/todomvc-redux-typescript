@@ -7,7 +7,7 @@ The specifier's job on this track is narrower than the full brief: write Gherkin
 
 The hardener is in this chain because the task changes the selectors' input type, which is a testable module.
 
-**Status:** pending
+**Status:** in progress
 
 ## Goal
 
@@ -25,6 +25,20 @@ Four containers exist under `src/containers/`:
 `src/containers/index.ts` is not a container. It hand-declares `RootState` with only `todos` and `visibilityFilter`, while the root reducer also combines `errorMessage` and `exec`. Both the selectors and the middleware import `RootState` from it, so this file is a boundary in the wrong place.
 
 `src/components/TodoList.tsx` types its `actions` prop as `any` and calls `actions.loadTodos()` inside a `useEffect` keyed on that function's identity. Whether that effect fires once depends on `bindActionCreators` returning a stable reference. Preserve the observable outcome: the todo list loads once on mount and does not re-fetch on unrelated state changes.
+
+## Inherited from task 11
+
+**`TodoTextInput`'s props encode one thing as two.** It carries `newTodo` and
+`editing`, two booleans standing for a single `FieldKind`, with
+`editing === !newTodo` held by convention alone. Task 11's architect recorded it
+for you rather than acting, because it is a component-interface question and you
+rewrite how these components receive their props. The domain module already
+takes `FieldKind` as an argument, so the vocabulary exists.
+
+**No legacy key codes.** Task 11 moved `e.which === 13` to `e.key === 'Enter'`
+and pinned it with two tests using events a real keyboard never produces. If you
+touch event wiring, do not reintroduce a legacy key code; the pin will catch it,
+which is the point.
 
 ## Scope
 
