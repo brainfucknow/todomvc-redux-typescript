@@ -3,21 +3,21 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { ROOT } from './aps.mjs'
+import {
+  INFRASTRUCTURE_ERROR,
+  classifyRun,
+  readJob,
+  response,
+} from './runner-protocol.mjs'
 
 /**
  * The runner adapter APS `gherkin-mutator` drives (mutator-spec.md, "Runner
  * Adapter"): a persistent worker that reads one JSON job per stdin line and
- * writes one JSON response per stdout line.
- *
- *   in   {"id","feature_json","generated_dir","work_dir","timeout"}
- *   out  {"id","outcome","output","error","duration"}
+ * writes one JSON response per stdout line. What a line and a finished run
+ * mean is `runner-protocol.mjs`; this file is the process around it.
  *
  * A job runs the already-generated entry points against the IR the job names,
  * which is what $ACCEPTANCE_IR is for - nothing is regenerated per mutation.
- *
- *   test_success          the generated tests ran and passed
- *   test_failure          they ran and failed, which kills the mutation
- *   infrastructure_error  they could not be run or evaluated
  *
  * Stdout carries protocol lines only. Everything else goes to stderr.
  *
@@ -33,23 +33,25 @@ createInterface({ input: process.stdin }).on('line', (line) => {
 
 /**
  * @param {string} line
- * @returns {{id: string, outcome: string, output: string, error: string, duration: number}}
+ * @returns {ReturnType<typeof response>}
  */
 function respond(line) {
-  /** @type {{id?: string, feature_json?: string, generated_dir?: string, timeout?: string}} */
-  let job = {}
-  try {
-    job = JSON.parse(line)
-  } catch {
-    return report('', 'infrastructure_error', '', `unreadable job: ${line}`, 0)
+  const read = readJob(line)
+  if (!read.ok) {
+    return response({
+      id: read.id,
+      outcome: INFRASTRUCTURE_ERROR,
+      error: read.error,
+    })
   }
 
-  const id = job.id ?? ''
-  if (!job.feature_json) {
-    return report(id, 'infrastructure_error', '', 'job has no feature_json', 0)
-  }
+  const { job } = read
   if (!existsSync(VITEST)) {
-    return report(id, 'infrastructure_error', '', `no vitest at ${VITEST}`, 0)
+    return response({
+      id: job.id,
+      outcome: INFRASTRUCTURE_ERROR,
+      error: `no vitest at ${VITEST}`,
+    })
   }
 
   const started = process.hrtime.bigint()
@@ -59,66 +61,23 @@ function respond(line) {
     {
       cwd: ROOT,
       encoding: 'utf8',
-      timeout: milliseconds(job.timeout),
+      timeout: job.timeoutMs,
       env: {
         ...process.env,
-        ACCEPTANCE_IR: job.feature_json,
-        ...(job.generated_dir
-          ? { ACCEPTANCE_GENERATED_DIR: job.generated_dir }
+        ACCEPTANCE_IR: job.featureJson,
+        ...(job.generatedDir
+          ? { ACCEPTANCE_GENERATED_DIR: job.generatedDir }
           : {}),
       },
     },
   )
-  const duration = Number(process.hrtime.bigint() - started)
-  const output = `${run.stdout ?? ''}${run.stderr ?? ''}`
+  const { outcome, error } = classifyRun(run)
 
-  if (run.error) {
-    return report(
-      id,
-      'infrastructure_error',
-      output,
-      run.error.message,
-      duration,
-    )
-  }
-  if (run.signal) {
-    return report(
-      id,
-      'infrastructure_error',
-      output,
-      `killed by ${run.signal}`,
-      duration,
-    )
-  }
-  if (run.status === 0) return report(id, 'test_success', output, '', duration)
-  if (run.status === 1) return report(id, 'test_failure', output, '', duration)
-  return report(
-    id,
-    'infrastructure_error',
-    output,
-    `vitest exited ${run.status}`,
-    duration,
-  )
-}
-
-/**
- * @param {string} id
- * @param {string} outcome
- * @param {string} output
- * @param {string} error
- * @param {number} duration nanoseconds
- */
-function report(id, outcome, output, error, duration) {
-  return { id, outcome, output, error, duration }
-}
-
-/**
- * @param {string | undefined} timeout APS duration, e.g. "30s"
- * @returns {number | undefined} milliseconds
- */
-function milliseconds(timeout) {
-  const match = /^(\d+(?:\.\d+)?)(ms|s|m)?$/.exec(timeout ?? '')
-  if (!match) return undefined
-  const scale = { ms: 1, s: 1000, m: 60000 }[match[2] ?? 's'] ?? 1000
-  return Number(match[1]) * scale
+  return response({
+    id: job.id,
+    outcome,
+    output: `${run.stdout ?? ''}${run.stderr ?? ''}`,
+    error,
+    duration: Number(process.hrtime.bigint() - started),
+  })
 }

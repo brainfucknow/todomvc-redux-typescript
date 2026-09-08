@@ -59,27 +59,27 @@ const COLLECTION_PATH = 'api/todos/'
 const todoPath = (id: number) => `api/todos/${id}`
 
 const ACCEPTS_JSON = { Accept: 'application/json' }
-const ACCEPTS_AND_SENDS_JSON = {
+const ACCEPTS_AND_ANNOUNCES_JSON = {
   ...ACCEPTS_JSON,
   'Content-Type': 'application/json',
 }
 
-const LOAD: OutcomeNames = [
+const LOAD_OUTCOMES: OutcomeNames = [
   'LOAD_TODO_REQUEST',
   'LOAD_TODO_SUCCESS',
   'LOAD_TODO_FAILURE',
 ]
-const POST: OutcomeNames = [
+const POST_OUTCOMES: OutcomeNames = [
   'POST_TODO_REQUEST',
   'POST_TODO_SUCCESS',
   'POST_TODO_FAILURE',
 ]
-const PATCH: OutcomeNames = [
+const PATCH_OUTCOMES: OutcomeNames = [
   'PATCH_TODO_REQUEST',
   'PATCH_TODO_SUCCESS',
   'PATCH_TODO_FAILURE',
 ]
-const DELETE: OutcomeNames = [
+const DELETE_OUTCOMES: OutcomeNames = [
   'DELETE_TODO_REQUEST',
   'DELETE_TODO_SUCCESS',
   'DELETE_TODO_FAILURE',
@@ -87,7 +87,7 @@ const DELETE: OutcomeNames = [
 
 export function loadTodosCall(): TodoApiCall {
   return {
-    outcomeNames: LOAD,
+    outcomeNames: LOAD_OUTCOMES,
     fields: {},
     request: {
       method: 'GET',
@@ -100,12 +100,12 @@ export function loadTodosCall(): TodoApiCall {
 
 export function addTodoCall(text: string): TodoApiCall {
   return {
-    outcomeNames: POST,
+    outcomeNames: POST_OUTCOMES,
     fields: { text },
     request: {
       method: 'POST',
       path: COLLECTION_PATH,
-      headers: ACCEPTS_AND_SENDS_JSON,
+      headers: ACCEPTS_AND_ANNOUNCES_JSON,
       body: JSON.stringify({ text }),
     },
     readsResponseBody: true,
@@ -114,12 +114,12 @@ export function addTodoCall(text: string): TodoApiCall {
 
 export function editTodoCall(id: number, text: string): TodoApiCall {
   return {
-    outcomeNames: PATCH,
+    outcomeNames: PATCH_OUTCOMES,
     fields: { id, text },
     request: {
       method: 'PATCH',
       path: todoPath(id),
-      headers: ACCEPTS_AND_SENDS_JSON,
+      headers: ACCEPTS_AND_ANNOUNCES_JSON,
       body: JSON.stringify({ text }),
     },
     readsResponseBody: true,
@@ -131,12 +131,12 @@ export function completeTodoCall(id: number, completed: boolean): TodoApiCall {
     throw new Error('Expected completed to be non null')
   }
   return {
-    outcomeNames: PATCH,
+    outcomeNames: PATCH_OUTCOMES,
     fields: { id, completed },
     request: {
       method: 'PATCH',
       path: todoPath(id),
-      headers: ACCEPTS_AND_SENDS_JSON,
+      headers: ACCEPTS_AND_ANNOUNCES_JSON,
       body: JSON.stringify({ completed }),
     },
     readsResponseBody: true,
@@ -145,12 +145,12 @@ export function completeTodoCall(id: number, completed: boolean): TodoApiCall {
 
 export function removeTodoCall(id: number): TodoApiCall {
   return {
-    outcomeNames: DELETE,
+    outcomeNames: DELETE_OUTCOMES,
     fields: { id },
     request: {
       method: 'DELETE',
       path: todoPath(id),
-      headers: ACCEPTS_AND_SENDS_JSON,
+      headers: ACCEPTS_AND_ANNOUNCES_JSON,
     },
     readsResponseBody: false,
   }
@@ -208,6 +208,11 @@ function outcomeNamesOf(call: TodoApiCall): OutcomeNames {
   return names as OutcomeNames
 }
 
+/**
+ * What a reading call makes of the bytes that came back. It throws when they
+ * will not parse, and that throw is what turns a read into a failure outcome.
+ * A call that reads nothing gets `undefined`, whatever the answer carried.
+ */
 function parsedBody(call: TodoApiCall, answer: TodoApiAnswer): unknown {
   return call.readsResponseBody ? JSON.parse(answer.body as string) : undefined
 }

@@ -397,6 +397,190 @@ anything that is not an API call still passes through - and nothing outside
 
 ### Cleaner
 
+Behavior-preserving cleanup of what the coder left. Four source edits and one
+split in the acceptance scripts. Nothing in `features/` or `qa/` was touched;
+both were run.
+
+**Changed**
+
+- `src/actions/api.ts` was five one-line functions that renamed five client
+  functions and annotated them with a type imported back out of the middleware.
+  It is now five renamed re-exports of the same five functions. The module and
+  every exported name stay exactly where they were, so nothing outside it
+  moved, but the parameter chains are gone, and so is the detour through
+  `../middlewares/callapimiddleware` to name a type that lives in
+  `../todo-api/client`. Coverage found the same thing from the other side: two
+  of those wrappers (`editTodo`, `completeTodo`) were never called by any unit
+  test, and the file read 60% covered. There is nothing left to cover.
+- `src/middlewares/callapimiddleware.ts` lost the `ApiActionMessage` alias.
+  After the change above nothing outside the file used it, and inside the file
+  it was a second name for `TodoApiCall`. The two casts became one named
+  question, `isApiCall(action)`; the `// Normal action: pass it on` comment
+  went, because the line under it says that. The predicate is deliberately a
+  truthiness test on `outcomeNames` and nothing more, so what reaches `next`
+  and what does not is unchanged, down to `dispatch(null)` still throwing a
+  TypeError as it did before.
+- `src/todo-api/client.ts`: `LOAD`/`POST`/`PATCH`/`DELETE` became
+  `LOAD_OUTCOMES`/`POST_OUTCOMES`/`PATCH_OUTCOMES`/`DELETE_OUTCOMES`, because
+  `outcomeNames: POST` next to `method: 'POST'` reads as an HTTP method and is
+  not one. `ACCEPTS_AND_SENDS_JSON` became `ACCEPTS_AND_ANNOUNCES_JSON`: the
+  delete uses it and sends no body, so the old name was false exactly where the
+  behavior is a defect, and "announces" is the word the module's own doc
+  comment and `todo-api-requests 5` already use. One doc comment added, on
+  `parsedBody`, saying that its throw is what turns an unreadable body into a
+  failure outcome - the only non-obvious control flow in the module.
+- `scripts/acceptance/runner-worker.mjs` split. Its decisions - read a job
+  line, classify a finished run, read an APS duration - moved into
+  `scripts/acceptance/runner-protocol.mjs`, which spawns nothing and touches no
+  process; the worker is now stdin, `spawnSync`, stdout. This is the split the
+  repository already uses for `typecheck.mjs` and `typecheck-gate.mjs`, and the
+  reason is the same one: the mutator scores a mutation by the outcome this
+  adapter reports, so confusing one outcome for another is a way to report a
+  mutation score nobody measured. `scripts/acceptance/runner-protocol.spec.mjs`
+  pins the mapping in both directions (14 tests, in the existing `scripts`
+  project). Behavior is byte-identical; see Verified.
+
+**Defects preserved, and one of them louder**
+
+The trailing slash on load and add against no slash per id, `json: false` on
+delete, the loose `== null` guard, the two PATCHes sharing one triple, and
+`response.ok` never checked, are all exactly as the coder left them. None of
+them is any more tempting after this pass except one: renaming the header
+constant to `ACCEPTS_AND_ANNOUNCES_JSON` makes it more obvious that the delete
+announces a content type for a body it never sends. That is deliberate - the
+name now says what the code does - and the defect itself is untouched.
+
+**Coverage: run, with a provider installed but not persisted**
+
+No coverage provider is in `package.json`, so I installed one into
+`node_modules` only, with `npm install --no-save @vitest/coverage-v8@5.0.0`.
+`package.json` and `package-lock.json` are unchanged (md5-checked before and
+after), and `npm ci` will remove it. Reproduce with:
+
+    npx vitest run --project unit --coverage.enabled --coverage.provider=v8 \
+      --coverage.reporter=text --coverage.include='src/**'
+
+I did not persist the dependency. Adding one to `package.json` changes what CI
+installs and what the release checks carry, and this project has consistently
+routed that kind of decision to a numbered tooling task rather than smuggling
+it into a structural one - the acceptance-in-CI question went to 14 for the
+same reason. Recommendation, not a decision I took: if later cleaners are
+expected to measure CRAP honestly, the provider and a `coverage` script belong
+in task 14 alongside it.
+
+What it said. Before this pass, `src/` was 87.28% statements / 91.2% functions,
+with every file this task created at 100% and `src/actions/api.ts` at 60%.
+After: 87.87% / 93.1%, and `src/actions` no longer appears in the report at
+all. The acceptance run measures its own side - `acceptance/runtime.ts` 88.6%,
+`acceptance/steps/todo-api.ts` 93.9%, `src/todo-api/client.ts` 100%,
+`src/todo-api/fetchTransport.ts` 0%, which is the point of the adapter: the
+acceptance suite never touches the network shell, and the unit suite covers it
+at 100%.
+
+    npm run acceptance -- --coverage.enabled --coverage.provider=v8 \
+      --coverage.reporter=text --coverage.include='acceptance/**' \
+      --coverage.include='src/todo-api/**'
+
+Every remaining uncovered line in `src/` is code this task is forbidden to
+touch: `index.tsx`, `containers/FilterLink.ts`, `reducers/`, `selectors/`,
+`components/TodoTextInput.tsx`. Tasks 10 to 13 own them. I left them alone.
+
+**CRAP and the mixed-job hint**
+
+With coverage measured, CRAP on this task's files reduces to complexity almost
+everywhere: the client, the transport and the middleware are fully covered, and
+their most branching function is `outcomeNamesOf` at 4, so nothing in `src/` is
+near the gate.
+
+One file was over it. `runner-worker.mjs`'s `respond` carried seven decisions
+and had no automated test at all - CRAP 72 - and `milliseconds` another four at
+zero coverage. Both are now in `runner-protocol.mjs` under test. What is left
+in the worker is a shell: read a line, spawn, write a line. Adapter shells stay
+out of the test tooling, per the brief.
+
+Two things I did not split, deliberately.
+
+- `src/todo-api/client.ts` builds requests and interprets answers, which can be
+  read as two jobs. The task's own done criteria names one module owning both,
+  and where that boundary should sit is the architect's question, not mine.
+- `acceptance/steps/todo-api.ts` is 340 lines but one job: bind the features'
+  vocabulary to the client. Splitting the world and the stand-in transport out
+  of the definition table would export ten helpers across a seam to save a
+  scroll, which trades cohesion for cross-module knowledge in the wrong
+  direction.
+
+**DRY**
+
+The five request builders in the client repeat a shape, and I left them
+repeating it. A `jsonCall(...)` helper taking five arguments would hide the
+trailing-slash difference and the delete's missing body behind a parameter
+list, which is precisely what this task is not allowed to do. Same answer for
+the four repeated header literals in `client.spec.ts`: an expectation written
+out at the assertion is what makes each test independently falsifiable.
+
+**Not mine to change, recorded**
+
+1. **The runner adapter reports a false kill when no test file matches.**
+   Vitest exits 1 when it finds no test files, and the adapter reads exit 1 as
+   `test_failure`, which the mutator counts as a killed mutation. So a mutation
+   run pointed at an empty or mis-spelled `--generated-dir` reports every
+   mutant killed and looks like a perfect score. Verified: an
+   `ACCEPTANCE_GENERATED_DIR` with no files exits 1. This is current behavior
+   and changing it is an error-handling policy change, so I did not; the
+   hardener should check that the first job of a run reports `test_success`
+   against unmutated IR before trusting any kill count.
+2. `dispatch(null)` throws a TypeError in the middleware's discriminator,
+   before any of this task's code runs. Preserved exactly; noted because
+   `isApiCall` is now the obvious place someone would "fix" it.
+3. `timeoutMilliseconds`'s `?? 1000` cannot be reached - the regex admits only
+   `ms`, `s`, `m` or nothing, and the table covers all four. Left as written:
+   removing it buys nothing and costs a type assertion.
+
+**Verified**
+
+Every command below was run after the last edit, from a clean working tree
+apart from these changes.
+
+- `npm run lint`, `npm run format:check`, `npm run build`: pass.
+- `npm run typecheck`: 0 errors in four projects.
+- `npm test`: 15 files / 108 tests, up from 14 / 94. The 14 new tests are the
+  runner-protocol spec, in the `scripts` project. No acceptance test joined the
+  count; `npm run test:unit` is 13 files / 78 tests, unchanged.
+- `npm run acceptance`: 3 files / 24 executions, unchanged.
+- Runner adapter, driven by hand over its protocol exactly as the coder did it,
+  after the split: base IR -> `test_success`, an IR with the trailing slash
+  mutated out -> `test_failure`, an unreadable line -> `infrastructure_error`
+  with `unreadable job: ...`, a job with no `feature_json` ->
+  `infrastructure_error` keeping its id. Four responses, nothing on stderr,
+  nothing but protocol lines on stdout.
+- `npm run test:e2e`: 22 passed. `test:e2e:dev` and `test:e2e:preview`: 21
+  passed, 1 skipped each. No procedure was edited or needed editing.
+
+**Left for the architect**
+
+- The module boundary is unchanged: `src/todo-api/client.ts` (no environment),
+  `src/todo-api/fetchTransport.ts` (the only `fetch`). What did change is that
+  `src/actions/api.ts` no longer imports from `src/middlewares/`, so the
+  dependency arrows now run one way: actions and middleware both point at
+  `todo-api/`, and nothing points back.
+- Whether request construction and answer interpretation want to be two modules
+  is the open boundary question, stated above.
+- `scripts/acceptance/` now has the same shape as `scripts/typecheck*.mjs`: a
+  decision module with a spec, and a process shell around it. `aps.mjs`,
+  `run-acceptance.mjs`, `install-aps.mjs` and `generate-entrypoints.mjs` are
+  still shells with no spec; none of them is over the CRAP gate, and I did not
+  invent tests for them.
+
+**Open questions for the project manager**
+
+1. The coverage provider, above: measured with, not persisted. If you would
+   rather the repository carry it, it is one devDependency and a script, and
+   task 14 is where I would put it.
+2. `npm test` is 15 files / 108 tests. Read against your second-round note the
+   growth is fine - the new tests are unit tests of tooling, in the `scripts`
+   project, and no acceptance test joined the count - but it is the second task
+   in a row to move that number, so I am naming it rather than assuming.
+
 ### Architect
 
 ### Hardener
@@ -455,3 +639,26 @@ hardener's to fix by editing `features/`.
 tooling's own test and its project-list assertion was written to go red exactly
 when a project is added or dropped, which is what it did. That is the test
 working, not the test being in the way.
+
+## Project manager notes, third round
+
+**On the false kill in the runner adapter.** This is the fifth false green found
+in this project and the first inside the mutation infrastructure, which makes it
+the worst placed of them: an adapter that reports every mutant killed when no
+test ran would not merely miss a defect, it would certify the hardener's entire
+run as sound. The cleaner was right to verify it, right to leave it (changing it
+is an error-handling policy change its brief forbids), and right to tell the
+next role rather than absorbing it.
+
+Routed to a fresh coder now, ahead of the architect, because the hardener runs
+after the architect and its results are worthless until this is fixed.
+
+**On persisting the coverage provider.** Not now, and the cleaner was right to
+install it with `--no-save` and verify `package.json` and the lockfile were
+untouched. Added to task 14 with the acceptance-in-CI question, since both are
+"what does CI install" decisions and belong together.
+
+**On `npm test` moving to 15 files / 108 tests.** Fine, and the right shape. The
+pin was always that acceptance tests stay out of that count, not that the number
+holds. `test:unit` at 13 files / 78 tests and the new protocol tests in the
+`scripts` project is exactly the separation the two projects exist for.

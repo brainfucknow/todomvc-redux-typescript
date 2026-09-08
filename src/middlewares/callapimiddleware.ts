@@ -6,9 +6,6 @@ import {
 } from '../todo-api/client'
 import { sendWithFetch } from '../todo-api/fetchTransport'
 
-/** An API call, dispatched as an action. The action creators in `../actions/api` build them. */
-export type ApiActionMessage = TodoApiCall
-
 /**
  * The seam between Redux and the todo API client. It runs the call the action
  * carries, turns each outcome the client reports into an action, and does the
@@ -19,16 +16,16 @@ export type ApiActionMessage = TodoApiCall
  */
 export const callAPIMiddleware: Middleware =
   (api: MiddlewareAPI) => (next) => (action: unknown) => {
-    const message = action as Partial<ApiActionMessage>
-    if (!message.outcomeNames) {
-      // Normal action: pass it on
-      return next(action)
-    }
+    if (!isApiCall(action)) return next(action)
 
-    return executeCall(message as ApiActionMessage, sendWithFetch, (outcome) =>
+    return executeCall(action, sendWithFetch, (outcome) =>
       dispatchOutcome(api, outcome),
     )
   }
+
+function isApiCall(action: unknown): action is TodoApiCall {
+  return Boolean((action as Partial<TodoApiCall>).outcomeNames)
+}
 
 function dispatchOutcome(api: MiddlewareAPI, outcome: TodoApiOutcome) {
   if (outcome.kind === 'failed') {
