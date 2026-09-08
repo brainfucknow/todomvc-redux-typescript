@@ -7,7 +7,7 @@ The specifier's job on this track is narrower than the full brief: write Gherkin
 
 The hardener is in this chain because the task creates a testable module for the text-input rules.
 
-**Status:** pending
+**Status:** in progress
 
 ## Goal
 
@@ -57,6 +57,29 @@ should say so. And `state = { ... }` and `handleX = () => {}` class fields are
 precisely what you are converting to `useState` and plain functions, so read the
 built output once to confirm the conversion is faithful rather than trusting the
 source diff.
+
+## Inherited from task 10
+
+**A feature file is missing a phrasing, and it is the specifier's to add.**
+`features/todo-state-operations.feature` offers only "marking todo `<id>`
+complete", so acceptance structurally cannot ask for `completed: false`. The
+application has both halves of that operation and the feature describes one.
+Not a hole today, because the flag is pinned unit-side, but a specifier touching
+`features/` should close it.
+
+**A standing rule for `src/actions/api.ts`, earned four times over.** A claim
+about *an* operation is written as a claim about *every* operation. Task 09
+found one of five request specs free; task 10's main hardening run found two
+operation type prefixes free; its pass-2 hardener found three of five wrappers
+able to bypass a seam with every gate green; and its final pin found two
+wrappers held only by a browser test. The five operations are peers, and any
+test naming one of them invites the other four to drift.
+
+**Two calls, not one, when pinning a pass-through.** Task 10's QA proposed
+closing the last of those with one assertion per wrapper. That would not have
+worked: whichever value a single call passes, a mutant freezing to that value
+matches it. Each wrapper is now driven twice with arguments differing in every
+field.
 
 ## Scope
 
