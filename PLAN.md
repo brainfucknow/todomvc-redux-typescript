@@ -67,7 +67,7 @@ Serial. Each task assumes every earlier task is merged.
 | 06 | ESLint 9 flat config and Prettier | Tooling | coder -> QA | **done** |
 | 07 | React 18 to 19 and remove prop-types | Tooling | coder -> QA | **done** |
 | 08 | Dependency hygiene and CI release checks | Tooling | coder -> QA | **done** |
-| 14 | Typecheck `qa/stub/` under checkJs | Tooling | coder -> QA | pending (deferred, see below) |
+| 14 | Typecheck `qa/stub/` under checkJs, and decide acceptance in CI | Tooling | coder -> QA | pending (deferred, see below) |
 | 09 | Extract the todo API client into a testable module | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | in progress |
 | 10 | Replace callAPIMiddleware with RTK slices and thunks | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |
 | 11 | Convert class components to functions and extract their input rules | Structural | specifier -> coder -> cleaner -> architect -> hardener -> QA | pending |
@@ -110,6 +110,11 @@ Task 05's QA measured `checkJs` over `qa/stub/**` at 89 diagnostics across nine
 CommonJS files, almost all implicit-any, and recorded it as its own work rather
 than smuggling it into another task. Task 08 was the last task scheduled to look
 at tooling and did not take it, so it is numbered here instead of being lost.
+
+Task 09 added a second item to it: whether `npm run acceptance` belongs in CI.
+Running it there means installing Go and cloning a third-party repository inside
+the gate, so it needs the APS clone pinned to a commit at minimum. Until then
+every QA role on tasks 10 through 13 runs it as a release check.
 
 It is listed after 13 because it touches only QA-owned test infrastructure and
 blocks nothing. It is genuinely deferred, not dropped: the stub is the one part
