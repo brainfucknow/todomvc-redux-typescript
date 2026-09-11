@@ -1,16 +1,5 @@
-/**
- * The todo backend client: what each user-level operation sends, and what the
- * client makes of the answer. It performs no request itself - a caller hands it
- * a `SendRequest`, which is the only thing in this pipeline that touches the
- * network - and it knows nothing about Redux, the DOM, or the console.
- *
- * `features/todo-api-requests.feature`, `todo-api-outcomes.feature` and
- * `todo-api-refusals.feature` specify everything below, including two things
- * that are current behavior rather than good behavior and are preserved
- * deliberately: the answer's status is never looked at, so a 500 whose body
- * parses succeeds; and a delete announces a content type for a body it never
- * sends.
- */
+// Preserved behavior, specified in features/todo-api-*.feature and not to be tidied:
+// the answer's status is never read, so a 500 whose body parses succeeds.
 
 export type OutcomeNames = [string, string, string]
 
@@ -21,7 +10,6 @@ export interface TodoApiRequest {
   body?: string
 }
 
-/** One user-level operation: a request, three outcome names, and its own fields. */
 export interface TodoApiCall {
   outcomeNames: OutcomeNames
   fields: Record<string, unknown>
@@ -29,7 +17,6 @@ export interface TodoApiCall {
   readsResponseBody: boolean
 }
 
-/** What came back. `body` is present only when the client asked for it. */
 export interface TodoApiAnswer {
   status: number
   body?: string
@@ -40,12 +27,7 @@ export type SendRequest = (
   readResponseBody: boolean,
 ) => Promise<TodoApiAnswer>
 
-/**
- * One report of progress. `fields` are the operation's own; `carried` is what
- * rides along with them - the parsed body on a success, what ended the call on
- * a failure. A success that read nothing still carries a `json` key, set to
- * undefined, because that is the action the reducers have always seen.
- */
+// `carried` holds the parsed body on a success and what ended the call on a failure.
 export interface TodoApiOutcome {
   kind: 'started' | 'succeeded' | 'failed'
   name: string
@@ -143,6 +125,7 @@ export function completeTodoCall(id: number, completed: boolean): TodoApiCall {
   }
 }
 
+// Alone among the calls it reads no body, and announces a content type for a body it never sends.
 export function removeTodoCall(id: number): TodoApiCall {
   return {
     outcomeNames: DELETE_OUTCOMES,
@@ -156,29 +139,14 @@ export function removeTodoCall(id: number): TodoApiCall {
   }
 }
 
-/**
- * Whether an arbitrary value is one of this module's calls. The caller that
- * asks is a dispatcher deciding whether a message is ours; the answer is a
- * question about `TodoApiCall`, which is this module's, so the answer is here
- * rather than in a cast at the boundary.
- *
- * A truthy `outcomeNames` and nothing more, deliberately: whether the names are
- * usable is `executeCall`'s question and a different answer, and widening this
- * one would change what reaches the rest of a dispatch chain. Reading the field
- * off `null` throws, as it did while this predicate lived inline in the
- * middleware.
- */
+// Deliberately loose: whether the names are usable is `executeCall`'s question, and
+// widening this one would change what reaches the rest of a dispatch chain.
 export function isTodoApiCall(message: unknown): message is TodoApiCall {
   return Boolean((message as Partial<TodoApiCall>).outcomeNames)
 }
 
-/**
- * Runs one call: reports that it started, sends it, and reports what became of
- * it. The started outcome is reported before the request is sent, and a call
- * that never completes is reported rather than thrown. The one thing this does
- * throw is a call whose outcome names are unusable, and it throws that before
- * anything is sent or reported.
- */
+// A failed call is reported, not thrown; unusable outcome names are thrown before
+// anything is sent or reported.
 export function executeCall(
   call: TodoApiCall,
   send: SendRequest,
@@ -224,11 +192,7 @@ function outcomeNamesOf(call: TodoApiCall): OutcomeNames {
   return names as OutcomeNames
 }
 
-/**
- * What a reading call makes of the bytes that came back. It throws when they
- * will not parse, and that throw is what turns a read into a failure outcome.
- * A call that reads nothing gets `undefined`, whatever the answer carried.
- */
+// A throw from here is what turns an unparseable body into a failure outcome.
 function parsedBody(call: TodoApiCall, answer: TodoApiAnswer): unknown {
   return call.readsResponseBody ? JSON.parse(answer.body as string) : undefined
 }

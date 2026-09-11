@@ -1,37 +1,21 @@
 /**
- * A property runner, about as small as one can be and still be worth running.
+ * A property runner, small enough to own rather than install: a suite that only
+ * runs after an unrecorded `npm install` is a gate nobody can run.
  *
- * The alternative was a dependency. This project has twice now routed "what
- * does CI install" to a numbered tooling task rather than settling it inside a
- * structural one - the coverage provider went that way, and so did the
- * acceptance pipeline's Go toolchain - and a property suite that only runs
- * after an unrecorded `npm install` would be a gate nobody can run. So: no new
- * dependency, and no `package-lock.json` change.
- *
- * What it does. `forAll` draws values from an `Arbitrary`, runs the property
- * over each, and on the first failure shrinks the counterexample toward the
- * simplest input that still fails, then reports that input, the case number and
- * the seed. Failures are reproducible: the seed is fixed unless $PROPERTY_SEED
- * says otherwise, so a red run is red again on the next run rather than
- * flickering. The cost of that choice is a fixed sample - widen the search by
- * passing a seed or raising `runs`.
- *
- * What it does not do: no stateful-model testing, no arbitrary shrinking of
- * objects it did not build, no coverage-guided anything. Every property in
- * properties/ is a statement about a pure function over simple values, which is
- * what this covers.
+ * The seed is fixed unless $PROPERTY_SEED says otherwise, so a red run is red
+ * again rather than flickering; the cost is a fixed sample, widened by passing a
+ * seed or raising `runs`.
  */
 
 export interface Arbitrary<T> {
   generate(random: () => number): T
-  /** Simpler candidates, most aggressive first. Empty when nothing is simpler. */
+  /** Most aggressive first; empty when nothing is simpler. */
   shrink(value: T): T[]
 }
 
 export interface PropertyOptions {
   runs?: number
   seed?: number
-  /** How many times a failing case may be replaced by a simpler failing one. */
   shrinks?: number
 }
 
@@ -41,11 +25,7 @@ const DEFAULT_SEED = 20260908
 const DEFAULT_RUNS = 200
 const DEFAULT_SHRINKS = 200
 
-/**
- * Runs `property` over generated values and resolves if every case passed.
- * Rejects with the shrunk counterexample, the case number, the seed and the
- * failure the property itself reported.
- */
+/** Rejects with the shrunk counterexample, the case number and the seed. */
 export async function forAll<T>(
   arbitrary: Arbitrary<T>,
   property: Property<T>,
@@ -72,12 +52,7 @@ export async function forAll<T>(
   }
 }
 
-/**
- * The runner's own falsifiability, exposed so properties/tiny-check.property.test.ts
- * can assert that a property known to be false is caught and shrunk. Resolves
- * with the error `forAll` threw, and throws if `forAll` passed - which is the
- * failure this is looking for.
- */
+/** Throws when `forAll` passed, which is the failure this is looking for. */
 export async function failureFrom(run: () => Promise<void>): Promise<Error> {
   try {
     await run()
@@ -197,11 +172,8 @@ export const boolean: Arbitrary<boolean> = {
   shrink: (value) => (value ? [false] : []),
 }
 
-/**
- * Text that a JSON body has to survive: quotes, backslashes, newlines,
- * non-ASCII and astral characters, alongside ordinary words. A generator of
- * `[a-z]+` would pass a string-concatenating implementation.
- */
+// What a JSON body has to survive. A generator of `[a-z]+` would pass a
+// string-concatenating implementation.
 const CHARACTERS = [
   ...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,-_/',
   '"',

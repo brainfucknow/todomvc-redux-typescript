@@ -4,40 +4,24 @@ import { createRequire } from 'node:module'
 import { dirname, relative, resolve } from 'node:path'
 
 /**
- * The whole-program type gate's decisions, kept apart from the process that
- * runs them so a test can drive them. TypeScript 5 can parse every .d.ts the
- * project's dependencies ship, so a diagnostic anywhere - the app's sources,
- * the QA specs, or node_modules - fails this gate. There is no longer a
- * category of error it forgives.
- *
  * Two properties this gate must never lose, both of which it once did, and
- * `typecheck-gate.spec.mjs` holds a test for each way it lost them:
+ * typecheck-gate.spec.mjs holds a test for each way it lost them:
  *
- * It must never pass by accident. A run that reaches the summary line has
- * resolved the compiler, executed it, and read a complete tsc report back.
- * Anything else raises a GateFailure rather than reporting zero errors it never
- * looked for. Three shapes of "the compiler never checked anything" have
- * reached this project's main branch: `npx` failing to resolve `tsc` and its
- * complaint on stderr being counted as a dependency diagnostic; a project-level
- * error such as TS18003, which means tsc ran and compiled no file; and a
- * non-zero exit with nothing to explain it.
+ * It must never pass by accident. Reaching the summary line means the compiler
+ * resolved, ran, and reported completely; anything else raises a GateFailure
+ * rather than reporting zero errors it never looked for.
  *
- * It must not depend on the working directory. tsc searches ancestors for a
- * tsconfig.json and prints paths relative to wherever it was started, so a gate
- * that reads either of those reports something different when it runs from a
- * subdirectory - which is exactly what a CI `working-directory:` key produces.
- * Every project is named by an absolute path, run from the directory that holds
- * it, and reported relative to the repository root.
+ * It must not depend on the working directory, because tsc searches ancestors for
+ * a tsconfig.json and prints paths relative to where it started. Every project is
+ * absolute, run from its own directory, reported from the root - which is what a
+ * CI `working-directory:` key would silently undo.
  *
- * One hole is known and open: a compiler that resolves, runs, exits 0 and
- * prints nothing is indistinguishable from a clean compile from outside the
- * process.
+ * Known hole: a compiler that resolves, runs, exits 0 and prints nothing is a
+ * clean compile from out here.
  */
 
 /**
- * What this gate reads back from a compiler run. `spawnSync` returns more than
- * this and a test's stand-in compiler supplies less, so every field is
- * optional: the gate exists precisely to survive a compiler that produced none
+ * Every field optional: the gate exists to survive a compiler that produced none
  * of them.
  *
  * @typedef {object} CompilerRun
@@ -49,8 +33,7 @@ import { dirname, relative, resolve } from 'node:path'
  */
 
 /**
- * One tsc diagnostic: its first line, rooted at the repository, followed by
- * however many elaboration lines tsc printed under it.
+ * A first line rooted at the repository, plus tsc's elaboration lines under it.
  *
  * @typedef {{ lines: string[] }} Diagnostic
  */
@@ -130,8 +113,7 @@ function readOutcome(project, run) {
 }
 
 /**
- * tsc reports paths relative to its own working directory, which is the
- * project's.
+ * tsc reports paths relative to its own working directory, which is the project's.
  *
  * @param {string} root
  * @param {string} project
@@ -196,9 +178,8 @@ function check(root, project, run) {
 }
 
 /**
- * Runs every project through `runCompiler` and returns what a caller should
- * print and exit with. Raises a GateFailure instead of returning whenever the
- * compiler's behavior leaves the result unknown.
+ * Raises a GateFailure instead of returning whenever the compiler's behavior
+ * leaves the result unknown.
  *
  * @param {object} plan
  * @param {string} plan.root

@@ -7,11 +7,6 @@ import {
   removeTodoOperation,
 } from '../actions/api'
 
-/**
- * What is running, one of the two pieces of state nothing in the UI reads.
- * `features/todo-state-operations.feature` specifies it.
- */
-
 const failed = new Error('Failed to fetch')
 
 describe('the executing reducer', () => {

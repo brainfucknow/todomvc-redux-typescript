@@ -11,25 +11,8 @@ import {
   typecheck,
 } from './typecheck-gate.mjs'
 
-/**
- * This gate has shipped three false greens, each caught by a different role
- * after it had already been merged, and each one reported "0 error(s)" and
- * exited 0 while nothing had been type-checked. There is a test below for
- * every one of them, named for the shape it takes rather than for the tool
- * that produced it, because the next one will arrive through a different tool:
- *
- *   1. The compiler never ran, and its complaint arrived on stderr. `npx`
- *      spawned but could not resolve `tsc`; the gate merged stderr into the
- *      report and counted the complaint as a diagnostic about something other
- *      than the app.
- *   2. The compiler ran and compiled nothing. A project-level diagnostic such
- *      as TS18003 names no file, so a gate that only counts file diagnostics
- *      sees an empty report.
- *   3. The verdict depended on the working directory. tsc prints paths
- *      relative to where it started, and the gate classified those paths by a
- *      `src/` prefix, so from any subdirectory every real error read as
- *      somebody else's problem.
- */
+// Three false greens have shipped from this gate, each reporting "0 error(s)" with
+// nothing type-checked. The tests are named for the shape each took, not the tool.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '..')
@@ -91,7 +74,6 @@ describe('the type gate', () => {
     expect(output).toContain('    Type Z is not assignable to type W.\n')
   })
 
-  // False green 3: the verdict must not depend on where anything was started.
   it('reports each diagnostic relative to the repository root, not to the project', () => {
     const { errorCount, output } = runGate(
       compileTo({
@@ -108,7 +90,6 @@ describe('the type gate', () => {
     expect(output).not.toContain('\ntests/03-add-todo.spec.ts')
   })
 
-  // False green 1: a compiler that never ran must not read as a clean compile.
   it('refuses a verdict when the compiler complained on stderr', () => {
     const npxCouldNotFindTsc = compileTo({
       status: 1,
@@ -146,7 +127,6 @@ describe('the type gate', () => {
     ).toThrow(/killed by SIGKILL/)
   })
 
-  // False green 2: tsc ran, compiled no file, and said so without naming one.
   it('refuses a verdict when tsc reported an error about the project itself', () => {
     expect(() =>
       runGate(
@@ -189,12 +169,8 @@ describe('the compiler the gate resolves', () => {
   })
 })
 
-/**
- * The tests above drive the gate with a stand-in compiler, which can only prove
- * it reads a report the way these tests spell one. These two run the compiler
- * the project actually installed over a throwaway project, so tsc itself
- * decides what the output looks like.
- */
+// The compiler the project installed, over a throwaway project, so tsc itself
+// decides what the output looks like.
 describe('driving the real compiler over a throwaway project', () => {
   /** @type {string[]} */
   const fixtures = []
@@ -205,11 +181,7 @@ describe('driving the real compiler over a throwaway project', () => {
     }
   })
 
-  /**
-   * A project one directory below its root, as qa/ is below this repository.
-   *
-   * @param {string} source
-   */
+  /** @param {string} source */
   function fixtureProject(source) {
     const root = realpathSync(mkdtempSync(resolve(tmpdir(), 'typecheck-gate-')))
     fixtures.push(root)
@@ -263,17 +235,9 @@ describe('driving the real compiler over a throwaway project', () => {
   )
 })
 
-/**
- * And this is the gate as `npm run typecheck` runs it: the real script, the
- * real projects, from two working directories. CI runs it from the repository
- * root today; a `working-directory:` key would move it, and false green 3 was
- * exactly that move going unnoticed.
- *
- * The expected line names all seven projects, so dropping one - this file's own
- * tsconfig.tools.json included, and src/todo-input/tsconfig.json, which is the
- * only check anywhere that the input rules name no DOM type - turns this test
- * red rather than passing quietly with less checked.
- */
+// The real script over the real projects, from two working directories - the move a
+// CI `working-directory:` key would make. Naming all seven projects in the expected
+// line is what turns dropping one red rather than quietly checking less.
 describe('the gate as a command', () => {
   /** @param {string} cwd */
   const run = (cwd) =>

@@ -2,28 +2,10 @@ import { describe, expect, it } from 'vitest'
 import * as actions from '../src/actions'
 import { elementOf, forAll, type Arbitrary } from './tiny-check'
 
-/**
- * The one thing `src/actions/local.ts`'s wrappers are load-bearing for, stated
- * where it can fail.
- *
- * `MainSection.tsx` writes `onClick={actions.completeAllTodos}` and hands
- * `actions.clearCompleted` to `Footer`'s `onClearCompleted`, both through
- * `bindActionCreators`. React calls a click handler with the DOM event, and a
- * `createSlice` action creator called with one argument puts that argument in
- * `action.payload` - so binding the slice's creator directly would put a
- * SyntheticEvent into the store: not serializable, warned about by Redux
- * Toolkit's development middleware, and nothing in the app would go red.
- *
- * The wrappers take no arguments, so the event is dropped at the boundary
- * rather than travelling inward. That held only as long as everyone remembered
- * why; this says it instead. Replace either wrapper with the slice's own
- * creator and this file fails.
- *
- * Everything else about these two actions is specified in
- * features/todo-state-edits.feature 7 and 8.
- */
+// The components bind these two bare, and React calls a click handler with the DOM
+// event, so a slice creator bound directly would put a SyntheticEvent in the store
+// with nothing going red. The wrappers take no argument; this is what says so.
 
-/** What a UI event handler gets handed, and a few things it never gets. */
 const anyArgument: Arbitrary<unknown> = elementOf<unknown>([
   {
     type: 'click',
@@ -40,7 +22,6 @@ const anyArgument: Arbitrary<unknown> = elementOf<unknown>([
   undefined,
 ])
 
-/** The two the components bind bare, by the names the components use. */
 const bound: [string, () => unknown][] = [
   ['completeAllTodos', actions.completeAllTodos],
   ['clearCompleted', actions.clearCompleted],

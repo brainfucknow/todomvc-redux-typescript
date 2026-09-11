@@ -16,18 +16,8 @@ export interface TodoTextInputProps {
   newTodo?: boolean
 }
 
-/**
- * The text field, and nothing but the field: it renders an input, turns the
- * events React hands it into questions for `src/todo-input/field.ts`, and does
- * what the answers say. Every rule about trimming, clearing and which key acts
- * is there rather than here.
- *
- * The field is seeded once, from the text it is opened on, and never re-reads
- * that prop - `useState(openingText(text))` keeps the class's behavior, where
- * a later `text` prop was ignored. `memo` would be theatre here: `onSave` is a
- * fresh closure on every render of both callers, so the `PureComponent` this
- * replaced compared props that always differed and never skipped a render.
- */
+// Seeded once: a later `text` prop is ignored, as it was before. No `memo`, unlike
+// `TodoItem` - `onSave` is a fresh closure on every render, so nothing would be skipped.
 const TodoTextInput: React.FunctionComponent<TodoTextInputProps> = ({
   onSave,
   text,
@@ -49,9 +39,7 @@ const TodoTextInput: React.FunctionComponent<TodoTextInputProps> = ({
       className={classnames({ edit: editing, 'new-todo': newTodo })}
       type="text"
       placeholder={placeholder}
-      // Dropping autoFocus moves where the caret lands when the input
-      // appears, both for the new-todo field and for an item opened for
-      // editing. That is a behavior change, which task 06 puts out of scope.
+      // Dropping autoFocus moves where the caret lands: a behavior change.
       // eslint-disable-next-line jsx-a11y/no-autofocus
       autoFocus={true}
       value={held}

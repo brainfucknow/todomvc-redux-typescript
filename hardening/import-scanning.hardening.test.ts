@@ -1,24 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { importTargetsOf } from '../scripts/architecture/imports.mjs'
 
-/**
- * Eleven of 48 mutants survived `scripts/architecture/imports.mjs`, and every
- * one of them was a widened regex: a character class opened up, a `\s*` that
- * stopped tolerating whitespace, an anchor removed. The spec drove each pattern
- * with one well-formed example, so nothing pinned where a pattern stops.
- *
- * That matters more here than the mutation score suggests. This module builds
- * the graph every boundary rule is checked against, and the two directions it
- * can be wrong in are not symmetrical: a pattern that reads too little drops an
- * edge and lets a real violation through silently, while one that reads too
- * much invents an edge and fails a rule nobody broke. The architect met the
- * second when a `from` inside a test's prose was read as an import. These are
- * the first.
- *
- * Module paths below are deliberately under `x/`, not `src/`: this file's own
- * string literals are read as imports when the boundary checker scans
- * `hardening/`, which is the over-reading it exists to catch.
- */
+// Where each pattern stops. A pattern that reads too little drops an edge and lets a
+// real violation through silently; the spec drove each one with a well-formed example
+// only.
+//
+// Module paths below are under `x/`, not `src/`, because this file's own string
+// literals are read as imports when the boundary checker scans `hardening/`.
 
 describe('where a side-effect import starts and stops', () => {
   it('finds one after a statement on the same line, and one with no space at all', () => {

@@ -19,24 +19,8 @@ import {
   type Arbitrary,
 } from './tiny-check'
 
-/**
- * Properties of src/reducers/todos.ts: what holds of the list for every list,
- * where features/todo-state-edits.feature and todos.spec.ts say what holds for
- * particular ones.
- *
- * Three of these are the reason this file exists rather than more rows in a
- * table. The id rule is a statement about every list, not about the three the
- * feature names: an implementation that counts instead of maxing passes any
- * table whose ids happen to be dense. The toggle-all rule is a statement about
- * every mixture of flags. And the conservation properties - order kept, ids
- * kept, one todo changed and the rest not - are what a table cannot say at all,
- * because it can only show the answer for the rows it lists.
- *
- * The local half of this reducer has no caller in the app; `src/actions/index.ts`
- * maps those names to the backend operations. It is specified behavior, it is
- * where the only id allocation in this codebase lives, and these properties are
- * the strongest statement the project makes about it.
- */
+// The id rule is what a dense table cannot state: an implementation that counts
+// instead of maxing passes every example whose ids happen to be dense.
 
 const ID = integer(0, 12)
 const TEXT = text(8)
@@ -44,11 +28,7 @@ const ROWS = arrayOf(tuple(ID, TEXT, boolean), 6)
 
 type Row = [number, string, boolean]
 
-/**
- * A well-formed list: ids unique, because that is the invariant the reducer
- * maintains and not one it is asked to repair. First occurrence of an id wins,
- * so shrinking a row away shrinks the list.
- */
+// Ids unique: the invariant the reducer maintains, not one it is asked to repair.
 const listOf = (rows: Row[]): Todo[] => {
   const byId = new Map<number, Todo>()
   for (const [id, body, completed] of rows) {
@@ -61,11 +41,9 @@ const idsOf = (list: Todo[]) => list.map((todo) => todo.id)
 const flagsOf = (list: Todo[]) => list.map((todo) => todo.completed)
 const textsOf = (list: Todo[]) => list.map((todo) => todo.text)
 
-/** One id the list does not hold, for the "names a todo it does not have" cases. */
 const absentFrom = (list: Todo[]) =>
   list.reduce((highest, todo) => Math.max(highest, todo.id), -1) + 1
 
-/** Every change the reducer answers, as one drawable value. */
 interface Change {
   name: string
   apply: (list: Todo[]) => Todo[]
@@ -73,12 +51,8 @@ interface Change {
 
 const failed = new Error('Failed to fetch')
 
-/**
- * The changes the app decides itself, and the changes a backend answer brings.
- * They are drawn separately because they keep different invariants: the local
- * half allocates ids and never collides, and the settled half writes down what
- * the backend said and trusts it.
- */
+// Drawn apart from the settled changes because they keep different invariants: the
+// local half allocates ids, the settled half trusts what the backend said.
 const localChanges = (id: number, body: string, flag: boolean): Change[] => [
   { name: `add ${body}`, apply: (l) => todos(l, local.addTodo(body)) },
   { name: `delete ${id}`, apply: (l) => todos(l, local.deleteTodo(id)) },

@@ -7,18 +7,9 @@ import {
   removeTodoCall,
 } from '../src/todo-api/client'
 
-/**
- * `src/todo-api/client.ts` survived one mutant out of 91: flipping
- * `readsResponseBody` to false in `completeTodoCall`. Four of the five request
- * specs in client.spec.ts assert that field and the fifth does not, so the one
- * operation whose answer nobody had pinned was the one where dropping the read
- * cost nothing.
- *
- * Asserting it once per operation rather than only for the gap keeps the next
- * operation from arriving without one: whether an answer is read is the thing
- * that decides whether a body is parsed, and delete is the only call in the
- * five that says no.
- */
+// `readsResponseBody` decides whether a body is parsed at all, and delete is the only
+// one of the five that says no. Said once per operation, so the next one cannot
+// arrive unpinned.
 describe('whether each operation reads the answer it gets', () => {
   it('reads it for every call that has something to learn from it', () => {
     expect(loadTodosCall().readsResponseBody).toBe(true)

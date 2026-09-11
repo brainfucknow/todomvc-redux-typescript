@@ -1,21 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { cyclesOf, violationsOf } from '../scripts/architecture/boundaries.mjs'
 
-/**
- * The deciding half of `scripts/architecture/boundaries.mjs`. Its spec drives
- * every rule shape with one glob and one target, and every graph it walks is
- * either a single clean loop or no loop at all, so the parts that only matter
- * when a rule has two patterns or a cycle has a way in survived mutation.
- *
- * Each test below is one of those: a rule whose second pattern is the one that
- * matches, a loop reached from outside it, a module that imports itself, and
- * two paths whose shapes the extension stripper has to tell apart.
- */
+// What boundaries.spec.mjs cannot reach with one glob, one target and a clean loop:
+// a rule whose second pattern matches, a loop reached from outside, a module that
+// imports itself, two path shapes the extension stripper must tell apart.
 
-/**
- * @param path a repository-relative module path, with its extension
- * @param targets what it imports, per imports.mjs
- */
 const module = (path: string, ...targets: string[]) => ({ path, targets })
 
 describe('a rule with more than one pattern in a list', () => {

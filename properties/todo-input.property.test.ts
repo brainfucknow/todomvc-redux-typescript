@@ -18,37 +18,10 @@ import {
   type Arbitrary,
 } from './tiny-check'
 
-/**
- * Properties of `src/todo-input/`, where features/todo-input-commits.feature,
- * features/todo-input-effects.feature and the two spec files say what holds for
- * particular texts, particular keys and particular ids.
- *
- * These rules are total functions over a small space - two fields, any string,
- * any key - which is the shape a property covers and a table cannot. Three of
- * them are here for reasons a row could not reach:
- *
- * - **The trim asymmetry as an equation rather than two examples.** Enter
- *   commits the surrounding whitespace away and losing focus does not, so the
- *   two gestures agree on exactly the texts that had none and differ on every
- *   other. A table shows that for the texts it lists; this says it for all of
- *   them, and goes red against a field that trims on blur - which is the
- *   plausible wrong implementation this task's done criteria name.
- * - **The negative universal about keys.** "No key but Enter does anything" is
- *   a claim about every key there is, and every table of keys is a claim about
- *   the keys someone thought of. Here it is checked against near-misses chosen
- *   to break a loose reading - `enter`, `ENTER`, `Return`, `NumpadEnter`,
- *   `\n`, `13` - and then against generated text as well.
- * - **One question, two answers.** `Header` refuses an empty commit and
- *   `TodoItem` deletes on one, and both read the same `isEmpty`. The property
- *   is the biconditional: for every text, the new-todo field refuses it exactly
- *   when the edit field would delete on it. Trim in one of the two callers and
- *   that equivalence breaks even though every example in both spec files still
- *   passes.
- *
- * Nothing here asks for a kinder rule. The asymmetry, the delete-on-empty and
- * "emptiness is length, not blankness" are current behavior that this plan
- * preserves; the properties pin them so that a fix has to move them on purpose.
- */
+// Three claims no table reaches: the trim asymmetry as an equation over every text,
+// the negative universal that no key but Enter acts, and the biconditional that the
+// new-todo field refuses exactly the texts the edit field deletes on. All three pin
+// preserved behavior, so a fix has to move them on purpose.
 
 const FIELDS: readonly FieldKind[] = ['new-todo', 'edit']
 const FIELD = elementOf(FIELDS)
@@ -57,7 +30,6 @@ const ID = integer(0, 12)
 
 const COMMIT_KEY = 'Enter'
 
-/** Keys chosen to fail a reading looser than an exact match on `Enter`. */
 const KEY = elementOf([
   COMMIT_KEY,
   'enter',
@@ -78,14 +50,10 @@ const KEY = elementOf([
   '',
 ])
 
-/** Every character `String.prototype.trim` removes, and nothing else. */
 const BLANK_CHARACTERS = ' \t\n\r\v\f   ﻿'
 
-/**
- * A non-empty run of whitespace: the text that Enter turns into nothing and
- * losing focus hands on whole. It is where the two commit paths disagree most,
- * and where "emptiness is length" is visible.
- */
+// Where the two commit paths disagree most: Enter turns it into nothing, losing
+// focus hands it on whole.
 const BLANK: Arbitrary<string> = {
   generate: (random) => {
     const length = 1 + Math.floor(random() * 4)
@@ -99,7 +67,6 @@ const BLANK: Arbitrary<string> = {
     value.length > 1 ? [' ', value.slice(1), value.slice(0, -1)] : [],
 }
 
-/** What Enter commits from a field holding this text, for a field that acts. */
 const onEnter = (field: FieldKind, held: string) =>
   commitOnKey(field, held, COMMIT_KEY)
 
@@ -260,13 +227,8 @@ describe('what a committed text does', () => {
   })
 })
 
-/**
- * The two modules composed, because the defect this plan preserves lives in the
- * join rather than in either half. `todo-input-commits` stops at the text a
- * field hands on and `todo-input-effects` starts there, so no feature file can
- * state this: same field, same characters, two gestures, and one of them
- * destroys the todo while the other saves a row whose label renders blank.
- */
+// The two modules composed: the preserved defect lives in the join, where one
+// gesture destroys the todo and the other saves a row whose label renders blank.
 describe('an edit field holding nothing but whitespace', () => {
   it('deletes the todo when Enter commits it and edits it to those spaces when focus moves away', async () => {
     await forAll(tuple(ID, BLANK), ([id, held]) => {

@@ -5,18 +5,13 @@ import { ROOT } from './aps.mjs'
 
 /**
  * `acceptance-entrypoint-generator <json-ir> <generated-test-output>`, this
- * project's implementation of the APS generator contract
- * (acceptance-generator.md). It is the project-specific half of the pipeline:
- * APS supplies the parser, this supplies the entry points.
+ * project's half of the APS generator contract (acceptance-generator.md).
  *
- * What it writes is deliberately thin - one Vitest file per feature that loads
- * JSON IR and hands it to `acceptance/run-feature.ts`, the one module that
- * knows both the runtime and this project's step vocabulary. It contains no step
- * behavior and no application binding, so a mutated IR runs through the same
- * generated file without regenerating anything.
+ * What it writes holds no step behavior and no application binding, so a mutated IR
+ * runs through the same generated file without regenerating anything.
  *
- * The IR does not record which feature it came from, and the metadata contract
- * needs that path, so it is derived as features/<ir-basename>.feature.
+ * The IR does not record which feature it came from, so the path the metadata
+ * contract needs is derived as features/<ir-basename>.feature;
  * $ACCEPTANCE_FEATURE_PATH overrides for a layout that is not one-to-one.
  *
  * Exit codes: 0 generated, 1 input/output error, 2 wrong usage.
@@ -81,9 +76,8 @@ function generate(irPath, outputDir) {
 }
 
 /**
- * The generated entry point. It embeds the IR path it was generated from and
- * lets $ACCEPTANCE_IR replace it, which is how a mutation run points the same
- * generated tests at a mutated IR.
+ * $ACCEPTANCE_IR replaces the embedded IR path, which is how a mutation run points
+ * the same generated tests at a mutated IR.
  *
  * @param {string} featurePath
  * @param {string} irPath
@@ -123,8 +117,7 @@ function readIr(irPath) {
 }
 
 /**
- * The strict mapping from acceptance-generator.md: lowercase, every run of
- * non-alphanumerics to one hyphen, trimmed.
+ * The strict mapping from acceptance-generator.md.
  *
  * @param {string} featurePath
  * @returns {string}

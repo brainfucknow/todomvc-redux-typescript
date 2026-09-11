@@ -1,13 +1,7 @@
 import { commitOnBlur, commitOnKey, openingText, type FieldKind } from './field'
 
-/**
- * The two fields are peers, so every claim that holds for both is written over
- * both. A claim that names one field is a claim the other is free to break.
- *
- * The texts here carry surrounding spaces on purpose: trimming is the one thing
- * the two commit paths disagree about, and a test whose texts are already
- * trimmed cannot tell them apart.
- */
+// The texts carry surrounding spaces on purpose: already-trimmed texts cannot tell
+// the two commit paths apart.
 const FIELDS: FieldKind[] = ['new-todo', 'edit']
 
 describe('todo-input/field', () => {

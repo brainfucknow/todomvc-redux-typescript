@@ -1,12 +1,6 @@
 {
-  // The acceptance pipeline's own TypeScript: the runtime that expands parser
-  // JSON IR, and the step handlers that connect step text to src/. It is a
-  // fourth project rather than part of "src" for the same reason qa/ is its
-  // own: it needs Node's globals and the app must never see them.
-  //
-  // The generated entry points under build/acceptance/ are not here. They are
-  // derived files that Vite compiles at run time, and nothing hand-written
-  // imports them.
+  // The generated entry points under build/acceptance/ are deliberately absent:
+  // derived files that Vite compiles at run time, which nothing hand-written imports.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],

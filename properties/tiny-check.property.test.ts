@@ -10,16 +10,8 @@ import {
   tuple,
 } from './tiny-check'
 
-/**
- * The runner's own falsifiability. A property suite that cannot fail is the
- * most expensive kind of green: every property in
- * todo-api-client.property.test.ts passes, and if `forAll` never reported a
- * counterexample they would all pass against any implementation at all.
- *
- * So: known-false properties, asserted to fail; known-true ones, asserted to
- * pass; and the shrinker asserted to arrive at the smallest failing input,
- * because a counterexample nobody can read is a failure report in name only.
- */
+// If `forAll` never reported a counterexample, every property in this directory
+// would pass against any implementation at all.
 
 describe('running a property', () => {
   it('passes a property that holds for every generated value', async () => {

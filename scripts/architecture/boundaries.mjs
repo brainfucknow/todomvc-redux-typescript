@@ -1,19 +1,9 @@
 /**
- * How a boundary rule is decided.
+ * Deciding only: it reads no files and knows no paths of its own. `rules.mjs` holds
+ * the rules, and the spec supplies the repository.
  *
- * Two kinds of statement are checked here, and neither is a style rule:
- *
- *   - an allowed- or forbidden-dependency list per group of modules, which is
- *     how a layer says what it is allowed to know about;
- *   - no import cycles anywhere, including cycles made only of type imports,
- *     which erase at run time but still mean two modules each define the other.
- *
- * Deciding only: this module reads no files and knows no paths of its own -
- * `rules.mjs` holds the rules this repository is checked against, and the spec
- * supplies the repository. The two were one file until a mutation scan showed
- * they were two jobs: the deciding half killed 95 of its mutants and the rule
- * data survived nearly all of its own, because data is not falsified by the
- * same tests that falsify an algorithm.
+ * A cycle counts even when it is made only of type imports: those erase at run
+ * time, but two modules still define each other.
  */
 
 /**
@@ -55,8 +45,7 @@ export function violationsOf(modules, rules) {
 }
 
 /**
- * Every import cycle among the given modules, each reported once as the loop
- * itself: the modules in the order they call each other, first repeated last.
+ * Each cycle once, as the loop itself: the modules in order, first repeated last.
  *
  * @param {Module[]} modules
  * @returns {string[][]}
@@ -75,8 +64,7 @@ export function cyclesOf(modules) {
 }
 
 /**
- * One entry per loop. A diamond reaches the same loop by two routes and would
- * otherwise report it twice.
+ * A diamond reaches the same loop by two routes and would otherwise report it twice.
  *
  * @param {string[][]} cycles
  * @returns {string[][]}
@@ -113,8 +101,8 @@ function walk(path, stack, edges, settled, found) {
 }
 
 /**
- * The import graph restricted to modules in the set, with a target matched to
- * the module it names - `acceptance/steps` to `acceptance/steps/index.ts`.
+ * Restricted to modules in the set, with a target matched to the module it names -
+ * `acceptance/steps` to `acceptance/steps/index.ts`.
  *
  * @param {Module[]} modules
  * @returns {Map<string, string[]>}
@@ -166,8 +154,7 @@ function forbids(rule, target) {
 }
 
 /**
- * A path glob with the two wildcards a dependency list needs: `*` for one
- * segment, `**` for any number.
+ * `*` matches one segment, `**` any number.
  *
  * @param {string} pattern
  * @param {string} value

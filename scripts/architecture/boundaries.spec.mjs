@@ -6,26 +6,8 @@ import { importTargetsOf } from './imports.mjs'
 import { cyclesOf, violationsOf } from './boundaries.mjs'
 import { BOUNDARY_RULES } from './rules.mjs'
 
-/**
- * Two halves, and both are needed.
- *
- * The first half proves the checker can fail: every rule shape is driven with
- * a module that breaks it and a module that does not, because a boundary check
- * that cannot say no is a comment with a test runner attached.
- *
- * The second half runs the real rules over the real repository. That is what
- * turns four handoff notes into a gate: `npm test` runs it, and CI runs
- * `npm test`, so a later task that imports fetch into the policy module or
- * pulls test-support into shipped code goes red here rather than in review.
- *
- * What it still cannot prove is that any *particular* rule in rules.mjs would
- * catch anything, because a repository that obeys every rule says the same
- * thing as a repository with no rules at all. `hardening/rules.hardening.test.ts`
- * is the half that breaks each rule on purpose.
- *
- * qa/ is deliberately outside the scan. QA owns it, and a dependency rule
- * written here would constrain a role that never reads this file.
- */
+// qa/ is deliberately outside the scan: QA owns it, and a dependency rule written
+// here would constrain a role that never reads this file.
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const SCANNED = ['src', 'acceptance', 'properties', 'hardening', 'scripts']
@@ -235,10 +217,7 @@ describe('finding import cycles', () => {
   })
 })
 
-/**
- * The repository itself. Read once so a failure names every violation at once
- * rather than one per run.
- */
+// Read once, so a failure names every violation rather than one per run.
 const repository = SCANNED.flatMap((directory) =>
   sourcesUnder(join(ROOT, directory)).map((file) => {
     const path = relative(ROOT, file).split(sep).join('/')
@@ -254,17 +233,9 @@ describe('this repository', () => {
     )
   })
 
-  /**
-   * The rules are only as good as the graph they are checked against, and the
-   * graph comes out of a regex. These are the edges of the modules task 09
-   * drew a boundary around, written out so an over-reading pattern - one that
-   * mistook prose for an import - fails here rather than passing everywhere.
-   *
-   * Task 11's two are here for a second reason as well. `src/todo-input/` is
-   * allowed nothing at all, and an allow list of nothing is satisfied just as
-   * well by a module the scanner never found as by one that imports nothing.
-   * Naming the two files, and the component that asks them, says which it is.
-   */
+  // The graph comes out of a regex, so the edges are written out: an over-reading
+  // pattern fails here rather than passing everywhere. It also tells an empty allow
+  // list satisfied by a module that imports nothing from one the scanner never found.
   it('has the import edges it looks like it has', () => {
     /** @param {string} path */
     const targetsOf = (path) =>

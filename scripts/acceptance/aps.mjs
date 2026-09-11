@@ -3,20 +3,13 @@ import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Where the Acceptance-Pipeline-Specification tools are.
- *
- * APS supplies `gherkin-parser`, `gherkin-ir-dry-checker` and
- * `gherkin-mutator`; this project never reimplements them. It also never
- * vendors their binaries, which are platform-specific, so this module only
- * finds them - `scripts/acceptance/install-aps.mjs` is what puts them where it
- * can look.
- *
+ * Finds the APS tools; `install-aps.mjs` is what puts them somewhere findable.
  * Search order, first hit wins:
  *
  *   1. $GHERKIN_PARSER (per tool: the name upper-cased, hyphens to underscores)
  *   2. $APS_BIN_DIR/<tool>
- *   3. <repo>/.aps/bin/<tool>, which is where install-aps.mjs builds them
- *   4. <tool> on PATH, which is where a Babashka or packaged install puts them
+ *   3. <repo>/.aps/bin/<tool>
+ *   4. <tool> on PATH
  */
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')

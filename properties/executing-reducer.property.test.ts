@@ -18,19 +18,9 @@ import {
   type Arbitrary,
 } from './tiny-check'
 
-/**
- * Properties of src/reducers/executing.ts: what holds of "what is running" for
- * every run of operations, where features/todo-state-operations.feature says
- * what holds for the two or three it names.
- *
- * The one the feature cannot state is the last: start any number of operations,
- * settle every one of them, and nothing is left in flight. A table can start
- * two and settle two; this says it of every sequence, including one that starts
- * the same operation twice and one that settles an operation nobody started.
- *
- * Nothing in the UI reads this state. It is specified, so it is stated here as
- * strongly as anything the user can see.
- */
+// The last property is the one a table cannot state: start any number of
+// operations, settle every one, and nothing is left in flight - including a
+// sequence that starts one twice, or settles one nobody started.
 
 const ID = integer(0, 6)
 const TEXT = text(6)
@@ -47,18 +37,11 @@ interface Started {
   completed: boolean
 }
 
-/** The three operations that report against one todo rather than the whole list. */
 const UPDATES: OperationName[] = ['edit', 'mark', 'remove']
 
 const isUpdate = (started: Started) => UPDATES.includes(started.operation)
 
-/**
- * The three actions one started operation can produce, and the one place that
- * knows how each of the five is addressed: a load takes no argument, an add
- * takes the text, an update takes the id and whatever it is changing. Pending
- * and settled were two switches over the same five operations until the
- * hardener's DRY pass; they are one because they answer one question.
- */
+// The one place that knows how each of the five operations is addressed.
 const actionsOf = ({ operation, id, text: body, completed }: Started) => {
   const answer = { id, text: body, completed }
   switch (operation) {

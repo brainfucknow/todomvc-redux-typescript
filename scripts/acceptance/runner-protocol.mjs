@@ -1,35 +1,25 @@
 /**
- * What the acceptance runner adapter decides, kept apart from the process that
- * runs the tests so a test can drive the decisions - the same split as
- * `typecheck.mjs` and the gate it imports. Reading a job line, classifying a
- * finished run, and reading an APS duration are decisions; spawning Vitest is
- * not, and stays in `runner-worker.mjs`.
- *
- * The protocol is APS mutator-spec.md, "Runner Adapter":
+ * What the acceptance runner adapter decides, apart from the process that spawns
+ * Vitest, so a test can drive the decisions. The protocol is APS mutator-spec.md,
+ * "Runner Adapter":
  *
  *   in   {"id","feature_json","generated_dir","work_dir","timeout"}
  *   out  {"id","outcome","output","error","duration"}
  *
- * The mutator reads the outcome, not the exit code: `test_failure` is what
- * kills a mutation, so mistaking one outcome for another is how a mutation run
- * reports a score it never measured. Vitest's exit code cannot answer that on
- * its own - it exits 1 both for a failing test and for finding no test file to
- * run - so the run's own report of what it ran is read alongside it, and a
- * kill requires a test that ran and failed.
+ * The mutator reads the outcome, not the exit code, and Vitest exits 1 both for a
+ * failing test and for finding no test to run - so a kill requires the run's own
+ * report of a test that ran and failed.
  */
 
 /** @typedef {'test_success' | 'test_failure' | 'infrastructure_error'} Outcome */
 
-/** The tests ran and passed. */
 export const TEST_SUCCESS = 'test_success'
-/** The tests ran and failed, which kills the mutation. */
+/** Kills the mutation. */
 export const TEST_FAILURE = 'test_failure'
-/** They could not be run, or their result could not be read. */
+/** The tests could not be run, or their result could not be read. */
 export const INFRASTRUCTURE_ERROR = 'infrastructure_error'
 
 /**
- * One job to run, as the worker needs it.
- *
  * @typedef {object} Job
  * @property {string} id
  * @property {string} featureJson the IR the generated tests are to run against
@@ -38,8 +28,7 @@ export const INFRASTRUCTURE_ERROR = 'infrastructure_error'
  */
 
 /**
- * A run that finished, or failed to. `spawnSync` returns more than this; a
- * test's stand-in supplies less.
+ * A run that finished, or failed to.
  *
  * @typedef {object} FinishedRun
  * @property {number | null} [status]
@@ -48,8 +37,7 @@ export const INFRASTRUCTURE_ERROR = 'infrastructure_error'
  */
 
 /**
- * What a run reported having run, from Vitest's JSON reporter. A mutation is
- * killed by a test, so how many there were is part of what the run means.
+ * What Vitest's JSON reporter said the run ran.
  *
  * @typedef {object} RunReport
  * @property {number} ran tests that executed
@@ -63,8 +51,7 @@ export const INFRASTRUCTURE_ERROR = 'infrastructure_error'
  */
 
 /**
- * One line of the mutator's input. A line that is not readable JSON, or that
- * names no IR to run against, is refused rather than run.
+ * A line that is not readable JSON, or names no IR, is refused rather than run.
  *
  * @param {string} line
  * @returns {JobRead | JobRefused}
@@ -94,9 +81,8 @@ export function readJob(line) {
 }
 
 /**
- * What Vitest's JSON reporter wrote, as counts. A report missing any of the
- * three counts is no report: reading a run needs all of them, and guessing at
- * a missing one is how a run that never happened reads as a result.
+ * A report missing any of the three counts is no report: guessing at one is how a
+ * run that never happened reads as a result.
  *
  * @param {string} json
  * @returns {RunReport | undefined}
@@ -120,11 +106,9 @@ export function readRunReport(json) {
 }
 
 /**
- * What a finished run means. A run is a test result only when it says which
- * tests it ran: a run that matched no test file, or matched files that
- * declared no test, exits 1 exactly as a failing test run does, and calling
- * that a `test_failure` would report every mutant killed while executing
- * nothing.
+ * A run is a test result only when it says which tests it ran: matching no test
+ * file exits 1 exactly as a failing test does, and calling that a `test_failure`
+ * would report every mutant killed while executing nothing.
  *
  * @param {FinishedRun} run
  * @param {RunReport | undefined} report what the run said it ran
@@ -166,8 +150,8 @@ function infrastructure(error) {
 }
 
 /**
- * One response line's fields. Everything but the id and the outcome has a
- * default, so a refusal names only what it knows.
+ * Everything but the id and the outcome defaults, so a refusal names only what it
+ * knows.
  *
  * @param {object} fields
  * @param {string} fields.id
@@ -188,11 +172,8 @@ export function response({
 }
 
 /**
- * Milliseconds per unit, and the unit a bare number means. The regex above
- * admits only these three suffixes or none, so there is nothing else to fall
- * back to - a second default here would be unreachable, and an unreachable
- * default hides which unit a bare number is read as: with one in place,
- * defaulting to `s` and defaulting to nothing produce the same answer.
+ * No default entry: the pattern below admits only these suffixes or none, so an
+ * unreachable fallback would hide which unit a bare number is read as.
  *
  * @type {Record<string, number>}
  */

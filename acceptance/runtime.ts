@@ -1,19 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, test } from 'vitest'
 
-/**
- * The acceptance runtime: it expands parser JSON IR into scenario executions
- * and routes each step to a project step handler. It never reads a `.feature`
- * file - the IR is the only input - and it holds no knowledge of what any step
- * means, which is `acceptance/steps/`.
- *
- * It does not know which vocabulary it will run, either. `runFeature` is given
- * one, and `acceptance/run-feature.ts` is the single place that picks this
- * project's - which is what keeps the engine from importing the steps that
- * import the engine.
- *
- * The IR shape is APS parser-spec.md.
- */
+// Expands APS parser JSON IR (parser-spec.md) into executions. It knows no step
+// vocabulary: `runFeature` is handed one, which is what keeps it out of an import
+// cycle with `acceptance/steps/`.
 
 export interface IrStep {
   keyword: string
@@ -33,17 +23,12 @@ export interface IrFeature {
   scenarios: IrScenario[]
 }
 
-/** What a step handler is given: the execution's world, and its example row. */
 export interface StepContext<W> {
   world: W
   example: Readonly<Record<string, string>>
-  /** Substitutes example values into text. Fails on a placeholder the row has no value for. */
+  /** Fails on a placeholder the row has no value for. */
   expand(text: string): string
-  /**
-   * Substitutes example values into a JSON template. A placeholder between two
-   * quotes is escaped as a JSON string body; anywhere else the value is written
-   * as the literal it stands for, so `{"id":<id>}` yields a number.
-   */
+  /** A placeholder between two quotes is escaped as a JSON string body; elsewhere it is written as a literal, so `{"id":<id>}` yields a number. */
   expandJson(template: string): string
 }
 
@@ -57,7 +42,6 @@ export interface StepDefinition<W> {
   handle: StepHandler<W>
 }
 
-/** One project vocabulary: how to start an execution, and what its steps mean. */
 export interface StepSuite<W> {
   createWorld: () => W
   definitions: StepDefinition<W>[]

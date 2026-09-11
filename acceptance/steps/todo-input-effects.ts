@@ -9,21 +9,9 @@ import {
 import { text, wholeNumber } from './cells'
 import type { StepDefinition, StepSuite } from '../runtime'
 
-/**
- * The step vocabulary of features/todo-input-effects.feature, connected to
- * `src/todo-input/effects.ts`. No React: the module answers these questions
- * with no component in the way.
- *
- * This file plays the part `Header` and `TodoItem` play, each of which commits
- * a text and performs the answer. It decides nothing itself, and in particular
- * it does not decide that an empty text means different things to the two
- * callers - that is the module's answer, which is why both callers ask it.
- *
- * It starts where `./todo-input-commits` stops, at a text already handed on.
- * The two sentences for that one event are deliberately different - "the text T
- * is committed" there, "the text T is committed from the new-todo field" here -
- * so that no pattern matches both.
- */
+// Plays the part `Header` and `TodoItem` play, against `src/todo-input/effects.ts`.
+// Its sentences name the field - "committed from the new-todo field" - where
+// `./todo-input-commits` does not, so that no pattern matches a step of both.
 
 export interface TodoInputEffectsWorld {
   added?: NewTodoCommit

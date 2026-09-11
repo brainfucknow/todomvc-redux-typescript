@@ -10,10 +10,10 @@ A TodoMVC client written in TypeScript with React and Redux, built and served by
 | UI | React 19 with `createRoot` and `StrictMode` |
 | State | Redux 5 with `@reduxjs/toolkit`: `createSlice` reducers and `createAsyncThunk` operations behind `configureStore`; `connect()` containers |
 | Data | `src/todo-api/` builds the requests and reads the answers; `fetch` lives in one adapter, and the store is handed that adapter so the thunks run the calls against `api/todos/` |
-| Types | TypeScript 5.9, `strict`, six projects: `tsconfig.json` for the app, `qa/tsconfig.json` for the E2E specs, `acceptance/tsconfig.json` for the acceptance runtime and step handlers, `properties/tsconfig.json` for the property suite, `hardening/tsconfig.json` for the hardening suite, `tsconfig.tools.json` for the config files and scripts |
+| Types | TypeScript 5.9, `strict`, seven projects; see [`npm run typecheck`](#npm-run-typecheck) |
 | Unit tests | Vitest, jsdom, `@testing-library/react` |
-| Property tests | Vitest in Node over `properties/`, with this repository's own generator in `properties/tiny-check.ts` |
-| Hardening tests | Vitest in Node over `hardening/`: one test per mutant that survived a mutation run |
+| Property tests | Vitest in Node over `properties/` |
+| Hardening tests | Vitest in Node over `hardening/` |
 | Acceptance tests | Gherkin in `features/`, parsed and run through the [Acceptance Pipeline Specification](https://github.com/unclebob/Acceptance-Pipeline-Specification) |
 | End-to-end tests | Playwright against a stub backend in `qa/` |
 | Lint and format | ESLint 9 flat config (`eslint.config.js`) and Prettier (`prettier.config.js`) |
@@ -52,8 +52,8 @@ Runs both Vitest projects once:
 suite's file and test counts can be read on its own.
 
 `vite.config.mts` declares only these two projects, so nothing under
-`properties/`, `hardening/` or `acceptance/` can reach this count: those three
-have their own configurations and their own commands, below.
+`properties/`, `hardening/` or `acceptance/` reaches this count: those three have
+their own configurations and their own commands, below.
 
 ### `npm run lint`
 
@@ -77,9 +77,10 @@ E2E suite under `qa/` and the Markdown documents are excluded; see
 
 ### `npm run typecheck`
 
-Type-checks all six TypeScript projects with the compiler:
+Type-checks all seven TypeScript projects with the compiler:
 
 - `tsconfig.json` - the application sources under `src/`.
+- `src/todo-input/tsconfig.json` - the input rules again, with no ambient types at all, which is the only check that they name no React and no DOM type.
 - `qa/tsconfig.json` - the end-to-end specs under `qa/`.
 - `acceptance/tsconfig.json` - the acceptance runtime and step handlers under `acceptance/`.
 - `properties/tsconfig.json` - the property suite under `properties/`.
@@ -89,10 +90,10 @@ Type-checks all six TypeScript projects with the compiler:
 A diagnostic in any of them fails the check. Vite itself does not type-check
 while building.
 
-The six are separate projects rather than one because their environments
-disagree: every project except the app declares `"types": ["node"]`, and the app
-declares `"types": ["vitest/globals"]` instead, so Node's globals never reach
-the app's compilation.
+They are separate projects rather than one because their environments disagree:
+every project except the app declares `"types": ["node"]`, and the app declares
+`"types": ["vitest/globals"]` instead, so Node's globals never reach the app's
+compilation.
 
 The gate is `scripts/typecheck.mjs`, which names the projects, over
 `scripts/typecheck-gate.mjs`, which decides without exiting so that it can be
@@ -102,9 +103,9 @@ a test for each way it did.
 
 ### `npm run properties`
 
-Runs the property suite in `properties/` over `src/todo-api/client.ts` with
-`vitest.properties.config.mts`. A property states what must hold for every
-generated input, where a unit test names examples.
+Runs the property suite in `properties/` with `vitest.properties.config.mts`. A
+property states what must hold for every generated input, where a unit test names
+examples.
 
 The generator is `properties/tiny-check.ts`, this repository's own, so the suite
 needs nothing `npm ci` does not already install. The seed is fixed, so a red run
@@ -116,11 +117,9 @@ Runs the tests in `hardening/` with `vitest.hardening.config.mts`: one test per
 mutant that survived a mutation run, which is to say one assertion per fact the
 suites were found not to be checking.
 
-Generating those mutants needs `@stryker-mutator/core`, which is deliberately
-not a saved dependency - a role that measures mutation installs it with
-`npm install --no-save` and `npm ci` takes it away again. The tests that
-resulted need only Vitest, which is why this command runs in CI while the
-mutation runs do not.
+Generating those mutants needs `@stryker-mutator/core`, installed with
+`npm install --no-save` when mutation is measured and taken away again by
+`npm ci`. These tests need only Vitest.
 
 ### `npm run acceptance`
 
@@ -131,11 +130,9 @@ Runs the Gherkin in `features/` against the code: parse, generate, execute.
                        -> build/acceptance/generated/*.acceptance.test.mjs
                        -> vitest --config vitest.acceptance.config.mts
 
-The parser is APS's, not this repository's; `acceptance/runtime.ts` and
-`acceptance/steps/` are this repository's, and both derived directories are
-rebuilt from scratch on every run. Acceptance tests are their own Vitest
-configuration and never join `npm test`: they answer a different question and
-are counted separately.
+The parser is APS's; `acceptance/runtime.ts` and `acceptance/steps/` are this
+repository's, and both derived directories are rebuilt from scratch on every run.
+Acceptance tests are their own Vitest configuration and are counted separately.
 
 Run `npm run acceptance:install` once first, or the APS commands will not be
 where this looks for them.
@@ -182,8 +179,7 @@ Three verification commands sit outside the workflow, each deliberately:
   repository, neither of which the workflow sets up, and the clone wants
   pinning before it belongs inside a gate.
 - The mutation runs that `npm run hardening` records the answers to. They need
-  `@stryker-mutator/core`, which is not a saved dependency and not an npm
-  script; the hardening tests themselves need only Vitest, and they are a step.
+  `@stryker-mutator/core`, which is not a saved dependency and not an npm script.
 - `npm run test:e2e:dev` and `npm run test:e2e:preview`. They re-run the same
   procedures through a second server and a proxy hop, which adds moving parts
   without adding covered behavior.

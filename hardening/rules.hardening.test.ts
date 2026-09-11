@@ -2,32 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { violationsOf } from '../scripts/architecture/boundaries.mjs'
 import { BOUNDARY_RULES } from '../scripts/architecture/rules.mjs'
 
-/**
- * Every rule in `scripts/architecture/rules.mjs`, broken on purpose.
- *
- * `boundaries.spec.mjs` runs the real rules over the real repository, which
- * says nothing at all about whether any particular rule works: a repository
- * that obeys every rule gives the same answer as a repository with no rules.
- * A mutation scan said so out loud - deleting the whole rule list, emptying any
- * rule's globs, or blanking any pattern in it left the suite green. That is the
- * shape of gate this project keeps finding and removing.
- *
- * So each rule gets a module that breaks it and a module that obeys it, and the
- * last test asserts the table names every rule there is. A rule added without a
- * planted violation turns this file red, which is the point: the cost of a new
- * boundary is proving it can fail.
- */
+// Every rule in scripts/architecture/rules.mjs, broken on purpose: a repository that
+// obeys every rule gives the same answer as one with no rules at all. The last test
+// asserts the table names every rule, so a new boundary has to prove it can fail.
 
 const module = (path: string, ...targets: string[]) => ({
   path,
   targets,
 })
 
-/**
- * What the real rules say about these modules, as `[rule, target]` pairs - so a
- * module that breaks nothing reads as `[]` and one test shape covers both
- * directions.
- */
+// `[rule, target]` pairs, so a module that breaks nothing reads as `[]` and one test
+// shape covers both directions.
 const judged = (...modules: { path: string; targets: string[] }[]) =>
   violationsOf(modules, BOUNDARY_RULES).map((violation) => [
     violation.rule,
@@ -85,15 +70,8 @@ describe('the todo input rules depend on nothing', () => {
     ).toStrictEqual([])
   })
 
-  /**
-   * Both spellings of the exception, because they are a pair and the directory
-   * as it stands exercises only one. The first covers a spec sitting in the
-   * directory, which is where both of today's are; the second covers a spec
-   * under it, and needs saying separately because `**` stands for at least one
-   * segment here and so matches nothing this directory has. Without the third
-   * module below, dropping the second pattern changes no answer anywhere -
-   * which is how a mutation scan found it.
-   */
+  // Both spellings of the exception: `**` stands for at least one segment, so the
+  // pattern for a spec under the directory matches nothing the directory has today.
   it('lets a spec import the module it drives, wherever under the directory it sits', () => {
     expect(
       judged(
@@ -387,15 +365,8 @@ describe('the hardening suite drives modules, never the network shell', () => {
     ])
   })
 
-  /**
-   * The last module named here is one this directory does not have. Task 11
-   * widened this rule to `src/todo-input/*` so that a hardening test could
-   * import the modules it was asked to break, and then the mutation run found
-   * no survivor to write one for - so the entry has no caller, and a mutation
-   * scan showed that blanking it changed no answer anywhere. It stays, because
-   * the next survivor in those modules should not also need a rule change; the
-   * module below is what says so.
-   */
+  // The last module is one this directory does not have: the `src/todo-input/*` entry
+  // has no importer yet, and stays so the next survivor needs no rule change.
   it('allows the tooling it exists to break, which the other two may not touch', () => {
     expect(
       judged(

@@ -7,21 +7,8 @@ import {
   timeoutMilliseconds,
 } from './runner-protocol.mjs'
 
-/**
- * The mutator scores a mutation by the outcome this adapter reports, not by an
- * exit code it can see for itself, so every way of confusing one outcome with
- * another is a way of reporting a mutation score that was never measured: a
- * run that could not start reads as a killed mutation if it is called a
- * failure, and a killed mutation reads as a survivor if it is called
- * infrastructure. These tests pin the mapping in both directions.
- *
- * The exit code alone cannot carry that mapping: Vitest exits 1 both when a
- * test failed and when it found no test file to run at all, so a run pointed
- * at an empty or mis-spelled generated directory would report every mutant
- * killed while executing nothing. What the run itself reported having run is
- * therefore part of the classification, and a kill requires a test that ran
- * and failed.
- */
+// Confusing one outcome with another is how a mutation score gets reported that was
+// never measured, so the mapping is pinned in both directions.
 
 describe('reading a job line', () => {
   it('refuses a line that is not JSON, quoting it back', () => {

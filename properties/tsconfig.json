@@ -1,15 +1,7 @@
 {
-  // The property suite: the small runner in tiny-check.ts and the properties
-  // themselves. A fifth project rather than part of "src" for the reason
-  // acceptance/ is a fourth - it needs Node's globals for $PROPERTY_SEED, and
-  // the app must never see them.
-  //
-  // No DOM lib, deliberately. The suite may reach the modules that decide
-  // without an environment - src/todo-api/client.ts and the state layer's
-  // reducers and operations - and nothing else; a property that reached the
-  // fetch transport or a component would stop compiling here, and
-  // scripts/architecture/boundaries.spec.mjs states the same rule as an
-  // import rule.
+  // No DOM lib, deliberately: a property that reached the fetch transport or a
+  // component stops compiling here, as well as failing the rule in
+  // scripts/architecture/rules.mjs.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],

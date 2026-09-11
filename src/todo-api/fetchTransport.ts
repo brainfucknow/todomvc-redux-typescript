@@ -1,11 +1,6 @@
 import type { SendRequest, TodoApiRequest } from './client'
 
-/**
- * The only place in the todo API pipeline that touches the network. It
- * translates a request into `fetch` arguments and an answer back into a status
- * and, when asked, the body as text. It decides nothing: whether the body is
- * read is the call's decision, and what the body means is the client's.
- */
+// The only place in the todo API pipeline that touches the network.
 export const sendWithFetch: SendRequest = (request, readResponseBody) =>
   fetch(request.path, requestInit(request)).then((response) =>
     readResponseBody

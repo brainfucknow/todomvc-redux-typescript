@@ -14,15 +14,8 @@ import {
 import { wholeNumber } from './cells'
 import type { StepContext, StepDefinition, StepSuite } from '../runtime'
 
-/**
- * The step vocabulary of features/todo-api-*.feature, connected to
- * `src/todo-api/client.ts`. No network: a call is executed against a stand-in
- * transport that answers exactly what the scenario says came back.
- *
- * Two conventions the features declare and this file honours: a `completed`
- * cell reading `null` or `undefined` means that JavaScript value, and an
- * outcome-names cell is JSON.
- */
+// Conventions the features declare: a `completed` cell reading `null` or `undefined`
+// means that JavaScript value, and an outcome-names cell is JSON.
 
 export interface TodoApiWorld {
   call?: TodoApiCall
@@ -96,7 +89,6 @@ const outcomeOf = (
   return outcome
 }
 
-/** `true`, `false`, and the two ways the features spell "no flag at all". */
 function flag(value: string): boolean {
   const flags: Record<string, boolean | null | undefined> = {
     true: true,

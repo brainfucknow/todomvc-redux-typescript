@@ -1,23 +1,13 @@
-# Every gate this project has, in the order that fails cheapest first.
+# Every gate this project has, cheapest first. Each `run:` is a command a developer
+# runs locally by the same name, so a red job reproduces in one line.
 #
-# A gate nobody runs automatically is close in effect to a gate that cannot
-# fail, and until this file was rewritten the lint, format, type and end-to-end
-# gates were all in that position. Each `run:` below is a command a developer
-# can run locally by the same name, so a red job is reproducible in one line.
-#
-# Node version: one entry, 22.x, which is what this repository is developed and
-# verified on. Vite requires ^20.19 || >=22.12 and Vitest ^22.12 || ^24 || >=26,
-# so 24.x would very likely work - but "very likely" is the kind of claim this
-# project has been burned by, and nothing here has been run on 24. Adding it is
-# a one-line change for whoever is willing to prove it.
+# One Node entry, 22.x, because that is what this repository is verified on. 24.x
+# would very likely work; adding it is a one-line change for whoever proves it.
 
 name: Node CI
 
-# Changes arrive here as pull requests - dependency bumps, mostly - so that is
-# where the gates have something to say. `push` stays for the default branch,
-# `master`, and is narrowed to it: a branch with an open pull request would
-# otherwise be checked twice for one commit, and a branch with no pull request
-# is checked the moment one opens.
+# `push` is narrowed to master: a branch with an open pull request would otherwise be
+# checked twice for one commit.
 on:
   push:
     branches: [master]
@@ -52,24 +42,13 @@ jobs:
 
       - run: npm run typecheck
 
-      # scripts/typecheck.mjs anchors its projects to itself rather than to the
-      # working directory, and scripts/typecheck-gate.spec.mjs holds the test
-      # for that. Do not add a `working-directory:` here without re-reading it.
+      # Do not add a `working-directory:` to the step above: the gate's verdict is
+      # anchored to absolute project paths, and typecheck-gate.spec.mjs tests that.
 
-      # Three Vitest runs, three configs. vite.config.mts knows only the `unit`
-      # and `scripts` projects, so nothing under properties/ or hardening/ can
-      # reach CI through `npm test` - naming these two here is what runs them.
-      # Each costs about a second against the unit suite's twenty-odd, so they
-      # come first.
-      #
-      # Neither needs anything `npm ci` does not install. The generator behind
-      # the properties is properties/tiny-check.ts, this repository's own, not a
-      # third-party library. The hardening tests are ordinary tests that a
-      # surviving mutant argued for: Stryker generates mutants, it does not run
-      # these, and both commands pass with @stryker-mutator absent entirely.
-      #
-      # `npm run acceptance` is the one verification command still outside this
-      # file, because it needs Go and an unpinned third-party clone to run.
+      # `npm test` runs only the `unit` and `scripts` projects, so naming these two
+      # is what gets properties/ and hardening/ into CI at all. Neither needs
+      # anything `npm ci` does not install. `npm run acceptance` stays out: it needs
+      # Go and an unpinned third-party clone.
       - run: npm run properties
 
       - run: npm run hardening
@@ -78,10 +57,8 @@ jobs:
 
       - run: npm run build
 
-      # React 19 ignores propTypes, and @types/react 19 still declares the
-      # property, so a block that crept back would be dead code that lint, the
-      # type gate, the unit tests and the build all accept in silence. A grep is
-      # the only thing that catches it. Task 07 removed the last three blocks.
+      # React 19 ignores propTypes while @types/react still declares it, so a block
+      # that crept back is dead code lint, the type gate and the build all accept.
       - name: No propTypes under src/
         run: |
           found=0
@@ -95,20 +72,13 @@ jobs:
             exit "$found"
           fi
 
-      # The runner image ships no Playwright browsers, and the suite pins the
-      # build that matches @playwright/test in package-lock.json. `npx` runs the
-      # CLI that npm ci just installed, so the browser and the client always
-      # agree on a version. Only chromium: qa/suite-config.ts declares one
-      # project and it is chromium. `--with-deps` adds the system libraries the
-      # browser needs, which the image does not guarantee either.
+      # `npx` runs the CLI npm ci just installed, so browser and client agree on a
+      # version. Chromium only, which is the one project qa/suite-config.ts declares.
       - name: Install the Playwright browser
         run: npx playwright install --with-deps chromium
 
-      # Builds the app and runs it against the stub backend in qa/. The dev- and
-      # preview-server variants of the same procedures (test:e2e:dev,
-      # test:e2e:preview) are deliberately not here: they re-run these cases
-      # through a second server and a proxy hop, which adds moving parts without
-      # adding covered behavior.
+      # test:e2e:dev and test:e2e:preview stay out: the same procedures through a
+      # second server and a proxy hop, which adds moving parts, not covered behavior.
       - run: npm run test:e2e
 
       - name: Keep the Playwright report from a failed run

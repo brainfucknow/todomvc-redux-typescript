@@ -2,7 +2,6 @@ import visibilityFilter from './visibilityFilter'
 import { setVisibilityFilter } from '../actions/local'
 import TodoFilters from '../constants/TodoFilters'
 
-/** `features/todo-state-filter.feature`. */
 describe('visibilityFilter reducer', () => {
   it('shows every todo before a filter is chosen', () => {
     expect(visibilityFilter(undefined, { type: 'NONE' })).toBe(

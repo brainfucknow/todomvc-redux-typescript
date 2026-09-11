@@ -3,15 +3,6 @@ import { createTodoStore, type TodoStore as Store } from '../store'
 import type { SendRequest, TodoApiRequest } from '../todo-api/client'
 import TodoFilters from '../constants/TodoFilters'
 
-/**
- * Which of the app's names ask the backend and which the app answers itself.
- *
- * This is the one thing `./index` decides, and it is why four branches of the
- * todos slice have no caller: `addTodo`, `deleteTodo`, `editTodo` and
- * `completeTodo` are mapped to backend operations here, so the local edits of
- * the same name are never dispatched by the app.
- */
-
 const listening = () => {
   const requests: TodoApiRequest[] = []
   const send: SendRequest = (request) => {

@@ -5,17 +5,8 @@ import {
   timeoutMilliseconds,
 } from '../scripts/acceptance/runner-protocol.mjs'
 
-/**
- * Twelve of 111 mutants survived `scripts/acceptance/runner-protocol.spec.mjs`.
- * Eight of them are below; the other four change nothing observable and are
- * listed in the hardener's handoff note rather than chased with a test that
- * would only restate the implementation.
- *
- * This is the module that decides whether a mutation was killed, so a hole in
- * it is a hole in every mutation score this project will ever report. All eight
- * are the same shape: a guard nothing drove, so removing the guard cost
- * nothing.
- */
+// Guards nothing drove, in the module that decides whether a mutation was killed: a
+// hole here is a hole in every mutation score this project reports.
 
 /** @see readRunReport - a half-read report must be no report, never a result. */
 describe('a report that parses but is not a report', () => {
@@ -43,12 +34,7 @@ describe('a report that parses but is not a report', () => {
   })
 })
 
-/**
- * The wording of "nothing ran" is not decoration: it is the whole diagnosis
- * the mutator's operator gets when a run is misconfigured, and one file is the
- * case a mutated feature produces - one generated entry point that declares no
- * test.
- */
+// The wording is the whole diagnosis an operator gets from a misconfigured run.
 describe('naming how many files ran nothing', () => {
   it('says file, singular, when exactly one file declared no test', () => {
     expect(classifyRun({ status: 1 }, { ran: 0, failed: 0, files: 1 })).toEqual(

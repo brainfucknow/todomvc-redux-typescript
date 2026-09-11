@@ -9,16 +9,6 @@ import {
 } from '../actions/api'
 import { Todo } from '../models/Todo'
 
-/**
- * The todo list itself: what it holds before anything happens, what each local
- * edit makes of it, and what it becomes when a backend operation settles.
- *
- * The two families are one reducer now, but they are still two questions: a
- * local edit decides the whole change, and a settled operation writes down what
- * the backend said. `features/todo-state-edits.feature` and
- * `features/todo-state-operations.feature` specify both.
- */
-
 const useRedux: Todo = { text: 'Use Redux', completed: false, id: 0 }
 const runTests: Todo = { text: 'Run the tests', completed: false, id: 1 }
 const seed: Todo[] = [useRedux]
@@ -88,7 +78,6 @@ describe('todos reducer', () => {
       { text: 'Use Redux', completed: true, id: 0 },
     ])
 
-    // Unmark if all todos are currently completed
     expect(
       todos(
         [

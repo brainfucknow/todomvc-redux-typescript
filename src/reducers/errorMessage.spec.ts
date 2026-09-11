@@ -2,11 +2,6 @@ import { errorMessage } from './errorMessage'
 import { resetErrorMessage } from '../actions/local'
 import { addTodoOperation, loadTodosOperation } from '../actions/api'
 
-/**
- * What failed, the other piece of state nothing in the UI reads.
- * `features/todo-state-failures.feature` specifies it.
- */
-
 const failed = new Error('Failed to fetch')
 
 describe('the errorMessage reducer', () => {

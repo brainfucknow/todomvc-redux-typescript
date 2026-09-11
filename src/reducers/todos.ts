@@ -8,20 +8,9 @@ import {
 } from '../actions/api'
 import { Todo } from '../models/Todo'
 
-/**
- * The todo list. Two families of change reach it and they answer different
- * questions: a local edit decides the whole change itself, and a settled
- * backend operation writes down what the backend said.
- *
- * Four of the local edits - add, delete, edit and mark - have no caller today,
- * because `src/actions/index.ts` maps those names to the backend operations.
- * They are behavior this project carries, they are specified in
- * `features/todo-state-edits.feature`, and scenarios 2 and 3 there are the only
- * place an id is ever allocated. Do not read them as dead code.
- *
- * Nothing here is optimistic: an operation moves the list when it settles and
- * not before.
- */
+// `addTodo`, `deleteTodo`, `editTodo` and `completeTodo` have no caller - src/actions/index.ts
+// maps those names to the backend operations - but features/todo-state-edits.feature holds
+// them, and its id allocation lives nowhere else. Not dead code.
 
 const initialState: Todo[] = [
   {
@@ -34,10 +23,6 @@ const initialState: Todo[] = [
 const nextId = (todos: Todo[]) =>
   todos.reduce((maxId, todo) => Math.max(todo.id, maxId), -1) + 1
 
-/**
- * "The todo with this id" is the question both families ask, and these are the
- * three answers to it: change that todo, put another one in its place, drop it.
- */
 const changing = (todos: Todo[], id: number, change: (todo: Todo) => Todo) =>
   todos.map((todo) => (todo.id === id ? change(todo) : todo))
 

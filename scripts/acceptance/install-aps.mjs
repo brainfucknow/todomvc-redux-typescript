@@ -4,16 +4,11 @@ import { join } from 'node:path'
 import { APS_BIN, APS_HOME, ROOT } from './aps.mjs'
 
 /**
- * `npm run acceptance:install`. Puts the APS commands where `aps.mjs` looks for
- * them, by building them from the specification repository rather than
- * reimplementing or vendoring them.
+ * `npm run acceptance:install`: builds the APS commands from the specification
+ * repository into where `aps.mjs` looks. APS's Go commands are the documented
+ * fallback where Babashka is absent, so this needs Go and, first time, a clone.
  *
- * Babashka is the primary runtime APS names; where it is absent - as it is
- * here - the repository's Go commands are the documented fallback, so this
- * needs Go and, the first time, network access to clone.
- *
- * $APS_SOURCE points at a checkout that already exists and skips the clone.
- * $GO_BIN names a Go that is not on PATH.
+ * $APS_SOURCE points at an existing checkout; $GO_BIN names a Go off PATH.
  */
 
 const APS_REPO =

@@ -15,17 +15,9 @@ import type { SendRequest, TodoApiAnswer } from '../../src/todo-api/client'
 import { wholeNumber } from './cells'
 import type { StepDefinition, StepSuite } from '../runtime'
 
-/**
- * The step vocabulary of features/todo-state-*.feature, connected to the store
- * the application itself builds. No network: the store is given a transport
- * that hands each request back to the scenario, so an operation stays in
- * flight until a step says what came back.
- *
- * `the app starts ...` leaves the operation running and `the backend answers
- * ...` settles it and waits for the store to catch up. That separation is the
- * whole point of those two steps: it is what lets a scenario read the list
- * while a call is still out.
- */
+// The transport hands each request back to the scenario, so `the app starts ...`
+// leaves an operation in flight until `the backend answers ...` settles it - which is
+// what lets a scenario read the list while a call is still out.
 
 interface PendingCall {
   answer: (answer: TodoApiAnswer) => void
@@ -48,12 +40,8 @@ export interface TodoStateWorld {
 
 type Definition = StepDefinition<TodoStateWorld>
 
-/**
- * One of the five operations, waiting for a store to run it. Each dispatches
- * itself rather than handing back an action, because the five thunks have five
- * different action types and a caller that dispatched the union of them would
- * be asking `dispatch` to be one function for all five.
- */
+// Dispatches itself rather than handing back an action: the five thunks have five
+// action types and no caller can dispatch their union.
 type Operation = (store: TodoStore) => Promise<unknown>
 
 const createWorld = (): TodoStateWorld => {
@@ -79,11 +67,8 @@ const startWith = (world: TodoStateWorld, todos: Todo[]) => {
 
 const stateOf = (world: TodoStateWorld) => world.store.getState()
 
-/**
- * Dispatches an operation and remembers the request it sent, so a later step
- * can answer that request. The client sends before it yields, which is what
- * lets the two be paired without waiting for anything.
- */
+// The client sends before it yields, so the request can be paired with the operation
+// without waiting for anything.
 const start = (world: TodoStateWorld, operation: Operation) => {
   const sent = world.calls.length
   const done = operation(world.store)
@@ -94,10 +79,6 @@ const start = (world: TodoStateWorld, operation: Operation) => {
   world.operations.push({ call: world.calls[sent], done, answered: false })
 }
 
-/**
- * The operation the next answering step is about: the oldest one no step has
- * answered yet, taken so that the step after it gets the one behind.
- */
 const takeUnanswered = (world: TodoStateWorld): RunningOperation => {
   const operation = world.operations.find((running) => !running.answered)
   if (!operation) {
@@ -107,14 +88,8 @@ const takeUnanswered = (world: TodoStateWorld): RunningOperation => {
   return operation
 }
 
-/**
- * Settles one operation and waits for the store to have seen it.
- *
- * `src/actions/api.ts` writes a failure to the console, and
- * `src/actions/api.spec.ts` is what pins that. These features are about what
- * the state holds, so the write is silenced here rather than printed over the
- * run.
- */
+// The failure `src/actions/api.ts` logs is silenced here rather than printed over
+// the run; src/actions/api.spec.ts is what pins it.
 const settle = async (
   operation: RunningOperation,
   respond: (call: PendingCall) => void,
@@ -128,7 +103,6 @@ const settle = async (
   }
 }
 
-/** The five phrasings of `the app starts ...`, one operation each. */
 const OPERATIONS: [RegExp, (captures: string[]) => Operation][] = [
   [/^loading every todo$/, () => (store) => store.dispatch(loadTodos())],
   [
@@ -176,7 +150,6 @@ const filterNamed = (name: string): TodoFilters => {
   return FILTERS[name]
 }
 
-/** Whether the state shows the work a scenario names as running. */
 const isRunning = (world: TodoStateWorld, subject: string) => {
   const running = stateOf(world).exec
   if (subject === 'the load') return running.isLoadingAll
@@ -187,7 +160,6 @@ const isRunning = (world: TodoStateWorld, subject: string) => {
   throw new Error(`Not something that runs: ${subject}`)
 }
 
-/** `true` and `false`, the two values a todo can be marked completed to. */
 function flag(value: string): boolean {
   if (value !== 'true' && value !== 'false') {
     throw new Error(`Not a completed flag: ${value}`)
@@ -195,10 +167,6 @@ function flag(value: string): boolean {
   return value === 'true'
 }
 
-/**
- * `complete` and `active`: the two cells `every todo in the list reads` takes,
- * and the two directions `the app starts marking todo <id> <flag>` runs in.
- */
 function completedFlag(word: string): boolean {
   if (word !== 'complete' && word !== 'active') {
     throw new Error(`Not a completed state: ${word}`)
@@ -210,7 +178,7 @@ const definitions: Definition[] = [
   {
     pattern: /^a fresh state$/,
     handle: () => {
-      // The world is already the state the app holds before anything happens.
+      // A fresh world is already that state.
     },
   },
   {

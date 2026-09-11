@@ -9,22 +9,8 @@ import {
 import { createTodoStore } from '../store'
 import type { SendRequest } from '../todo-api/client'
 
-/**
- * The boundary the todo API client sits behind: what reaches Redux, in what
- * order, and what the app is left holding when a call never completes. What
- * each call sends and what it makes of an answer is
- * `src/todo-api/client.spec.ts`; this file pins only what is the boundary's
- * own.
- *
- * A thunk is run here the way the store runs it - given a dispatch, a getState
- * and the extra argument - so nothing is stubbed but the transport.
- */
+// What each call sends and makes of an answer is src/todo-api/client.spec.ts.
 
-/**
- * A thunk as the store calls it. The five operations have five action types
- * and no common one, so the thing under test is taken as `unknown` and read as
- * this once, here, rather than cast at every call.
- */
 type Thunk = (
   dispatch: (action: UnknownAction) => unknown,
   getState: () => unknown,
@@ -41,16 +27,9 @@ const failingWith =
   () =>
     Promise.reject(error)
 
-/**
- * `api.ts` writes a failure to the console before it dispatches one. Every test
- * below that fails a call says so here, so a passing run prints nothing.
- */
+// `api.ts` logs a failure before dispatching it; a passing run prints nothing.
 const silenced = () => vi.spyOn(console, 'error').mockImplementation(() => {})
 
-/**
- * The store as an operation meets it: a dispatch that runs a thunk and hands a
- * plain action to `reducers`, which is where a reducer's throw comes from.
- */
 const run = async (
   operation: unknown,
   send: SendRequest,
@@ -73,7 +52,6 @@ const run = async (
   return { dispatched, resolved }
 }
 
-/** Reducers that throw on one action, the way a null in the list makes them. */
 const throwingOn =
   (type: string, error: unknown) => (action: UnknownAction) => {
     if (action.type === type) throw error
@@ -201,13 +179,8 @@ describe('the todo backend operations', () => {
   })
 })
 
-/**
- * The one route into a throwing reducer that needs nothing malformed to be in
- * the state first: an add answered with the body `null` leaves a well-formed
- * array with a `null` in it, and the next settled edit, marking or delete reads
- * `id` off that `null`. Driven through a real store, because the throw has to
- * come from the reducers the app runs rather than from a stand-in.
- */
+// An add answered with `null` leaves a null in the list, and the next settled
+// operation reads `id` off it. Driven through a real store so the throw is the app's.
 describe('an operation whose settled action the reducers throw on', () => {
   const holdingANullTodo = async () => {
     const store = createTodoStore(answering('null'))

@@ -10,12 +10,8 @@ import { ApsToolMissing, ROOT, resolveApsTool } from './aps.mjs'
  *                      -> generate-entrypoints -> build/acceptance/generated/
  *                      -> vitest --config vitest.acceptance.config.mts
  *
- * The generated tests are a Vitest run of their own, never part of
- * `npm test`: acceptance tests and unit tests answer different questions and
- * are counted separately.
- *
- * Both derived directories are rebuilt from scratch each run, so a feature that
- * was renamed or deleted cannot leave an entry point behind that still passes.
+ * Both derived directories are rebuilt from scratch, so a renamed or deleted
+ * feature cannot leave a passing entry point behind.
  */
 
 const FEATURES = join(ROOT, 'features')

@@ -1,30 +1,17 @@
 /**
- * What one module imports, as targets a boundary rule can be written against.
+ * A target is a repository-relative path without its extension, or a package
+ * specifier exactly as written, so a rule never has to know whether a dependency is
+ * relative.
  *
- * A target is either a repository-relative path with no extension, for an
- * import of another module in this repository, or the specifier exactly as
- * written, for a package. So `src/actions/api.ts` importing
- * `'../todo-api/client'` yields `src/todo-api/client`, and importing
- * `'@testing-library/react'` yields `@testing-library/react`. One vocabulary,
- * so a rule never has to know whether a dependency is relative.
- *
- * This reads text rather than a syntax tree, which is the honest limit of it:
- * an `import ... from '...'` written inside a comment would be counted as a
- * real one. That direction is the safe one - the check over-reports rather than
- * missing an edge - and boundaries.spec.mjs asserts the exact edge list of the
- * modules whose boundaries this project cares about, so an invented edge fails
- * loudly rather than hiding.
+ * It reads text, not a syntax tree, so an import written inside a comment counts as
+ * one. That over-reports rather than missing an edge, and boundaries.spec.mjs pins
+ * the exact edges of the modules whose boundaries matter.
  */
 
 import { posix } from 'node:path'
 
-/**
- * The clause between `import` and `from` holds names, braces, commas and
- * whitespace and nothing else, which is what stops these patterns running from
- * a `from` in one string literal to a quote somewhere further down the file.
- * That is not hypothetical: the first draft of this module read
- * `'Counterexample: 37 (shrunk from'` in a test as an import.
- */
+// Names, braces, commas and whitespace only: anything wider lets a pattern run from
+// a `from` inside a string literal to a quote further down the file.
 const NAMES = String.raw`[\w*{},\s]*?`
 
 const SPECIFIERS = [

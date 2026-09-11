@@ -7,21 +7,12 @@ import {
   removeTodoOperation,
 } from '../actions/api'
 
-/**
- * Which backend operations the app has started and not yet seen settle.
- *
- * Nothing in the UI reads it. It is state the app computes and keeps, and
- * `features/todo-state-operations.feature` specifies it; surfacing it to a user
- * would be new behavior and is not this project's plan.
- *
- * It is stored under the `exec` key, which is the name it had before there were
- * slices.
- */
+// Nothing in the UI reads this; features/todo-state-operations.feature is what holds it.
 
 export interface Executing {
   isLoadingAll: boolean
   isAdding: boolean
-  /** Per todo id, as a string, whether an update of that todo is running. */
+  /** Keyed by todo id as a string. */
   t: Record<string, { isUpdating: boolean }>
 }
 
@@ -31,7 +22,6 @@ const initialState: Executing = {
   t: {},
 }
 
-/** An operation settles when it is fulfilled and when it is rejected alike. */
 const settled = <Fulfilled, Rejected>(operation: {
   fulfilled: Fulfilled
   rejected: Rejected

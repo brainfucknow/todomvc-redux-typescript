@@ -14,24 +14,15 @@ import {
 
 /**
  * The runner adapter APS `gherkin-mutator` drives (mutator-spec.md, "Runner
- * Adapter"): a persistent worker that reads one JSON job per stdin line and
- * writes one JSON response per stdout line. What a line and a finished run
- * mean is `runner-protocol.mjs`; this file is the process around it.
+ * Adapter"): the process around `runner-protocol.mjs`, which is what decides.
+ * Stdout carries protocol lines only; everything else goes to stderr.
  *
- * A job runs the already-generated entry points against the IR the job names,
- * which is what $ACCEPTANCE_IR is for - nothing is regenerated per mutation.
+ * A job runs the already-generated entry points against the IR it names, so
+ * nothing is regenerated per mutation.
  *
- * Each run also writes a JSON report to a scratch file, because Vitest's exit
- * code does not say whether any test ran and its code 1 covers both a failing
- * test and no test file at all. The report is read, then deleted.
- *
- * Whether a whole run is configured right is not a question one job can
- * answer: the worker is told one job at a time and never which IR is the
- * unmutated one. The mutation procedure asks it instead, by running this
- * worker against the original IR first and requiring `test_success` before
- * any kill count from that run is believed.
- *
- * Stdout carries protocol lines only. Everything else goes to stderr.
+ * No single job can tell whether the run as a whole is configured right - the
+ * worker is never told which IR is the unmutated one. The mutation procedure asks
+ * that separately, by requiring `test_success` against the original IR first.
  *
  * Start it with: gherkin-mutator --runner-worker "node scripts/acceptance/runner-worker.mjs"
  */

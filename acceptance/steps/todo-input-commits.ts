@@ -9,22 +9,9 @@ import {
 import { text, textOrNothing } from './cells'
 import type { StepDefinition, StepSuite } from '../runtime'
 
-/**
- * The step vocabulary of features/todo-input-commits.feature, connected to
- * `src/todo-input/field.ts`. No React: the module answers these questions with
- * no component in the way, which is the whole reason the rules were extracted.
- *
- * This file plays the part `TodoTextInput` plays. It asks the rule what a
- * keystroke or a lost focus commits and then does what the answer says - noting
- * the text, and emptying the field when the answer says to - exactly as the
- * component does. It decides nothing itself: every question the feature asks is
- * answered by `src/`.
- *
- * It stops where the feature stops, at the text handed on. What that text then
- * does is `./todo-input-effects`, whose world this one never touches.
- */
+// Plays the part `TodoTextInput` plays, against `src/todo-input/field.ts` with no
+// React in the way. It stops at the text handed on; `./todo-input-effects` starts there.
 
-/** A key press or a lost focus, and what the rule said it commits. */
 interface FieldEvent {
   readonly commit: FieldCommit | null
 }
@@ -40,10 +27,6 @@ type Definition = StepDefinition<TodoInputCommitsWorld>
 
 const createWorld = (): TodoInputCommitsWorld => ({ held: '', heldBefore: '' })
 
-/**
- * Runs one event against the field the scenario named, and applies the answer
- * the way the component does: what a commit clears, it clears.
- */
 const act = (
   world: TodoInputCommitsWorld,
   decide: (field: FieldKind, held: string) => FieldCommit | null,
@@ -69,7 +52,6 @@ const commitOf = (world: TodoInputCommitsWorld): FieldCommit | null => {
   return world.event.commit
 }
 
-/** `new-todo` and `edit`, the two fields a scenario can name. */
 function fieldKind(name: string): FieldKind {
   if (name !== 'new-todo' && name !== 'edit') {
     throw new Error(`Not a field: ${name}`)

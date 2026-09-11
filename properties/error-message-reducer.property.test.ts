@@ -10,30 +10,15 @@ import {
 } from '../src/actions/api'
 import { elementOf, forAll, integer, text, tuple } from './tiny-check'
 
-/**
- * Properties of src/reducers/errorMessage.ts, and one of them is the module's
- * boundary rather than its arithmetic.
- *
- * This module names no operation. It matches `isRejected`, which asks only
- * whether an action carries `meta.requestId` and `meta.requestStatus ===
- * 'rejected'`, so it records the failure of any async thunk in the store -
- * including one it has never heard of, which is what the last property drives
- * with an action built by hand rather than by an operation. That coupling is
- * deliberate: a recorder of "the last failure" that enumerated the five
- * operations would have to be edited to learn about a sixth. It is stated here
- * because it is the whole of the module's dependency on the rest of the app,
- * and prose in a doc comment cannot fail.
- *
- * features/todo-state-failures.feature says what is recorded and how long it
- * lives. Nothing in the UI reads it.
- */
+// The reducer records the failure of any rejected thunk, including one it has never
+// heard of: a recorder of "the last failure" that enumerated the five operations
+// would have to be edited to learn about a sixth. The last property drives that.
 
 const ID = integer(0, 20)
 const TEXT = text(12)
 
 const empty = errorMessage(undefined, { type: 'NONE' })
 
-/** A rejected action from a thunk this module has never been told about. */
 const rejectedElsewhere = (message: string) => ({
   type: 'somewhere-else/rejected',
   payload: undefined,

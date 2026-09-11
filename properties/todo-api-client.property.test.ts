@@ -22,31 +22,13 @@ import {
   type Arbitrary,
 } from './tiny-check'
 
-/**
- * Properties of src/todo-api/client.ts: statements that hold for every input,
- * where the unit tests and the generated acceptance tests state what holds for
- * particular ones.
- *
- * The division is deliberate. features/ pins the five operations against named
- * examples, which is what a specification is for; a table cannot say "for every
- * string". These say it. The escaped-body row in features/todo-api-requests
- * catches a concatenating implementation for one text; `builds a body that
- * parses back to the text it was given` catches it for all of them.
- *
- * Two of these pin behavior that is wrong on purpose. The client never looks at
- * an answer's status, so a 500 whose body parses succeeds, and the trailing
- * slash on the collection path is not on the per-id paths. Both are current
- * behavior, both are specified in features/ and characterized in
- * qa/procedures/21, and both are stated here across their whole input range
- * rather than at one example. Fixing either is a behavior change that starts
- * with the specifier, and deleting the property that names it is part of that
- * change.
- */
+// Two properties here pin behavior that is wrong on purpose: the status is never
+// read, so a 500 whose body parses succeeds, and the trailing slash on the
+// collection path is not on the per-id paths. Deleting either is part of fixing it.
 
 const ID = integer(0, 100_000)
 const TEXT = text()
 
-/** The answer a stand-in transport gives, and what the client asked of it. */
 const answering = (answer: TodoApiAnswer) => {
   const asked: boolean[] = []
   const send: SendRequest = (_request, readResponseBody) => {
@@ -71,7 +53,6 @@ const collecting = () => {
   }
 }
 
-/** Every operation, with arguments, as one drawable value. */
 type CallCase = { name: string; build: () => TodoApiCall }
 
 const anyCall: Arbitrary<CallCase> = {
@@ -205,10 +186,6 @@ describe('what the client makes of an answer, for every answer', () => {
     })
   })
 
-  /**
-   * The preserved defect, stated over its whole range: no status between 100
-   * and 599 changes the verdict. Only the bytes do.
-   */
   it('reads nothing but the body: the status never decides success or failure', async () => {
     await forAll(tuple(integer(100, 599), TEXT), async ([status, body]) => {
       const { outcomes, report } = collecting()

@@ -1,22 +1,11 @@
 import { createSlice, isRejected, type SerializedError } from '@reduxjs/toolkit'
 
-/**
- * The last failure the app recorded, and nothing else: it is written by any
- * rejected action whatever, so this module names no operation of its own.
- *
- * Nothing in the UI reads it, and nothing but the branch below ever clears it.
- * `features/todo-state-failures.feature` specifies both; surfacing a failure to
- * a user would be new behavior and is not this project's plan.
- */
+// Nothing in the UI reads this; features/todo-state-failures.feature is what holds it.
 const errorMessageSlice = createSlice({
   name: 'errorMessage',
   initialState: null as SerializedError | null,
   reducers: {
-    /**
-     * Nothing asks. The branch is live and callerless, as it was before there
-     * were slices, and `features/todo-state-failures.feature` 4 is what holds
-     * it.
-     */
+    // Callerless and live: specified, not dead code.
     resetErrorMessage: () => null,
   },
   extraReducers: (builder) => {

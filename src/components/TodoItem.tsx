@@ -11,11 +11,6 @@ export interface TodoItemProps {
   todo: Todo
 }
 
-/**
- * One row: it holds whether the row is being edited, renders accordingly, and
- * asks `src/todo-input/effects.ts` what a committed text means. Whether an
- * empty commit deletes the todo is that module's answer, not this file's.
- */
 const TodoItem: React.FunctionComponent<TodoItemProps> = ({
   todo,
   deleteTodo,
@@ -54,12 +49,6 @@ const TodoItem: React.FunctionComponent<TodoItemProps> = ({
   )
 }
 
-/**
- * `memo` rather than nothing, because the `PureComponent` this replaced really
- * did skip renders: `TodoList` re-renders on every store change and maps every
- * todo, while a row's props - one `todo` object out of the store and the bound
- * action creators, which `connect` builds once - are shallow-equal unless that
- * row's own todo changed. Dropping the comparison would re-render every row on
- * every change.
- */
+// `memo` skips real work: `TodoList` re-renders on every store change, and a row's
+// props are shallow-equal unless that row's own todo changed.
 export default memo(TodoItem)

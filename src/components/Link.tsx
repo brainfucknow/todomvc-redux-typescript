@@ -6,9 +6,7 @@ const Link: React.FunctionComponent<LinkProps> = ({
   children,
   setFilter,
 }: LinkProps) => (
-  // The filter links are anchors with a click handler and no href. Making
-  // this valid - a real href, or a <button> - changes the rendered element
-  // and its keyboard behavior, which task 06 puts out of scope.
+  // A real href or a <button> would change the rendered element and its keyboard behavior.
   // eslint-disable-next-line jsx-a11y/anchor-is-valid, jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
   <a
     className={classnames({ selected: active })}

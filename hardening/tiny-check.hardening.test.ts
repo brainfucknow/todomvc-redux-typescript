@@ -1,20 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { failureFrom, forAll, integer, show } from '../properties/tiny-check'
 
-/**
- * The property runner's own edges. `tiny-check.property.test.ts` proves it can
- * report and shrink a counterexample, which is the thing that matters most;
- * what survived mutation is everything around that one path.
- *
- * Three of those are worth a test because a property suite is only as
- * trustworthy as its failure report: a seed nobody can override is not
- * reproducible, a budget that is not spent is not a budget, and a value the
- * report cannot render is a counterexample nobody can act on. The rest of the
- * survivors - the alphabet `text()` draws from, the several routes the shrinker
- * has to the same minimum, and the arithmetic inside the PRNG - are recorded in
- * the hardener's handoff note instead. Pinning those would pin the route rather
- * than the destination.
- */
+// Around the one path tiny-check.property.test.ts drives: a seed nobody can override
+// is not reproducible, a budget that is not spent is not a budget, and a value the
+// report cannot render is a counterexample nobody can act on.
 
 const failsAt = (limit: number) => (value: number) => {
   if (value >= limit) throw new Error('too big')
@@ -88,11 +77,8 @@ describe('the budgets a caller sets', () => {
   })
 })
 
-/**
- * $PROPERTY_SEED is the whole of this runner's reproducibility story: a red run
- * is rerun by exporting the seed it printed. Nothing drove it, so the guard
- * that reads it could be removed or inverted and every property still passed.
- */
+// $PROPERTY_SEED is the whole of the runner's reproducibility story, and nothing
+// else drives the guard that reads it.
 describe('choosing the seed', () => {
   const withSeedEnvironment = async (
     value: string | undefined,
