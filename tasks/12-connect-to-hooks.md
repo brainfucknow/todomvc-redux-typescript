@@ -40,6 +40,29 @@ and pinned it with two tests using events a real keyboard never produces. If you
 touch event wiring, do not reintroduce a legacy key code; the pin will catch it,
 which is the point.
 
+## Comments and prose: a standing rule for every role
+
+The project owner's instruction: keep documentation and code comments lean,
+apply DRY, and do not add a comment unless you really have to.
+
+A comment is what is left over when the code cannot carry the meaning. Reach
+first for a name, a constant, a small type, an extracted function or a guard
+clause. A surviving comment states something no rename could: a non-obvious why,
+a domain rule living outside the code, a deliberate policy choice, or a trap the
+next reader would fall into. One line.
+
+Never write:
+
+- a comment restating the name or code below it
+- a comment narrating what changed; that is the commit message's job
+- a doc comment on a private helper or a test whose name carries the fact
+- project process in source: task numbers, role names, "the project manager
+  ruled". Task files are deleted as tasks complete, so those references dangle.
+  Why the code is as it is can survive; who decided it cannot.
+
+This applies to handoff notes too. State what you changed, what you verified,
+what is left and what is open. Do not narrate the journey.
+
 ## Scope
 
 - Specifier: Gherkin for the load-on-mount behavior, since it is the one piece of logic in this task that is easy to break invisibly. The rest is wiring.
