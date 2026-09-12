@@ -5,20 +5,13 @@ import MainSection from '../components/MainSection'
 import { getCompletedTodoCount } from '../selectors'
 import { RootState } from './index'
 
-
-const mapStateToProps = (state:RootState) => ({
+const mapStateToProps = (state: RootState) => ({
   todosCount: state.todos.length,
-  completedCount: getCompletedTodoCount(state)
+  completedCount: getCompletedTodoCount(state),
 })
 
-
-const mapDispatchToProps = (dispatch:Dispatch<AnyAction>) => ({
-  actions: bindActionCreators(TodoActions, dispatch)
+const mapDispatchToProps = (dispatch: Dispatch<AnyAction>) => ({
+  actions: bindActionCreators(TodoActions, dispatch),
 })
 
-
-export default connect(
-  mapStateToProps,
-  mapDispatchToProps
-)(MainSection)
-
+export default connect(mapStateToProps, mapDispatchToProps)(MainSection)

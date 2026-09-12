@@ -1,0 +1,27 @@
+{
+  // The input rules compiled with nothing around them: the only check anywhere that
+  // they name no React and no DOM type. The root project already covers these files.
+  //
+  // `types: []` and `typeRoots: []` are the point. Dropping the DOM lib alone
+  // catches only DOM-*only* names like `document`; @types/node declares `fetch`,
+  // `Response` and `RequestInit` as globals, so the ambient packages have to go too.
+  //
+  // scripts/architecture/rules.mjs is the other half - a global needs no import, and
+  // an import of a framework needs no global.
+  //
+  // The specs are excluded, not absent: they legitimately use Vitest's globals.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": [],
+    "typeRoots": []
+  },
+  "include": ["."],
+  "exclude": ["**/*.spec.ts"]
+}

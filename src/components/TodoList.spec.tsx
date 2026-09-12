@@ -1,57 +1,59 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer';
+import { render } from '@testing-library/react'
 import TodoList, { TodoListProps } from './TodoList'
-import TodoItem from './TodoItem'
 
 const setup = () => {
-  const props:TodoListProps = {
+  const props: TodoListProps = {
     filteredTodos: [
       {
         text: 'Use Redux',
         completed: false,
-        id: 0
-      }, {
+        id: 0,
+      },
+      {
         text: 'Run the tests',
         completed: true,
-        id: 1
-      }
+        id: 1,
+      },
     ],
     actions: {
-      addTodo: jest.fn(),
-      editTodo: jest.fn(),
-      deleteTodo: jest.fn(),
-      completeTodo: jest.fn(),
-      completeAllTodos: jest.fn(),
-      clearCompleted: jest.fn(),
-      setVisibilityFilter: jest.fn()
-    }
+      addTodo: vi.fn(),
+      editTodo: vi.fn(),
+      deleteTodo: vi.fn(),
+      completeTodo: vi.fn(),
+      completeAllTodos: vi.fn(),
+      clearCompleted: vi.fn(),
+      setVisibilityFilter: vi.fn(),
+      loadTodos: vi.fn(),
+    },
   }
 
-  const renderer = createRenderer();
-  renderer.render(<TodoList {...props} />)
-  const output = renderer.getRenderOutput()
+  const { container } = render(<TodoList {...props} />)
 
   return {
     props: props,
-    output: output
+    container: container,
   }
 }
 
 describe('components', () => {
   describe('TodoList', () => {
     it('should render container', () => {
-      const { output } = setup()
-      expect(output.type).toBe('ul')
-      expect(output.props.className).toBe('todo-list')
+      const { container } = setup()
+      const list = container.querySelector('ul') as HTMLElement
+      expect(list).not.toBeNull()
+      expect(list.className).toBe('todo-list')
     })
 
     it('should render todos', () => {
-      const { output, props } = setup()
-      expect(output.props.children.length).toBe(2)
-      output.props.children.forEach((todo:JSX.Element, i:number) => {
-        expect(todo.type).toBe(TodoItem)
-        expect(Number(todo.key)).toBe(props.filteredTodos[i].id)
-        expect(todo.props.todo).toBe(props.filteredTodos[i])
+      const { container, props } = setup()
+      const items = container.querySelectorAll('ul.todo-list > li')
+      expect(items.length).toBe(2)
+      items.forEach((item: Element, i: number) => {
+        const todo = props.filteredTodos[i]
+        const label = item.querySelector('label') as HTMLElement
+        expect(label.textContent).toBe(todo.text)
+        const toggle = item.querySelector('input.toggle') as HTMLInputElement
+        expect(toggle.checked).toBe(todo.completed)
       })
     })
   })

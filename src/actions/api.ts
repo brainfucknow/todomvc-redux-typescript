@@ -1,97 +1,125 @@
-import { ApiActionMessage } from "../middlewares/callapimiddleware";
+import {
+  createAsyncThunk,
+  type ThunkAction,
+  type UnknownAction,
+} from '@reduxjs/toolkit'
+import {
+  addTodoCall,
+  completeTodoCall,
+  editTodoCall,
+  executeCall,
+  loadTodosCall,
+  removeTodoCall,
+  type SendRequest,
+  type TodoApiCall,
+  type TodoApiOutcome,
+} from '../todo-api/client'
+import { Todo } from '../models/Todo'
 
-export function loadTodos(): ApiActionMessage {
-  return {
-    types: ["LOAD_TODO_REQUEST", "LOAD_TODO_SUCCESS", "LOAD_TODO_FAILURE"],
-    callAPI: [
-      `api/todos/`,
-      {
-        headers: {
-          Accept: "application/json"
-        }
-      }
-    ],
-    payload: {},
-    json:true,
-  };
+// The seam between Redux and the todo API client, and the one place a failure is
+// logged - the client must not touch the console itself.
+
+export interface TodoApiExtra {
+  send: SendRequest
 }
 
-export function editTodo(id: number, text: string): ApiActionMessage {
-  return {
-    types: ["PATCH_TODO_REQUEST", "PATCH_TODO_SUCCESS", "PATCH_TODO_FAILURE"],
-    callAPI: [
-      `api/todos/${id}`,
-      {
-        method: "PATCH",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ text })
-      }
-    ],
-    payload: { id, text },
-    json:true,
-  };
-}
-export function completeTodo(id: number, completed: boolean): ApiActionMessage {
-  if (completed==null){
-    throw new Error('Expected completed to be non null');
+const createTodoThunk = createAsyncThunk.withTypes<{ extra: TodoApiExtra }>()
+
+// `executeCall` reports a failure rather than throwing it, so the throw is made here.
+async function runCall<T>(call: TodoApiCall, send: SendRequest): Promise<T> {
+  const reported: TodoApiOutcome[] = []
+
+  await executeCall(call, send, (outcome) => reported.push(outcome))
+
+  const settled = reported[reported.length - 1]
+  if (settled.kind === 'failed') {
+    console.error(settled.carried['error'])
+    throw settled.carried['error']
   }
-  return {
-    types: ["PATCH_TODO_REQUEST", "PATCH_TODO_SUCCESS", "PATCH_TODO_FAILURE"],
-    callAPI: [
-      `api/todos/${id}`,
-      {
-        method: "PATCH",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ completed })
-      }
-    ],
-    payload: { id, completed },
-    json:true,
-  };
-}
-export function addTodo(text: string): ApiActionMessage {
-  return {
-    types: ["POST_TODO_REQUEST", "POST_TODO_SUCCESS", "POST_TODO_FAILURE"],
-    callAPI: [
-      `api/todos/`,
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ text })
-      }
-    ],
-    payload: { text },
-    json:true,
-  };
+  return settled.carried['json'] as T
 }
 
-export function removeTodo(id: number): ApiActionMessage {
-  return {
-    types: [
-      "DELETE_TODO_REQUEST",
-      "DELETE_TODO_SUCCESS",
-      "DELETE_TODO_FAILURE"
-    ],
-    callAPI: [
-      `api/todos/${id}`,
-      {
-        method: "DELETE",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json"
-        }
-      }
-    ],
-    payload: { id },
-    json:false,
-  };
+interface TodoText {
+  text: string
 }
+interface TodoId {
+  id: number
+}
+type TodoEdit = TodoId & TodoText
+type TodoMarking = TodoId & { completed: boolean }
+
+export const loadTodosOperation = createTodoThunk<Todo[], void>(
+  'todos/load',
+  (_argument, { extra }) => runCall(loadTodosCall(), extra.send),
+)
+
+export const addTodoOperation = createTodoThunk<Todo, TodoText>(
+  'todos/add',
+  ({ text }, { extra }) => runCall(addTodoCall(text), extra.send),
+)
+
+export const editTodoOperation = createTodoThunk<Todo, TodoEdit>(
+  'todos/edit',
+  ({ id, text }, { extra }) => runCall(editTodoCall(id, text), extra.send),
+)
+
+export const completeTodoOperation = createTodoThunk<Todo, TodoMarking>(
+  'todos/mark',
+  ({ id, completed }, { extra }) =>
+    runCall(completeTodoCall(id, completed), extra.send),
+)
+
+export const removeTodoOperation = createTodoThunk<void, TodoId>(
+  'todos/remove',
+  ({ id }, { extra }) => runCall(removeTodoCall(id), extra.send),
+)
+
+// Written out rather than named as `AsyncThunk`, whose configuration cannot be
+// restated here without losing what the five operations return.
+type Started = Promise<UnknownAction> & { requestId: string }
+
+interface Operation<Argument> {
+  (
+    argument: Argument,
+  ): ThunkAction<Started, unknown, TodoApiExtra, UnknownAction>
+  rejected: (
+    error: Error | null,
+    requestId: string,
+    argument: Argument,
+  ) => UnknownAction
+}
+
+// Redux Toolkit dispatches a settled action outside the catch it gives a payload
+// creator, so a reducer that throws would otherwise leave the operation running for
+// good: catch it here and report it as that operation's own `rejected`.
+const recording =
+  <Argument>(
+    operation: Operation<Argument>,
+    argument: Argument,
+  ): ThunkAction<
+    Promise<UnknownAction>,
+    unknown,
+    TodoApiExtra,
+    UnknownAction
+  > =>
+  async (dispatch) => {
+    const started = dispatch(operation(argument))
+    try {
+      return await started
+    } catch (thrown) {
+      console.error(thrown)
+      return dispatch(
+        operation.rejected(thrown as Error, started.requestId, argument),
+      )
+    }
+  }
+
+// Plain functions rather than the creators themselves: one handed straight to an
+// `onClick` would take the DOM event as its payload.
+export const loadTodos = () => recording(loadTodosOperation, undefined)
+export const addTodo = (text: string) => recording(addTodoOperation, { text })
+export const editTodo = (id: number, text: string) =>
+  recording(editTodoOperation, { id, text })
+export const completeTodo = (id: number, completed: boolean) =>
+  recording(completeTodoOperation, { id, completed })
+export const removeTodo = (id: number) => recording(removeTodoOperation, { id })

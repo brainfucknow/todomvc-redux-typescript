@@ -1,26 +1,90 @@
+# Every gate this project has, cheapest first. Each `run:` is a command a developer
+# runs locally by the same name, so a red job reproduces in one line.
+#
+# One Node entry, 22.x, because that is what this repository is verified on. 24.x
+# would very likely work; adding it is a one-line change for whoever proves it.
+
 name: Node CI
 
-on: [push]
+# `push` is narrowed to master: a branch with an open pull request would otherwise be
+# checked twice for one commit.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     strategy:
       matrix:
         node-version: [22.x]
 
     steps:
-    - uses: actions/checkout@v1
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v1
-      with:
-        node-version: ${{ matrix.node-version }}
-    - name: npm install, build, and test
-      run: |
-        npm ci
-        npm run build --if-present
-        npm test
-      env:
-        CI: true
+      - uses: actions/checkout@v5
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run format:check
+
+      - run: npm run typecheck
+
+      # Do not add a `working-directory:` to the step above: the gate's verdict is
+      # anchored to absolute project paths, and typecheck-gate.spec.mjs tests that.
+
+      # `npm test` runs only the `unit` and `scripts` projects, so naming these two
+      # is what gets properties/ and hardening/ into CI at all. Neither needs
+      # anything `npm ci` does not install. `npm run acceptance` stays out: it needs
+      # Go and an unpinned third-party clone.
+      - run: npm run properties
+
+      - run: npm run hardening
+
+      - run: npm test
+
+      - run: npm run build
+
+      # React 19 ignores propTypes while @types/react still declares it, so a block
+      # that crept back is dead code lint, the type gate and the build all accept.
+      - name: No propTypes under src/
+        run: |
+          found=0
+          grep -rn 'propTypes' src/ || found=$?
+          if [ "$found" -eq 0 ]; then
+            echo "::error::propTypes is dead code under React 19; the prop interface is the contract."
+            exit 1
+          fi
+          if [ "$found" -ne 1 ]; then
+            echo "::error::grep failed with status $found, so nothing was checked."
+            exit "$found"
+          fi
+
+      # `npx` runs the CLI npm ci just installed, so browser and client agree on a
+      # version. Chromium only, which is the one project qa/suite-config.ts declares.
+      - name: Install the Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # test:e2e:dev and test:e2e:preview stay out: the same procedures through a
+      # second server and a proxy hop, which adds moving parts, not covered behavior.
+      - run: npm run test:e2e
+
+      - name: Keep the Playwright report from a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-node-${{ matrix.node-version }}
+          path: qa/.artifacts/
+          retention-days: 7

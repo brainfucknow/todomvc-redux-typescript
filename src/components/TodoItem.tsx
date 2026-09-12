@@ -1,75 +1,54 @@
-import React, { PureComponent } from 'react'
-import PropTypes from 'prop-types'
+import React, { memo, useState } from 'react'
 import classnames from 'classnames'
 import TodoTextInput from './TodoTextInput'
+import { commitFromEditField } from '../todo-input/effects'
 import { Todo } from '../models/Todo'
-export interface TodoItemProps{
-  deleteTodo(id:number):void;
-  editTodo(id:number,text:string):void;
-  completeTodo(id:number,completed:boolean):void;
-  todo:Todo
+
+export interface TodoItemProps {
+  deleteTodo(id: number): void
+  editTodo(id: number, text: string): void
+  completeTodo(id: number, completed: boolean): void
+  todo: Todo
 }
-interface TodoItemState{
-  editing:boolean;
-}
-export default class TodoItem extends PureComponent<TodoItemProps,TodoItemState> {
-  static propTypes = {
-    todo: PropTypes.object.isRequired,
-    editTodo: PropTypes.func.isRequired,
-    deleteTodo: PropTypes.func.isRequired,
-    completeTodo: PropTypes.func.isRequired
-  }
 
-  state = {
-    editing: false
-  }
+const TodoItem: React.FunctionComponent<TodoItemProps> = ({
+  todo,
+  deleteTodo,
+  editTodo,
+  completeTodo,
+}) => {
+  const [editing, setEditing] = useState(false)
 
-  handleDoubleClick = () => {
-    this.setState({ editing: true })
-  }
-
-  handleSave = (id:number, text:string) => {
-    if (text.length === 0) {
-      this.props.deleteTodo(id)
+  const save = (text: string) => {
+    const { change, closesEditor } = commitFromEditField(todo.id, text)
+    if (change.kind === 'delete') {
+      deleteTodo(change.id)
     } else {
-      this.props.editTodo(id, text)
+      editTodo(change.id, change.text)
     }
-    this.setState({ editing: false })
+    setEditing(!closesEditor)
   }
 
-  render() {
-    const { todo, completeTodo, deleteTodo } = this.props
-
-    let element
-    if (this.state.editing) {
-      element = (
-        <TodoTextInput text={todo.text}
-                       editing={this.state.editing}
-                       onSave={(text) => this.handleSave(todo.id, text)} />
-      )
-    } else {
-      element = (
+  return (
+    <li className={classnames({ completed: todo.completed, editing })}>
+      {editing ? (
+        <TodoTextInput text={todo.text} editing={editing} onSave={save} />
+      ) : (
         <div className="view">
-          <input className="toggle"
-                 type="checkbox"
-                 checked={todo.completed}
-                 onChange={() => completeTodo(todo.id, !todo.completed)} />
-          <label onDoubleClick={this.handleDoubleClick}>
-            {todo.text}
-          </label>
-          <button className="destroy"
-                  onClick={() => deleteTodo(todo.id)} />
+          <input
+            className="toggle"
+            type="checkbox"
+            checked={todo.completed}
+            onChange={() => completeTodo(todo.id, !todo.completed)}
+          />
+          <label onDoubleClick={() => setEditing(true)}>{todo.text}</label>
+          <button className="destroy" onClick={() => deleteTodo(todo.id)} />
         </div>
-      )
-    }
-
-    return (
-      <li className={classnames({
-        completed: todo.completed,
-        editing: this.state.editing
-      })}>
-        {element}
-      </li>
-    )
-  }
+      )}
+    </li>
+  )
 }
+
+// `memo` skips real work: `TodoList` re-renders on every store change, and a row's
+// props are shallow-equal unless that row's own todo changed.
+export default memo(TodoItem)

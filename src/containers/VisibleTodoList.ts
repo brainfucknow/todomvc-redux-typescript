@@ -5,20 +5,17 @@ import TodoList from '../components/TodoList'
 import { getVisibleTodos } from '../selectors'
 import { RootState } from './index'
 
-const mapStateToProps = (state:RootState) => ({
-  filteredTodos: getVisibleTodos(state)
+const mapStateToProps = (state: RootState) => ({
+  filteredTodos: getVisibleTodos(state),
 })
 
-const mapDispatchToProps = (dispatch:Dispatch<AnyAction>) =>{
-  const actions = bindActionCreators(TodoActions, dispatch);
+const mapDispatchToProps = (dispatch: Dispatch<AnyAction>) => {
+  const actions = bindActionCreators(TodoActions, dispatch)
   return {
-    actions: actions
+    actions: actions,
   }
 }
 
-const VisibleTodoList = connect(
-  mapStateToProps,
-  mapDispatchToProps
-)(TodoList)
+const VisibleTodoList = connect(mapStateToProps, mapDispatchToProps)(TodoList)
 
 export default VisibleTodoList

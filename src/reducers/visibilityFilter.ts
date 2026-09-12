@@ -1,16 +1,15 @@
-import { SET_VISIBILITY_FILTER } from '../constants/ActionTypes'
-import { ActionMessage } from "../constants/ActionMessage";
+import { createSlice, PayloadAction } from '@reduxjs/toolkit'
 import TodoFilters from '../constants/TodoFilters'
 
-const { SHOW_ALL }=TodoFilters;
+const visibilityFilterSlice = createSlice({
+  name: 'visibilityFilter',
+  initialState: TodoFilters.SHOW_ALL,
+  reducers: {
+    setVisibilityFilter: (_state, { payload }: PayloadAction<TodoFilters>) =>
+      payload,
+  },
+})
 
-const visibilityFilter = (state = SHOW_ALL, action:ActionMessage) => {
-  switch (action.type) {
-    case SET_VISIBILITY_FILTER:
-      return action.filter
-    default:
-      return state
-  }
-}
+export const visibilityFilterActions = visibilityFilterSlice.actions
 
-export default visibilityFilter
+export default visibilityFilterSlice.reducer

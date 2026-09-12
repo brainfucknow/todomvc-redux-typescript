@@ -1,0 +1,21 @@
+{
+  // No DOM lib, deliberately: a property that reached the fetch transport or a
+  // component stops compiling here, as well as failing the rule in
+  // scripts/architecture/rules.mjs.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["."]
+}

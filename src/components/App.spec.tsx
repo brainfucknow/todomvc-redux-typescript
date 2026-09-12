@@ -1,31 +1,33 @@
-import React from 'react'
-import { createRenderer } from 'react-shallow-renderer'
 import App from './App'
-import Header from '../containers/Header'
-import MainSection from '../containers/MainSection'
-import { HeaderProps } from './Header'
+import { renderWithStore } from '../test-support/store'
+import { stubPendingFetch } from '../test-support/fetch'
 
-const setup = (_propOverrides?:Partial<HeaderProps>) => {
-  const renderer = createRenderer()
-  renderer.render(<App />)
-  const output = renderer.getRenderOutput()
-  return output
+beforeEach(stubPendingFetch)
+
+const setup = () => {
+  const { container } = renderWithStore(<App />)
+  return container
 }
 
 describe('components', () => {
   describe('Header', () => {
     it('should render', () => {
-      const output = setup()
-      const [header] = output.props.children
-      expect(header.type).toBe(Header)
+      const container = setup()
+      const header = container.querySelector('header.header') as HTMLElement
+      expect(header).not.toBeNull()
+      expect((header.querySelector('h1') as HTMLElement).textContent).toBe(
+        'todos',
+      )
+      expect(header.querySelector('input.new-todo')).not.toBeNull()
     })
   })
 
   describe('Mainsection', () => {
     it('should render', () => {
-      const output = setup()
-      const [, mainSection] = output.props.children
-      expect(mainSection.type).toBe(MainSection)
+      const container = setup()
+      const mainSection = container.querySelector('section.main') as HTMLElement
+      expect(mainSection).not.toBeNull()
+      expect(mainSection.querySelector('ul.todo-list')).not.toBeNull()
     })
   })
 })

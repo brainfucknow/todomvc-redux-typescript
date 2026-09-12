@@ -1,0 +1,25 @@
+{
+  // `allowJs` without `checkJs`: this suite drives the repository's own *.mjs
+  // tooling, which tsconfig.tools.json is what type-checks. Here those modules are
+  // read for the JSDoc types they export and nothing more.
+  //
+  // No DOM lib, deliberately, for the reason properties/tsconfig.json gives.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["node"]
+  },
+  "include": ["."]
+}
